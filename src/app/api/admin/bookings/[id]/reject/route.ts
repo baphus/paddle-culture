@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { z } from "zod";
 import { LaneError, err } from "@/lib/booking/errors";
 import { requireAdmin } from "@/lib/admin/session";
@@ -41,8 +41,8 @@ export async function POST(
       "Rejected",
       parsed.data.reason,
     );
-    // Immediate send of the rejection email (best-effort; cron is backstop).
-    if (!result.deduped) await drainOutboxBestEffort();
+    // Background send of the rejection email (best-effort; cron is backstop).
+    if (!result.deduped) after(() => drainOutboxBestEffort().catch(() => {}));
     return NextResponse.json(result);
   } catch (e) {
     if (e instanceof LaneError) return err(e.code, e.message, e.status);

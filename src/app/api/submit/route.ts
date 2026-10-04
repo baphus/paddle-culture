@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import * as Sentry from "@sentry/nextjs";
 import { and, eq, inArray, lte, or, sql } from "drizzle-orm";
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { getDb } from "@/db/client";
 import {
   auditLog,
@@ -271,12 +271,11 @@ export async function POST(request: Request) {
       return { trackingToken, total, status: "Pending", deduped: false };
     });
 
-    // Immediate send: drain whatever is due right now (usually the two rows
-    // just committed) instead of waiting for the */5 cron. Best-effort and
-    // awaited — a mail failure only logs; the outbox row stays retryable and
-    // the cron remains as backstop. Skipped on idempotent replays (nothing
-    // new was enqueued).
-    if (!result.deduped) await drainOutboxBestEffort();
+    // Background send: schedule the drain with `after()` so the response
+    // returns instantly without waiting for SMTP. Best-effort — a mail
+    // failure only logs; the outbox row stays retryable and the cron remains
+    // as backstop. Skipped on idempotent replays (nothing new was enqueued).
+    if (!result.deduped) after(() => drainOutboxBestEffort().catch(() => {}));
 
     return NextResponse.json(result, { status: result.deduped ? 200 : 201 });
   } catch (e) {

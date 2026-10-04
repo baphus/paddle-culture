@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { z } from "zod";
 import { LaneError, err } from "@/lib/booking/errors";
 import { requireAdmin } from "@/lib/admin/session";
@@ -23,8 +23,8 @@ export async function POST(
       return err("BAD_REQUEST", "Invalid booking id.", 400);
     }
     const result = await applyDecision(getDbOrThrow(), admin, id, "Approved");
-    // Immediate send of the approval email (best-effort; cron is backstop).
-    if (!result.deduped) await drainOutboxBestEffort();
+    // Background send of the approval email (best-effort; cron is backstop).
+    if (!result.deduped) after(() => drainOutboxBestEffort().catch(() => {}));
     return NextResponse.json(result);
   } catch (e) {
     if (e instanceof LaneError) return err(e.code, e.message, e.status);
