@@ -2,6 +2,13 @@
   command = "npm run build"
   publish = ".next"
 
+  # Netlify secrets scanning false-positives on these non-sensitive values
+  # (localhost dev defaults that also appear verbatim in .env.example, docs,
+  # and code comments). Real secrets (DATABASE_URL, GMAIL_APP_PASSWORD,
+  # SUPABASE_SERVICE_ROLE_KEY, etc.) remain scanned.
+  [build.environment]
+    SECRETS_SCAN_OMIT_KEYS = "SMTP_HOST, SMTP_PORT, SMTP_SECURE, MAIL_FROM, APP_URL"
+
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
