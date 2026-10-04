@@ -1,4 +1,4 @@
-# Paddle Culture — Backup Runbook (client-operated)
+# CK Grounds — Backup Runbook (client-operated)
 
 > ADR-07 / PRD §30: backups are **excluded from build scope** and there is
 > **no automation on the free tier**. This is a manual runbook the **client

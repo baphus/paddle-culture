@@ -104,7 +104,7 @@ export function renderOutboxEmail(
         "Please keep your proof of payment until your booking is approved.",
       ];
       return {
-        subject: "Paddle Culture — booking received (Pending)",
+        subject: "CK Grounds — booking received (Pending)",
         text: lines.join("\n"),
         html: htmlWrap("Booking received — Pending", lines),
       };
@@ -122,7 +122,7 @@ export function renderOutboxEmail(
         ...(trackingToken ? [`Tracking token: ${trackingToken}`] : []),
       ];
       return {
-        subject: `Paddle Culture — new booking from ${fullName || "customer"}`,
+        subject: `CK Grounds — new booking from ${fullName || "customer"}`,
         text: lines.join("\n"),
         html: htmlWrap("New booking — action needed", lines),
       };
@@ -137,7 +137,7 @@ export function renderOutboxEmail(
         ...(url ? [`Your booking pass: ${url}`] : []),
       ];
       return {
-        subject: "Paddle Culture — booking approved",
+        subject: "CK Grounds — booking approved",
         text: lines.join("\n"),
         html: htmlWrap("Booking approved", lines),
       };
@@ -153,7 +153,7 @@ export function renderOutboxEmail(
         "Reply to this email if you believe this is a mistake.",
       ];
       return {
-        subject: "Paddle Culture — booking rejected",
+        subject: "CK Grounds — booking rejected",
         text: lines.join("\n"),
         html: htmlWrap("Booking rejected", lines),
       };

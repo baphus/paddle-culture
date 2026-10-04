@@ -91,7 +91,7 @@ async function alertOwner(
     await transport.sendMail({
       from,
       to: OWNER_ALERT_EMAIL,
-      subject: `Paddle Culture mailer — ${subject}`,
+      subject: `CK Grounds mailer — ${subject}`,
       text: body,
     });
   } catch (e) {

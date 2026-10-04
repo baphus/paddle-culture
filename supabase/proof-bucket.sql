@@ -1,4 +1,4 @@
--- Paddle Culture — payment-proof bucket (run later in Supabase SQL editor).
+-- CK Grounds — payment-proof bucket (run later in Supabase SQL editor).
 -- ADR-02/ADR-06: private bucket, jpg/png/webp, <=5MB, 1 file per booking,
 -- immutable, no public read. Admin views via server-minted signed URLs
 -- (createSignedUrl); customer bytes travel browser -> Storage direct.

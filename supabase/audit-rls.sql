@@ -1,4 +1,4 @@
--- Paddle Culture — audit_log append-only enforcement (owner runs this ONCE
+-- CK Grounds — audit_log append-only enforcement (owner runs this ONCE
 -- in the Supabase SQL editor: Dashboard → SQL → New query → paste → Run).
 -- Mirrors supabase/proof-bucket.sql (same manual-apply pattern).
 --

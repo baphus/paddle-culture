@@ -1,4 +1,4 @@
-# Paddle Culture — Architecture Decisions (build-freeze log)
+# CK Grounds — Architecture Decisions (build-freeze log)
 
 Date: 2026-10-03 · Status: **Accepted, before code** · PRD: v1.0 Final (launch Oct 20, 2026)
 Constraints locked by owner: **$0 as much as possible · Gmail SMTP via Nodemailer · serverless · simplest setup · production-ready**

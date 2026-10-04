@@ -45,6 +45,69 @@ export function maxBookableDateStr(now: Date = new Date()): string {
   return manilaDayFmt.format(d);
 }
 
+const manilaMonthFmt = new Intl.DateTimeFormat("en-US", {
+  timeZone: "Asia/Manila",
+  month: "long",
+  year: "numeric",
+});
+
+const manilaLongFmt = new Intl.DateTimeFormat("en-US", {
+  timeZone: "Asia/Manila",
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
+
+function splitDateStr(dateStr: string): { y: number; m: number; d: number } {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return { y: y as number, m: m as number, d: d as number };
+}
+
+/**
+ * Add N days to a YYYY-MM-DD Manila date. Anchored at UTC noon (= 20:00
+ * Manila, same civil date — Manila is UTC+8 with no DST), so the math is
+ * timezone-safe and never browser-local.
+ */
+export function addDaysManilaStr(dateStr: string, days: number): string {
+  const { y, m, d } = splitDateStr(dateStr);
+  return manilaDayFmt.format(new Date(Date.UTC(y, m - 1, d, 12) + days * 86_400_000));
+}
+
+/** Earliest online-bookable date: tomorrow in Asia/Manila (today = walk-in only). */
+export function manilaTomorrowStr(now: Date = new Date()): string {
+  return addDaysManilaStr(manilaDayFmt.format(now), 1);
+}
+
+/** "October 2026" for a 0-indexed month — same Manila source as the day cells. */
+export function monthLabelManila(year: number, monthIndex: number): string {
+  return manilaMonthFmt.format(new Date(Date.UTC(year, monthIndex, 1, 12)));
+}
+
+/** "Fri, Oct 25, 2026" for a YYYY-MM-DD Manila date. */
+export function formatManilaLong(dateStr: string): string {
+  const { y, m, d } = splitDateStr(dateStr);
+  return manilaLongFmt.format(new Date(Date.UTC(y, m - 1, d, 12)));
+}
+
+/** Manila weekday of the 1st of a 0-indexed month (0 = Sunday .. 6 = Saturday). */
+export function firstWeekdayManila(year: number, monthIndex: number): number {
+  // UTC noon == 20:00 Manila on the same civil date, so getUTCDay is exact.
+  return new Date(Date.UTC(year, monthIndex, 1, 12)).getUTCDay();
+}
+
+/** Manila weekday (0 = Sunday .. 6 = Saturday) for a YYYY-MM-DD date. Pure
+ *  arithmetic off firstWeekdayManila — never browser-local Date math. */
+export function weekdayManila(dateStr: string): number {
+  const { y, m, d } = splitDateStr(dateStr);
+  return (firstWeekdayManila(y, m - 1) + (d - 1)) % 7;
+}
+
+/** Gregorian month length — timezone-independent, never browser-local. */
+export function daysInManilaMonth(year: number, monthIndex: number): number {
+  return new Date(Date.UTC(year, monthIndex + 1, 0, 12)).getUTCDate();
+}
+
 /** "6:00 – 7:00 AM" label for a 1h slot start ISO (Manila wall time). */
 export function formatSlotRange(startIso: string): string {
   const start = new Date(startIso);

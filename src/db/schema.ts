@@ -14,7 +14,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 /**
- * Paddle Culture schema lane — Postgres / Supabase-compatible, ADR-02 + ADR-03.
+ * CK Grounds schema lane — Postgres / Supabase-compatible, ADR-02 + ADR-03.
  *
  * Conventions:
  * - All datetimes are `timestamptz`. App TZ is fixed to `Asia/Manila`

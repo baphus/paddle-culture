@@ -18,13 +18,12 @@ import {
 } from "@/lib/courts";
 import DetailsForm, { type DetailsValues } from "./details-form";
 import PaymentStep from "./payment-step";
+import { FALLBACK_RATES, type DisplayRates } from "@/lib/pricing-display";
 
-// Frozen rate card (ADR-02) — client ESTIMATE only; the server recalculates
-// the authoritative total at submit and never trusts this number.
-const RATE_MORNING = 150;
-const RATE_EVENING = 200;
-const RATE_PADDLE_PER_HOUR = 25;
-const RATE_BALL_FLAT = 15;
+// Live display rates for the client ESTIMATE ONLY — seeded from the RSC via
+// initialRates, then refreshed from GET /api/pricing below. The server
+// recalculates the authoritative total at submit (recalculateTotal) and never
+// trusts this number.
 
 type Step = "select" | "details" | "payment" | "done";
 
@@ -86,13 +85,14 @@ function estimateTotal(
   paddleQty: number,
   paddleHours: number | null,
   ball: boolean,
+  rates: DisplayRates,
 ): number {
   let total = 0;
   for (const s of slotStarts) {
-    total += (timeBandFor(new Date(s)) === "evening" ? RATE_EVENING : RATE_MORNING) * courtCount;
+    total += (timeBandFor(new Date(s)) === "evening" ? rates.evening : rates.morning) * courtCount;
   }
-  if (paddleQty > 0) total += RATE_PADDLE_PER_HOUR * paddleQty * (paddleHours ?? slotStarts.length);
-  if (ball) total += RATE_BALL_FLAT;
+  if (paddleQty > 0) total += rates.paddle * paddleQty * (paddleHours ?? slotStarts.length);
+  if (ball) total += rates.ball;
   return total;
 }
 
@@ -128,10 +128,17 @@ function HoldCountdown({
   );
 }
 
-export default function BookingFlow({ initialCourts }: { initialCourts: CourtOption[] }) {
+export default function BookingFlow({
+  initialCourts,
+  initialRates = FALLBACK_RATES,
+}: {
+  initialCourts: CourtOption[];
+  initialRates?: DisplayRates;
+}) {
   const today = useMemo(() => manilaTodayStr(), []);
   const maxDate = useMemo(() => maxBookableDateStr(), []);
   const [courts, setCourts] = useState<CourtOption[]>(initialCourts);
+  const [rates, setRates] = useState<DisplayRates>(initialRates);
   const [date, setDate] = useState(today);
   const [courtIds, setCourtIds] = useState<string[]>(() => initialCourts.map((c) => c.id));
   const [avail, setAvail] = useState<CourtAvailability[] | null>(null);
@@ -156,6 +163,24 @@ export default function BookingFlow({ initialCourts }: { initialCourts: CourtOpt
           setCourtIds((prev) =>
             prev.length > 0 ? prev.filter((id) => b.courts!.some((c) => c.id === id)) : b.courts!.map((c) => c.id),
           );
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Refresh display rates live (SWR-lite: serve the RSC prop first, then
+  // revalidate). Estimate-only — failures keep the server-rendered rates.
+  useEffect(() => {
+    fetch("/api/pricing")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((b: DisplayRates | null) => {
+        if (
+          b &&
+          [b.morning, b.evening, b.paddle, b.ball].every(
+            (n) => typeof n === "number" && Number.isFinite(n) && n > 0,
+          )
+        ) {
+          setRates({ morning: b.morning, evening: b.evening, paddle: b.paddle, ball: b.ball, currency: "PHP" });
         }
       })
       .catch(() => {});
@@ -331,8 +356,9 @@ export default function BookingFlow({ initialCourts }: { initialCourts: CourtOpt
       details.paddleQty,
       details.paddleQty > 0 ? details.paddleHours : null,
       details.ball,
+      rates,
     );
-  }, [details, selectedSorted, courtIds.length]);
+  }, [details, selectedSorted, courtIds.length, rates]);
 
   const steps: Array<{ id: Step; label: string }> = [
     { id: "select", label: "1. Slots" },

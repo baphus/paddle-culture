@@ -1,14 +1,20 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { Geist } from "next/font/google";
+import { Plus_Jakarta_Sans } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { cn } from "@/lib/utils";
 
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
+const jakarta = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  variable: "--font-sans",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
-  title: "Paddle Culture",
-  description: "Paddle court booking — scaffold placeholder.",
+  title: "CK Grounds — Pickleball Courts in Tabuelan, Cebu",
+  description:
+    "Book a pickleball court at CK Grounds in Tabuelan, Cebu in under a minute. Live availability 6 AM–3 AM, transparent ₱150 day / ₱200 night rates, no account needed. Track any booking with your reference code.",
+  icons: { icon: "/logo.jpg" },
 };
 
 export default function RootLayout({
@@ -17,10 +23,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={cn("font-sans", geist.variable)}>
-      <body>
+    <html lang="en" className={cn("scroll-smooth", jakarta.variable)}>
+      <body className="bg-cream font-sans text-ink">
         {children}
-        <Toaster />
+        <Toaster richColors position="top-center" />
       </body>
     </html>
   );

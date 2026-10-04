@@ -5,7 +5,43 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  --font-sans: ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* CK Grounds brand tokens (DESIGN.md body values win) */
+  --color-cream: #fff8ef;
+  --color-oat: #fff3d4;
+  --color-parchment: #fdf4e7;
+  --color-card-elevated: #ffffff;
+  --color-flame: #ea662c;
+  --color-flame-hover: #d85820;
+  --color-flame-light: #fff0e6;
+  --color-pine: #26422a;
+  --color-pine-high: #1d3421;
+  --color-pine-ink: #eaefea;
+  --color-cocoa: #42302d;
+  --color-ink: #3c3835;
+  --color-warm-muted: #7a7268;
+  --color-line: #e8ddc8;
+  --color-line-warm: #e5d9bb;
+  --color-live: #eaf5ec;
+  --color-live-dot: #2e7d32;
+  --color-columbia: #d2e8ff;
+  --color-error: #ba1a1a;
+  --color-surface-dim: #f0d4cf;
+
+  /* Progressive-reveal entrance (paired with motion-reduce:animate-none) */
+  --animate-rise: rise 0.35s ease-out both;
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
 }
 
 @theme inline {
@@ -124,10 +160,19 @@
   * {
     @apply border-border outline-ring/50;
   }
-  body {
-    @apply bg-background text-foreground;
-  }
   html {
-    @apply font-sans;
+    @apply font-sans scroll-smooth;
+  }
+  body {
+    @apply bg-cream text-ink antialiased;
+  }
+  ::selection {
+    background: #ea662c;
+    color: #fff;
+  }
+  :where(a, button, input, [tabindex]):focus-visible {
+    outline: 2px solid #ea662c;
+    outline-offset: 3px;
+    border-radius: 6px;
   }
 }

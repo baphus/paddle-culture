@@ -1,4 +1,4 @@
-# Paddle Culture — Open Questions (freeze log)
+# CK Grounds — Open Questions (freeze log)
 
 ## Round 1 (Q-01–Q-09) — RESOLVED 2026-10-03, frozen in DECISIONS.md.
 ## Round 2 — RESOLVED 2026-10-03 (ref dropped, proof hard gate, table columns, Gmail holder, admin-create removed).
