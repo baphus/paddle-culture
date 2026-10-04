@@ -1,0 +1,27 @@
+{
+  "ranAt": "2026-10-04T03:46:44.498Z",
+  "courts": {
+    "before": 2,
+    "existing": [
+      {
+        "name": "Court 1",
+        "status": "active"
+      },
+      {
+        "name": "Court 2",
+        "status": "active"
+      }
+    ],
+    "inserted": [],
+    "after": 2
+  },
+  "operating_hours": {
+    "before": 7,
+    "inserted": [],
+    "after": 7
+  },
+  "pricing_rules": {
+    "count": 6,
+    "touched": false
+  }
+}
