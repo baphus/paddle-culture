@@ -1,0 +1,18 @@
+# dependencies
+node_modules/
+
+# next.js
+.next/
+out/
+tsconfig.tsbuildinfo
+
+# netlify
+.netlify/
+
+# env (never commit real secrets; .env.example is the template)
+.env
+.env*.local
+
+# OS / editor
+.DS_Store
+Thumbs.db

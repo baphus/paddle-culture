@@ -1,0 +1,51 @@
+{
+  "version": "5",
+  "remote": {
+    "https://edge.netlify.com/": "fd941d61d88673d5f28aab283fb86fcc50f08a3bc80ee5470498fcfa88c65cfb",
+    "https://edge.netlify.com/bootstrap/config.ts": "6a2ce0e544e15e8f8883a5c18da5948e37fd0f2619f68cb31f3af53c51817025",
+    "https://edge.netlify.com/bootstrap/context.ts": "2260177df4a7d692f31177ccbf2de969cd8db1269c564a45517d6e47fd7d248f",
+    "https://edge.netlify.com/bootstrap/cookie.ts": "8b0baae708989ca183c6f3b4ab3d029e6abcbc2e43f93edeb0ff447b3bbc3a05",
+    "https://edge.netlify.com/bootstrap/edge_function.ts": "b8253e86aa83c67341f5cfedeba5049d77fbf84dcab7eceff7566b7728ae9b39",
+    "https://edge.netlify.com/bootstrap/globals/types.ts": "eaa6148ded3121d8dee62dd91c86e7fe76601df0f3ca8d7962243a30f4c8935f"
+  },
+  "workspace": {
+    "packageJson": {
+      "dependencies": [
+        "npm:@base-ui/react@^1.8.0",
+        "npm:@date-fns/tz@^1.5.0",
+        "npm:@hookform/resolvers@5.9",
+        "npm:@netlify/functions@^6.0.2",
+        "npm:@netlify/plugin-nextjs@^5.16.1",
+        "npm:@supabase/ssr@~0.12.7",
+        "npm:@supabase/supabase-js@^2.117.2",
+        "npm:@tailwindcss/postcss@4.3",
+        "npm:@types/node@^26.6.4",
+        "npm:@types/nodemailer@^8.0.2",
+        "npm:@types/react-dom@^19.3.0",
+        "npm:@types/react@^19.3.0",
+        "npm:class-variance-authority@~0.7.1",
+        "npm:clsx@^2.1.1",
+        "npm:cn@0.4",
+        "npm:date-fns@4.4",
+        "npm:drizzle-kit@~0.31.11",
+        "npm:drizzle-orm@~0.45.3",
+        "npm:lucide-react@1.51",
+        "npm:next-themes@~0.4.6",
+        "npm:next@16.3",
+        "npm:nodemailer@^10.0.14",
+        "npm:qrcode.react@4.2",
+        "npm:react-dom@19.3",
+        "npm:react-hook-form@7.89",
+        "npm:react@19.3",
+        "npm:server-only@^0.0.1",
+        "npm:shadcn@^4.21.1",
+        "npm:sonner@2.0",
+        "npm:tailwind-merge@^3.7.0",
+        "npm:tailwindcss@4.3",
+        "npm:tw-animate-css@^1.4.0",
+        "npm:typescript@5.9",
+        "npm:zod@4.6"
+      ]
+    }
+  }
+}
