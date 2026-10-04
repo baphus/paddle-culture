@@ -8,5 +8,6 @@ export {
   fromAddress,
   getSharedTransport,
   getTransport,
+  resetSharedTransport,
 } from "./mail/transport";
 export type { Transporter };

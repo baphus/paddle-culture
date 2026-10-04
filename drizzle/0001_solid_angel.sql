@@ -1,0 +1,2 @@
+DROP INDEX "email_outbox_claim_idx";--> statement-breakpoint
+CREATE INDEX "email_outbox_claim_idx" ON "email_outbox" USING btree ("status","next_attempt_at") WHERE "email_outbox"."status" IN ('pending', 'retry');

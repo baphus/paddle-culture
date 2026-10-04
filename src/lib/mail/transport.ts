@@ -9,7 +9,29 @@ import type { Transporter } from "nodemailer";
 
 // Port 587/STARTTLS per ADR-05 (465/OAuth2 is the documented alternative,
 // not implemented — App Password path only).
+//
+// Local dev (e.g. Mailpit on 127.0.0.1:1025, no auth):
+//   SMTP_HOST=127.0.0.1 SMTP_PORT=1025 SMTP_SECURE=false MAIL_FROM=noreply@localhost
+// When SMTP_HOST is unset, falls back to the Gmail path (GMAIL_USER +
+// GMAIL_APP_PASSWORD) so production is untouched.
 export function getTransport(): Transporter {
+  const smtpHost = process.env.SMTP_HOST;
+
+  // Explicit local/custom SMTP path — auth optional (Mailpit has none).
+  if (smtpHost) {
+    const port = Number.parseInt(process.env.SMTP_PORT ?? "1025", 10) || 1025;
+    const secure =
+      process.env.SMTP_SECURE?.toLowerCase() === "true" || port === 465;
+    const user = process.env.SMTP_USER || undefined;
+    const pass = process.env.SMTP_PASS || undefined;
+    return nodemailer.createTransport({
+      host: smtpHost,
+      port,
+      secure,
+      ...(user && pass ? { auth: { user, pass } } : {}),
+    });
+  }
+
   const user = process.env.GMAIL_USER;
   const pass = process.env.GMAIL_APP_PASSWORD;
   if (!user || !pass) {
@@ -32,8 +54,15 @@ export function getSharedTransport(): Transporter {
   return shared;
 }
 
+// Test/dev helper: drop the cached transport so env changes take effect
+// without a process restart.
+export function resetSharedTransport(): void {
+  shared = null;
+}
+
 export function fromAddress(): string {
-  const user = process.env.GMAIL_USER;
-  if (!user) throw new Error("NOT_CONFIGURED");
-  return user;
+  const from =
+    process.env.MAIL_FROM ?? process.env.SMTP_USER ?? process.env.GMAIL_USER;
+  if (!from) throw new Error("NOT_CONFIGURED");
+  return from;
 }

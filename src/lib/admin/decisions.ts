@@ -58,7 +58,8 @@ async function loadDetails(tx: Db, bookingId: string) {
  * Approve or Reject a booking (ADR-02/ADR-03/ADR-05). One transaction:
  * status change + slot-state flip + decision outbox row + audit row commit
  * atomically, so a failure after the status change always leaves the email
- * retryable via the outbox (never inline sends). Idempotent: repeating the
+ * retryable via the outbox. The route drains best-effort immediately after
+ * commit (cron is backstop). Idempotent: repeating the
  * same decision returns current state without a duplicate outbox row
  * (status X ⟹ its outbox row already committed in the same txn).
  */

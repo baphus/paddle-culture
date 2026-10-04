@@ -6,9 +6,9 @@ import { processOutboxBatch } from "@/lib/mail/worker";
 export const runtime = "nodejs";
 
 // POST /api/admin/outbox/process — admin-only manual trigger for the outbox
-// worker (same code path as the */5 cron). Used for the Gmail smoke test and
-// on-demand drains; returns per-batch counts. Never called by booking flows
-// (ADR-05: never inline sends).
+// worker (same code path as the 5-minute cron). Used for the Gmail smoke test
+// and on-demand drains; returns per-batch counts. Booking/decision flows also
+// drain best-effort immediately after commit — this endpoint is the backstop.
 export async function POST() {
   try {
     await requireAdmin();

@@ -213,3 +213,18 @@ export async function processOutboxBatch(db?: Db): Promise<BatchResult> {
   }
   return result;
 }
+
+/**
+ * Best-effort immediate drain for request handlers (submit, approve/reject):
+ * sends whatever is due right now instead of waiting for the 5-minute cron.
+ * Never throws — booking/decision commits must never fail because mail is
+ * down. The cron + admin trigger remain as backstops (claiming is atomic via
+ * FOR UPDATE SKIP LOCKED, so a concurrent cron run can't double-send).
+ */
+export async function drainOutboxBestEffort(): Promise<void> {
+  try {
+    await processOutboxBatch();
+  } catch (e) {
+    console.error("immediate outbox drain failed (cron will retry)", e);
+  }
+}

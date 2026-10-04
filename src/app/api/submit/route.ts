@@ -25,6 +25,7 @@ import { recalculateTotal } from "@/lib/booking/pricing";
 import { verifyProofFile } from "@/lib/booking/proof";
 import { isFutureSlot, isOnSlotGrid } from "@/lib/booking/slots";
 import { submitBodySchema } from "@/lib/booking/validation";
+import { drainOutboxBestEffort } from "@/lib/mail/worker";
 
 export const runtime = "nodejs";
 
@@ -269,6 +270,13 @@ export async function POST(request: Request) {
 
       return { trackingToken, total, status: "Pending", deduped: false };
     });
+
+    // Immediate send: drain whatever is due right now (usually the two rows
+    // just committed) instead of waiting for the */5 cron. Best-effort and
+    // awaited — a mail failure only logs; the outbox row stays retryable and
+    // the cron remains as backstop. Skipped on idempotent replays (nothing
+    // new was enqueued).
+    if (!result.deduped) await drainOutboxBestEffort();
 
     return NextResponse.json(result, { status: result.deduped ? 200 : 201 });
   } catch (e) {

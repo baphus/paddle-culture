@@ -204,7 +204,7 @@ export const emailOutbox = pgTable(
     messageId: text("message_id"),
   },
   (t) => [
-    uniqueIndex("email_outbox_claim_idx")
+    index("email_outbox_claim_idx")
       .on(t.status, t.nextAttemptAt)
       .where(sql`${t.status} IN ('pending', 'retry')`),
   ],

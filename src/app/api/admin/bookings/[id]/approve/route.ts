@@ -3,6 +3,7 @@ import { z } from "zod";
 import { LaneError, err } from "@/lib/booking/errors";
 import { requireAdmin } from "@/lib/admin/session";
 import { applyDecision, getDbOrThrow } from "@/lib/admin/decisions";
+import { drainOutboxBestEffort } from "@/lib/mail/worker";
 
 export const runtime = "nodejs";
 
@@ -22,6 +23,8 @@ export async function POST(
       return err("BAD_REQUEST", "Invalid booking id.", 400);
     }
     const result = await applyDecision(getDbOrThrow(), admin, id, "Approved");
+    // Immediate send of the approval email (best-effort; cron is backstop).
+    if (!result.deduped) await drainOutboxBestEffort();
     return NextResponse.json(result);
   } catch (e) {
     if (e instanceof LaneError) return err(e.code, e.message, e.status);
