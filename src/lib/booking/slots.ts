@@ -47,8 +47,25 @@ export function manilaDateStr(instant: Date): string {
 }
 
 /**
+ * Selection (offer) date for an instant. The operating day runs
+ * 06:00→03:00+1d Manila, so instants before 06:00 wall time belong to the
+ * previous selection date's 21-slot grid.
+ */
+export function selectionDateStr(instant: Date): string {
+  const z = new TZDate(instant, MANILA_TZ);
+  if (z.getHours() < DAY_START_HOUR_MANILA) {
+    const prev = new TZDate(z);
+    prev.setDate(prev.getDate() - 1);
+    return `${prev.getFullYear()}-${pad(prev.getMonth() + 1)}-${pad(prev.getDate())}`;
+  }
+  return `${z.getFullYear()}-${pad(z.getMonth() + 1)}-${pad(z.getDate())}`;
+}
+
+/**
  * True when an instant sits exactly on the hourly slot grid of its Manila
  * selection date (whole hour, one of the 21 slots starting 06:00).
+ * Overnight slots 00:00–02:00 belong to the previous selection date's grid,
+ * so the previous Manila day's 06:00 base is tried as a fallback.
  */
 export function isOnSlotGrid(instant: Date): boolean {
   const z = new TZDate(instant, MANILA_TZ);
@@ -60,7 +77,23 @@ export function isOnSlotGrid(instant: Date): boolean {
     MANILA_TZ,
   );
   const diffHours = (z.getTime() - base.getTime()) / 3_600_000;
-  return Number.isInteger(diffHours) && diffHours >= 0 && diffHours < SLOT_COUNT;
+  if (Number.isInteger(diffHours) && diffHours >= 0 && diffHours < SLOT_COUNT) {
+    return true;
+  }
+  // Overnight spill: 00:00–02:00 wall time belongs to the previous
+  // selection date's 06:00→03:00+1d grid.
+  const sel = selectionDateStr(instant);
+  const selBase = new TZDate(
+    `${sel}T${pad(DAY_START_HOUR_MANILA)}:00:00`,
+    MANILA_TZ,
+  );
+  if (selBase.getTime() === base.getTime()) return false;
+  const prevDiffHours = (z.getTime() - selBase.getTime()) / 3_600_000;
+  return (
+    Number.isInteger(prevDiffHours) &&
+    prevDiffHours >= 0 &&
+    prevDiffHours < SLOT_COUNT
+  );
 }
 
 /** Only future slots are bookable (ADR-03; same-day allowed if in future). */

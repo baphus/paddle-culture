@@ -7,7 +7,7 @@ import { courts, holds } from "@/db/schema";
 import { getAvailability } from "@/lib/booking/availability";
 import { HOLD_TTL_MINUTES, MAX_SLOTS_PER_BOOKING } from "@/lib/booking/constants";
 import { LaneError, err } from "@/lib/booking/errors";
-import { isFutureSlot, isOnSlotGrid, manilaDateStr } from "@/lib/booking/slots";
+import { isFutureSlot, isOnSlotGrid, selectionDateStr } from "@/lib/booking/slots";
 import { holdsBodySchema } from "@/lib/booking/validation";
 
 export const runtime = "nodejs";
@@ -94,7 +94,7 @@ export async function POST(request: Request) {
     // day grids.
     const byDate = new Map<string, Date[]>();
     for (const s of starts) {
-      const d = manilaDateStr(s);
+      const d = selectionDateStr(s);
       const list = byDate.get(d);
       if (list) list.push(s);
       else byDate.set(d, [s]);
