@@ -2,6 +2,8 @@ import Image from "next/image";
 import { Clock, Mail, MapPin } from "lucide-react";
 import { FALLBACK_RATES, type DisplayRates } from "@/lib/pricing-display";
 
+const FB_LINK = "https://www.facebook.com/profile.php?id=61595287250420";
+
 export default function Footer({ rates = FALLBACK_RATES }: { rates?: DisplayRates }) {
   void rates;
   return (
@@ -62,7 +64,7 @@ export default function Footer({ rates = FALLBACK_RATES }: { rates?: DisplayRate
               RVF9+6XW, Poblacion, Tabuelan, Cebu, Philippines
             </p>
             <a
-              href="https://www.google.com/maps/search/?api=1&query=Tabuelan+Cebu+Philippines"
+              href="https://maps.app.goo.gl/ceUS9UK4TzD5FTK37"
               target="_blank"
               rel="noopener noreferrer"
               className="block w-fit text-[13px] font-bold text-flame hover:text-flame-hover hover:underline"
@@ -82,25 +84,26 @@ export default function Footer({ rates = FALLBACK_RATES }: { rates?: DisplayRate
               Email us
             </p>
             <a
-              href="mailto:paddleculture0@gmail.com"
+              href="mailto:ckgrounds1@gmail.com"
               className="flex items-center gap-2 text-[13px] font-bold break-all text-ink hover:text-flame hover:underline"
             >
               <Mail className="size-4 shrink-0 text-flame" aria-hidden />
-              paddleculture0@gmail.com
+              ckgrounds1@gmail.com
             </a>
             <p className="pt-1 text-[11px] font-extrabold tracking-[0.12em] text-ink/50 uppercase">
-              Accepted payments
+              Facebook
             </p>
-            <div className="flex flex-wrap gap-1.5">
-              {["GCash", "BDO", "BPI"].map((p) => (
-                <span
-                  key={p}
-                  className="rounded-full border border-line bg-cream px-3 py-1 text-[11px] font-extrabold text-pine"
-                >
-                  {p}
-                </span>
-              ))}
-            </div>
+            <a
+              href={FB_LINK}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 text-[13px] font-bold text-ink hover:text-flame hover:underline"
+            >
+              <svg aria-hidden="true" className="size-4 shrink-0" viewBox="0 0 24 24" fill="#1877F2">
+                <path d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047V9.41c0-3.025 1.792-4.697 4.533-4.697 1.312 0 2.686.236 2.686.236v2.97h-1.513c-1.491 0-1.956.93-1.956 1.883v2.26h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.1 24 12.073z" />
+              </svg>
+              CK Grounds
+            </a>
           </div>
         </div>
 

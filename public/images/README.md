@@ -8,7 +8,9 @@ Drop your exports here (exact names, JPG preferred):
 - `public/images/hero.jpg` — wide evening court shot, ~1600×1200 (hero, `priority`)
 - `public/images/court-1.jpg` — Court 1 daytime, ~1200×675
 - `public/images/court-2.jpg` — Court 2 under lights, ~1200×675
+- `public/images/paddle.jpg` — paddles + balls on court (~16:9, rentals)
+- `public/images/Pickleball.jpg` — single match ball on court (~16:9, rentals)
 
-Rentals intentionally use dashed placeholder cards (no photos needed for baseline).
+Rentals use the same gradient + icon fallback, so a missing gear photo still looks intentional.
 
 No code changes needed after adding files — just redeploy.

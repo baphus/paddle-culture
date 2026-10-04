@@ -10,7 +10,7 @@ const LINKS = [
   { href: "/#top", label: "Home" },
   { href: "/book", label: "Book Now" },
   { href: "/how-it-works", label: "How It Works" },
-  { href: "/#contact", label: "Contact" },
+  { href: "/contact", label: "Contact" },
 ];
 
 export default function Header() {
@@ -25,8 +25,7 @@ export default function Header() {
   }, []);
 
   const isActive = (href: string) => {
-    if (href === "/#top") return pathname === "/" && hash !== "#contact";
-    if (href === "/#contact") return pathname === "/" && hash === "#contact";
+    if (href === "/#top") return pathname === "/";
     return pathname === href;
   };
 
@@ -51,9 +50,6 @@ export default function Header() {
           <span className="leading-none">
             <span className="block text-[15px] font-extrabold tracking-tight text-ink">
               CK Grounds
-            </span>
-            <span className="block text-[10px] font-bold tracking-[0.18em] text-warm-muted uppercase">
-              Pickleball Club
             </span>
           </span>
         </a>

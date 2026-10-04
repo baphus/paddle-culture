@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { PlusCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -73,52 +74,93 @@ export default function CourtsManager({ initial }: { initial: CourtRow[] }) {
   }
 
   return (
-    <div>
-      <form onSubmit={addCourt}>
-        <div>
-          <Label htmlFor="court-name">New court name</Label>
-          <Input
-            id="court-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            maxLength={100}
-            placeholder="Court 3"
-          />
-        </div>
-        <Button type="submit" disabled={busy !== null}>
-          {busy === "add" ? "Adding…" : "Add court"}
-        </Button>
-      </form>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Action</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {initial.map((c) => (
-            <TableRow key={c.id}>
-              <TableCell>{c.name}</TableCell>
-              <TableCell>{c.status}</TableCell>
-              <TableCell>
-                <Button
-                  variant="outline"
-                  disabled={busy !== null}
-                  onClick={() => flip(c)}
-                >
-                  {busy === c.id
-                    ? "Saving…"
-                    : c.status === "active"
-                      ? "Deactivate"
-                      : "Activate"}
-                </Button>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+    <div className="space-y-5">
+      {/* Add form */}
+      <div className="rounded-xl border border-line bg-white p-4">
+        <p className="mb-3 text-sm font-bold text-ink">Add court</p>
+        <form onSubmit={addCourt} className="flex items-end gap-3">
+          <div className="flex-1 space-y-1">
+            <Label htmlFor="court-name" className="text-xs font-semibold text-ink/70">
+              Court name
+            </Label>
+            <Input
+              id="court-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={100}
+              placeholder="e.g. Court 3"
+              className="h-9 rounded-lg border-line text-sm"
+            />
+          </div>
+          <Button
+            type="submit"
+            disabled={busy !== null}
+            className="h-9 shrink-0 rounded-lg bg-flame px-4 text-xs font-bold text-white hover:bg-flame-hover"
+          >
+            <PlusCircle className="mr-1.5 size-3.5" />
+            {busy === "add" ? "Adding…" : "Add court"}
+          </Button>
+        </form>
+      </div>
+
+      {/* Courts table */}
+      <div className="overflow-hidden rounded-xl border border-line bg-white">
+        {initial.length > 0 ? (
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-oat/60 hover:bg-oat/60">
+                <TableHead className="text-xs font-bold text-ink/60">Name</TableHead>
+                <TableHead className="text-xs font-bold text-ink/60">Status</TableHead>
+                <TableHead className="text-xs font-bold text-ink/60">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {initial.map((c) => (
+                <TableRow key={c.id} className="border-line">
+                  <TableCell className="font-medium text-ink">{c.name}</TableCell>
+                  <TableCell>
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold ${
+                        c.status === "active"
+                          ? "bg-live text-pine"
+                          : "bg-oat text-warm-muted"
+                      }`}
+                    >
+                      {c.status === "active" && (
+                        <span className="size-1.5 rounded-full bg-live-dot" aria-hidden />
+                      )}
+                      {c.status === "active" ? "Active" : "Inactive"}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busy !== null}
+                      onClick={() => flip(c)}
+                      className={`h-7 rounded-lg border-line text-xs font-semibold ${
+                        c.status === "active"
+                          ? "hover:border-error/30 hover:bg-error/5 hover:text-error"
+                          : "hover:border-pine/30 hover:bg-pine/5 hover:text-pine"
+                      }`}
+                    >
+                      {busy === c.id
+                        ? "Saving…"
+                        : c.status === "active"
+                          ? "Deactivate"
+                          : "Activate"}
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        ) : (
+          <div className="flex h-24 items-center justify-center text-sm text-warm-muted">
+            No courts yet. Add one above.
+          </div>
+        )}
+      </div>
     </div>
   );
 }

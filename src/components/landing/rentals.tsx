@@ -1,22 +1,26 @@
-import { ImagePlus } from "lucide-react";
 import { FALLBACK_RATES, peso, type DisplayRates } from "@/lib/pricing-display";
+import LandingImage from "./landing-image";
 
 export default function Rentals({ rates = FALLBACK_RATES }: { rates?: DisplayRates }) {
   const RENTALS = [
     {
       name: "Paddle Rental",
+      src: "/images/paddle.jpg",
+      alt: "Pickleball paddles and match balls ready on court",
       price: peso(rates.paddle),
       per: "per paddle",
-      placeholderTitle: "Paddle Image Placeholder",
+      label: "Paddle photo — drop /images/paddle.jpg here",
       blurb: "Sanitized composite paddles with cushioned grips.",
       metaLeft: "Available at checkout",
       metaRight: `${peso(rates.paddle)} × Hours × Paddles`,
     },
     {
       name: "Ball Rental",
+      src: "/images/Pickleball.jpg",
+      alt: "Match pickleball on the CK Grounds court",
       price: peso(rates.ball),
       per: "booking (flat fee)",
-      placeholderTitle: "Ball Set Image Placeholder",
+      label: "Ball photo — drop /images/Pickleball.jpg here",
       blurb: "Official match balls, ready on court.",
       metaLeft: "Unlimited match hours",
       metaRight: `Fixed ${peso(rates.ball)} / session`,
@@ -43,18 +47,13 @@ export default function Rentals({ rates = FALLBACK_RATES }: { rates?: DisplayRat
               key={r.name}
               className="rounded-2xl border border-line bg-oat/70 p-5 shadow-[0_8px_24px_rgba(66,48,45,0.06)]"
             >
-              <div
-                className="mb-5 grid aspect-[16/9] place-items-center rounded-xl border border-dashed border-line-warm bg-cream/70 text-center"
-                role="img"
-                aria-label={`${r.name} photo coming soon`}
-              >
-                <div className="flex flex-col items-center gap-1.5 p-4 text-warm-muted">
-                  <ImagePlus className="size-6" aria-hidden />
-                  <p className="text-xs font-bold">{r.placeholderTitle}</p>
-                  <p className="text-[11px] font-medium opacity-70">
-                    Upload or meet gear photo
-                  </p>
-                </div>
+              <div className="mb-5 overflow-hidden rounded-xl border border-line-warm">
+                <LandingImage
+                  src={r.src}
+                  alt={r.alt}
+                  label={r.label}
+                  className="aspect-[16/9]"
+                />
               </div>
               <h3 className="text-base font-extrabold text-ink">{r.name}</h3>
               <p className="mt-1 text-lg font-black text-flame">

@@ -8,15 +8,11 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  Clock,
   Info,
   Moon,
-  ReceiptText,
   Sun,
-  Timer,
 } from "lucide-react";
 import { toast } from "sonner";
-import { QRCodeSVG } from "qrcode.react";
 import { cn } from "@/lib/utils";
 import { LoadingAnimation } from "@/components/ui/loading-animation";
 import { MAX_SLOTS_PER_BOOKING } from "@/lib/booking/constants";
@@ -25,7 +21,6 @@ import {
   addDaysManilaStr,
   daysInManilaMonth,
   firstWeekdayManila,
-  formatCountdown,
   formatManilaLong,
   formatSlotRange,
   manilaTodayStr,
@@ -95,26 +90,6 @@ const CELL_LABEL: Record<CellState, string> = {
   past: "Past",
 };
 
-// Client estimate ONLY (ported from booking-flow): court-hours at live
-// Day/Night rates plus rentals. The server recalculates the authoritative
-// total at submit (recalculateTotal) and never trusts this number.
-function estimateTotal(
-  slotStarts: string[],
-  courtCount: number,
-  paddleQty: number,
-  paddleHours: number | null,
-  ball: boolean,
-  rates: DisplayRates,
-): number {
-  let total = 0;
-  for (const s of slotStarts) {
-    total += (timeBandFor(new Date(s)) === "evening" ? rates.evening : rates.morning) * courtCount;
-  }
-  if (paddleQty > 0) total += rates.paddle * paddleQty * (paddleHours ?? slotStarts.length);
-  if (ball) total += rates.ball;
-  return total;
-}
-
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }
@@ -122,35 +97,6 @@ function pad2(n: number): string {
 function partsOf(dateStr: string): { y: number; m: number } {
   const [y, m] = dateStr.split("-").map(Number);
   return { y: y as number, m: (m as number) - 1 };
-}
-
-function HoldCountdown({
-  deadlineMs,
-  onExpired,
-}: {
-  deadlineMs: number;
-  onExpired: () => void;
-}) {
-  const [remaining, setRemaining] = useState(() => deadlineMs - Date.now());
-  const firedRef = useRef(false);
-  useEffect(() => {
-    firedRef.current = false;
-    const t = setInterval(() => {
-      const r = deadlineMs - Date.now();
-      setRemaining(r);
-      if (r <= 0 && !firedRef.current) {
-        firedRef.current = true;
-        onExpired();
-      }
-    }, 500);
-    return () => clearInterval(t);
-  }, [deadlineMs, onExpired]);
-  const urgent = remaining < 120_000;
-  return (
-    <span className={urgent ? "font-bold text-error" : "font-bold"}>
-      Hold expires in {formatCountdown(remaining)}
-    </span>
-  );
 }
 
 const CARD = "bg-cream border border-line-warm/60 rounded-2xl p-6 sm:p-7 shadow-sm";
@@ -654,7 +600,7 @@ export default function Step1DateTime({
     );
   }
 
-  // ---- Summary (date-aware: empty state until a date is picked) ----
+  // ---- Date label (used in panel subtitle + sr-only status) ----
   const dateLabel = (() => {
     if (!selectedDate) return "Pick a date to see slots";
     const long = formatManilaLong(selectedDate);
@@ -663,48 +609,12 @@ export default function Step1DateTime({
     return long;
   })();
 
-  const rangeLabel =
-    selectedSorted.length === 0
-      ? "No time slot selected"
-      : `${formatSlotRange(selectedSorted[0] as string).split("–")[0]?.trim()} – ${formatSlotRange(selectedSorted[selectedSorted.length - 1] as string).split("–")[1]?.trim()}`;
-  const durationLabel =
-    selectedSorted.length === 0
-      ? "Select at least 1 hour"
-      : `${selectedSorted.length} Hour${selectedSorted.length === 1 ? "" : "s"} Consecutive`;
-
-  const { dayCount, nightCount, total } = useMemo(() => {
-    let d = 0;
-    let n = 0;
-    for (const iso of selectedSorted) {
-      if (timeBandFor(new Date(iso)) === "evening") n++;
-      else d++;
-    }
-    const perCourt = d * rates.morning + n * rates.evening;
-    return { dayCount: d, nightCount: n, total: perCourt * Math.max(courtIds.length, 1) };
-  }, [selectedSorted, rates, courtIds.length]);
-
-  const breakdown =
-    selectedSorted.length === 0
-      ? "Time Rate (0 hrs)"
-      : [
-          dayCount > 0 && nightCount > 0
-            ? `${dayCount}h Day (${peso(rates.morning)}) + ${nightCount}h Night (${peso(rates.evening)})`
-            : dayCount > 0
-              ? `Daytime (${dayCount} hr${dayCount === 1 ? "" : "s"} @ ${peso(rates.morning)}/hr)`
-              : `Night Peak (${nightCount} hr${nightCount === 1 ? "" : "s"} @ ${peso(rates.evening)}/hr)`,
-          courtIds.length > 1 ? `× ${courtIds.length} courts` : null,
-        ]
-          .filter(Boolean)
-          .join(" ");
-
   const ctaDisabled = selectedSorted.length === 0 || holding || !!hold || courtIds.length === 0;
 
   return (
     <>
-    <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-12 lg:gap-8">
-      {/* Left: date + (revealed) slots. Full-width row until a date is picked,
-          clean 8-col once the summary mounts. */}
-      <div className={cn("flex min-w-0 flex-col gap-6", selectedDate ? "lg:col-span-8" : "lg:col-span-12")}>
+    <div>
+      <div className="flex min-w-0 flex-col gap-6">
         <section
           aria-labelledby="wizard-heading"
           className={cn(CARD, !selectedDate && "mx-auto w-full max-w-3xl")}
@@ -1085,7 +995,7 @@ export default function Step1DateTime({
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-1.5 text-xs font-bold text-ink">
                     <Sun className="size-[17px] text-flame" aria-hidden />
-                    <span>Day / Afternoon (06:00 AM – 06:00 PM)</span>
+                    <span>Morning (06:00 AM – 06:00 PM)</span>
                     <span className="font-extrabold text-flame">• {peso(rates.morning)}/hr</span>
                   </div>
                   <span className="text-[11px] font-semibold text-warm-muted">
@@ -1101,8 +1011,8 @@ export default function Step1DateTime({
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-1.5 text-xs font-bold text-ink">
                     <Moon className="size-[17px] text-pine" aria-hidden />
-                    <span>Evening &amp; Night (06:00 PM – 03:00 AM)</span>
-                    <span className="font-extrabold text-flame">• {peso(rates.evening)}/hr (Peak)</span>
+                    <span>Evening (06:00 PM – 03:00 AM)</span>
+                    <span className="font-extrabold text-flame">• {peso(rates.evening)}/hr</span>
                   </div>
                   <span className="text-[11px] font-semibold text-warm-muted">
                     {nightSlots.length} Night Slots
@@ -1199,134 +1109,7 @@ export default function Step1DateTime({
           </div>
         </section>
       </div>
-
-      {/* Right: full summary aside — desktop only, revealed after date pick */}
-      {selectedDate ? (
-      <div className="hidden min-w-0 lg:col-span-4 lg:block lg:sticky lg:top-24 lg:self-start">
-        <aside className="animate-rise flex flex-col gap-5 rounded-2xl border border-line-warm/70 bg-cream p-6 shadow-lg motion-reduce:animate-none sm:p-7" aria-label="Booking summary">
-          <div className="flex items-center justify-between border-b border-line-warm/40 pb-3">
-            <h2 className="text-xl font-extrabold tracking-tight text-ink">Booking Summary</h2>
-            <div className="grid size-8 place-items-center rounded-full bg-live text-pine">
-              <ReceiptText className="size-[18px]" aria-hidden />
-            </div>
-          </div>
-
-          {hold ? (
-            <p role="timer" aria-live="polite" className="rounded-xl border border-line-warm/60 bg-white p-3.5 text-sm text-ink">
-              <HoldCountdown deadlineMs={hold.deadlineMs} onExpired={handleHoldExpired} /> — court
-              selection is next. We never submit automatically.
-            </p>
-          ) : null}
-
-          <div className="flex flex-col gap-3">
-            <div className="flex items-start gap-3 rounded-xl border border-line-warm/60 bg-white p-3.5 shadow-xs">
-              <div className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-flame-light text-flame">
-                <Calendar className="size-[18px]" aria-hidden />
-              </div>
-              <div className="min-w-0 flex-1">
-                <span className="block text-[11px] font-semibold text-warm-muted">Selected Date</span>
-                <span className="block truncate text-sm font-bold text-ink">{dateLabel}</span>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-3 rounded-xl border border-line-warm/60 bg-white p-3.5 shadow-xs">
-              <div className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-flame-light text-flame">
-                <Clock className="size-[18px]" aria-hidden />
-              </div>
-              <div className="min-w-0 flex-1">
-                <span className="block text-[11px] font-semibold text-warm-muted">Selected Time</span>
-                <span className="block truncate text-sm font-bold text-ink">{rangeLabel}</span>
-                <span className="block text-[11px] font-medium text-warm-muted">{durationLabel}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-baseline justify-between gap-3 rounded-xl border border-line-warm/70 bg-oat/60 p-4">
-            <div className="min-w-0">
-              <span className="block text-xs font-semibold text-warm-muted">Estimated Total</span>
-              <span className="text-[11px] font-semibold text-live-dot">{breakdown}</span>
-            </div>
-            <div className="shrink-0 text-right">
-              <span className="text-2xl font-extrabold text-flame">{peso(total)}</span>
-            </div>
-          </div>
-
-          <p className="flex items-center justify-center gap-1.5 text-center text-[11px] text-warm-muted">
-            <Timer className="size-[15px] text-flame" aria-hidden />
-            <span>10-minute hold applies upon proceeding</span>
-          </p>
-
-          <div className="flex flex-col gap-2 pt-1">
-            <button
-              type="button"
-              onClick={handleContinueCta}
-              disabled={ctaDisabled}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-flame px-4 py-3.5 text-center text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
-            >
-                {holding ? (
-                  <><LoadingAnimation size="compact" label="Holding selected court times" /> <span>Holding…</span></>
-                ) : (
-                  <><span>{hold ? "Continue to Details" : "Hold & Continue"}</span><ArrowRight className="size-[18px]" aria-hidden /></>
-                )}
-            </button>
-            {hold ? (
-              <button
-                type="button"
-                onClick={startOver}
-                className="inline-flex min-h-[44px] w-full items-center justify-center py-2 text-center text-xs font-semibold text-warm-muted transition-colors hover:text-ink"
-              >
-                Release hold &amp; start over
-              </button>
-            ) : (
-              <a
-                href="/"
-                className="inline-flex min-h-[44px] w-full items-center justify-center py-2 text-center text-xs font-semibold text-warm-muted transition-colors hover:text-ink"
-              >
-                Cancel &amp; Return to Home
-              </a>
-            )}
-          </div>
-        </aside>
-      </div>
-      ) : null}
     </div>
-
-    {/* Mobile sticky bottom bar: total + Continue once time is selected.
-        The spacer reserves room so the bar never covers footer content. */}
-    {selectedDate && selectedSorted.length > 0 ? (
-      <>
-        <div className="fixed inset-x-0 bottom-0 z-40 lg:hidden">
-          <div className="animate-rise border-t border-line-warm/60 bg-cream/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(66,48,45,0.12)] backdrop-blur-md motion-reduce:animate-none">
-            {hold ? (
-              <p role="timer" aria-live="polite" className="mb-2 text-center text-xs text-ink">
-                <HoldCountdown deadlineMs={hold.deadlineMs} onExpired={handleHoldExpired} />
-              </p>
-            ) : null}
-            <div className="flex items-center gap-3">
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-bold text-ink">{rangeLabel}</p>
-                <p className="mt-0.5 text-xs text-warm-muted">
-                  {durationLabel} · <span className="font-extrabold text-flame">{peso(total)}</span>
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleContinueCta}
-                disabled={ctaDisabled}
-                className="inline-flex min-h-[44px] shrink-0 items-center justify-center gap-1.5 rounded-xl bg-flame px-5 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
-              >
-                {holding ? (
-                  <><LoadingAnimation size="compact" label="Holding selected court times" /> Holding…</>
-                ) : (
-                  <>{hold ? "Continue" : "Hold"}<ArrowRight className="size-4" aria-hidden /></>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-        <div className="h-24 lg:hidden" aria-hidden />
-      </>
-    ) : null}
     </>
   );
 }

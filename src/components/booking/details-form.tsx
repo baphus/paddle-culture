@@ -11,11 +11,9 @@ import {
   Dumbbell,
   Mail,
   Phone,
-  Sparkles,
   User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { peso } from "@/lib/pricing-display";
 import { LoadingAnimation } from "@/components/ui/loading-animation";
 
 export interface DetailsValues {
@@ -23,37 +21,22 @@ export interface DetailsValues {
   email: string;
   phone: string;
   paddleQty: number;
-  paddleHours: number | null;
+  paddleHours: number | null; // always null — duration equals booked court hours
   ball: boolean;
 }
 
-function makeDetailsSchema(maxHours: number) {
-  return z
-    .object({
-      fullName: z.string().trim().min(1, "Enter your full name.").max(100),
-      email: z.string().trim().email("Enter a valid email address.").max(254),
-      phone: z.string().trim().min(1, "Enter a contact number.").max(30),
-      paddleQty: z.coerce
-        .number()
-        .int("Paddle count must be whole.")
-        .min(0, "Paddle count can't be negative.")
-        .max(50, "Max 50 paddles per booking."),
-      paddleHours: z.coerce
-        .number()
-        .min(0, "Paddle hours can't be negative.")
-        .max(12, "Paddle hours can't exceed 12.")
-        .nullish(),
-      ball: z.boolean(),
-    })
-    .superRefine((v, ctx) => {
-      if (v.paddleQty > 0 && v.paddleHours != null && v.paddleHours > maxHours) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["paddleHours"],
-          message: `Paddle hours can't exceed your booked hours (${maxHours}).`,
-        });
-      }
-    });
+function makeDetailsSchema(_maxHours: number) {
+  return z.object({
+    fullName: z.string().trim().min(1, "Enter your full name.").max(100),
+    email: z.string().trim().email("Enter a valid email address.").max(254),
+    phone: z.string().trim().min(1, "Enter a contact number.").max(30),
+    paddleQty: z.coerce
+      .number()
+      .int("Paddle count must be whole.")
+      .min(0, "Paddle count can't be negative.")
+      .max(50, "Max 50 paddles per booking."),
+    ball: z.boolean(),
+  });
 }
 
 export default function DetailsForm({
@@ -78,15 +61,12 @@ export default function DetailsForm({
       email: defaultValues?.email ?? "",
       phone: defaultValues?.phone ?? "",
       paddleQty: defaultValues?.paddleQty ?? 0,
-      paddleHours: defaultValues?.paddleHours ?? null,
       ball: defaultValues?.ball ?? false,
     },
   });
 
   const paddleQty = form.watch("paddleQty") || 0;
-  const paddleHours = form.watch("paddleHours") ?? maxHours;
   const ball = form.watch("ball");
-  const showHours = paddleQty > 0;
 
   return (
     <form
@@ -96,7 +76,7 @@ export default function DetailsForm({
           email: v.email,
           phone: v.phone,
           paddleQty: v.paddleQty,
-          paddleHours: showHours ? (v.paddleHours ?? maxHours) : null,
+          paddleHours: null, // duration equals booked court hours; set server-side
           ball: v.ball,
         }),
       )}
@@ -110,7 +90,7 @@ export default function DetailsForm({
               Player Information
             </h2>
             <p className="mt-1 text-xs text-warm-muted sm:text-sm">
-              Your booking confirmation and tracking code will be sent to this email.
+              Your booking confirmation and QR pass will be sent to this email.
             </p>
           </div>
           <div className="hidden size-10 items-center justify-center rounded-2xl bg-oat text-pine sm:flex">
@@ -200,7 +180,7 @@ export default function DetailsForm({
               </p>
             ) : (
               <p className="text-[11px] text-warm-muted">
-                We&apos;ll send your instant booking confirmation &amp; tracking code to this email.
+                We&apos;ll send your instant booking confirmation &amp; QR pass to this email.
               </p>
             )}
           </div>
@@ -258,34 +238,7 @@ export default function DetailsForm({
               </div>
             </div>
 
-            {/* Paddle hours selector (conditional) */}
-            {showHours && (
-              <div className="mt-4 border-t border-line-warm/40 pt-4">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <label htmlFor="paddleHours" className="text-xs font-semibold text-pine">
-                    Duration to rent {paddleQty} paddle{paddleQty === 1 ? "" : "s"}
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <select
-                      id="paddleHours"
-                      {...form.register("paddleHours", { valueAsNumber: true })}
-                      className="h-10 rounded-xl border border-line-warm bg-white px-3 text-xs font-bold text-ink focus:border-flame focus:outline-none"
-                    >
-                      {Array.from({ length: maxHours }, (_, i) => i + 1).map((h) => (
-                        <option key={h} value={h}>
-                          {h} hour{h === 1 ? "" : "s"} ({peso(paddleQty * h * 25)})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                {form.formState.errors.paddleHours && (
-                  <p role="alert" className="mt-2 text-xs font-semibold text-error">
-                    {form.formState.errors.paddleHours.message}
-                  </p>
-                )}
-              </div>
-            )}
+
           </div>
 
           {/* Ball Rental Card */}

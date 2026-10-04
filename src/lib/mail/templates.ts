@@ -61,7 +61,7 @@ function formatSlotStart(iso: string): string {
   return `${manilaFmt.format(d)} (Manila)`;
 }
 
-function trackingUrl(token: string): string | null {
+function bookingUrl(token: string): string | null {
   const base = (process.env.APP_URL ?? "").replace(/\/$/, "");
   if (!base || !token) return null;
   return `${base}/track/${token}`;
@@ -90,7 +90,7 @@ export function renderOutboxEmail(
   const trackingToken = str(payload.trackingToken);
   const fullName = str(payload.fullName, "there");
   const total = str(payload.total);
-  const url = trackingUrl(trackingToken);
+  const url = bookingUrl(trackingToken);
 
   switch (template) {
     case OUTBOX_TEMPLATE_CUSTOMER_SUBMITTED: {
@@ -100,7 +100,7 @@ export function renderOutboxEmail(
         ...slotsOf(payload).map((s) => `Slot: ${s}`),
         ...linesOf(payload),
         ...(total ? [`Total: ₱${total}`] : []),
-        ...(url ? [`Track your booking: ${url}`] : []),
+        ...(url ? [`View your booking & QR pass: ${url}`] : []),
         "Please keep your proof of payment until your booking is approved.",
       ];
       return {
@@ -119,7 +119,7 @@ export function renderOutboxEmail(
         ...slotsOf(payload).map((s) => `Slot: ${s}`),
         ...linesOf(payload),
         ...(total ? [`Total: ₱${total}`] : []),
-        ...(trackingToken ? [`Tracking token: ${trackingToken}`] : []),
+        ...(url ? [`Booking page: ${url}`] : []),
       ];
       return {
         subject: `CK Grounds — new booking from ${fullName || "customer"}`,
@@ -131,10 +131,10 @@ export function renderOutboxEmail(
     case OUTBOX_TEMPLATE_CUSTOMER_APPROVED: {
       const lines = [
         `Hi ${fullName},`,
-        "Good news — your booking is APPROVED. Show the QR / tracking link below at the venue.",
+        "Good news — your booking is APPROVED. Open the link below to download your QR pass and show it at the venue for check-in.",
         ...slotsOf(payload).map((s) => `Slot: ${s}`),
         ...(total ? [`Total paid: ₱${total}`] : []),
-        ...(url ? [`Your booking pass: ${url}`] : []),
+        ...(url ? [`Your QR pass: ${url}`] : []),
       ];
       return {
         subject: "CK Grounds — booking approved",
@@ -149,7 +149,7 @@ export function renderOutboxEmail(
         `Hi ${fullName},`,
         "Your booking was REJECTED and your slots have been released.",
         `Reason: ${reason}`,
-        ...(url ? [`Details: ${url}`] : []),
+        ...(url ? [`Booking details: ${url}`] : []),
         "Reply to this email if you believe this is a mistake.",
       ];
       return {

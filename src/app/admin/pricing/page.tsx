@@ -1,6 +1,6 @@
-import Link from "next/link";
 import { getDb } from "@/db/client";
 import { listPricingRules } from "@/lib/admin/config";
+import PageHeader from "@/components/admin/page-header";
 import PricingManager from "./pricing-manager";
 
 export const dynamic = "force-dynamic";
@@ -11,26 +11,22 @@ export default async function PricingPage() {
     db = getDb();
   } catch {
     return (
-      <main>
-        <h1>Pricing</h1>
-        <p>Database is not configured.</p>
-      </main>
+      <div className="space-y-6">
+        <PageHeader title="Pricing" />
+        <p className="text-sm text-warm-muted">Database is not configured.</p>
+      </div>
     );
   }
+
   const rules = await listPricingRules(db);
+
   return (
-    <main>
-      <h1>Pricing rules (values only)</h1>
-      <p>
-        <Link href="/admin">← Admin home</Link>
-      </p>
-      <p>
-        Only the <strong>amount</strong> of each row is editable — the
-        court / day-type / time-band / item-type vocabulary is fixed by the
-        pricing engine (evening 18:00–03:00, morning 06:00–18:00, all days).
-        Every change is audit-logged.
-      </p>
+    <div className="space-y-6">
+      <PageHeader
+        title="Pricing"
+        description="Edit rates only — court / day-type / time-band vocabulary is fixed. Every change is audit-logged."
+      />
       <PricingManager initial={rules} />
-    </main>
+    </div>
   );
 }

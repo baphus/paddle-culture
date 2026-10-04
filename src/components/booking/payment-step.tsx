@@ -16,8 +16,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PAYMENT_METHODS, PAYMENT_NOTE, type PaymentMethod } from "@/lib/payment-methods";
-import { formatSlotRange } from "@/lib/courts";
-import { peso } from "@/lib/pricing-display";
 import { PROOF_CLIENT_ACCEPT, precheckProofFile } from "@/lib/proof-client";
 import { cn } from "@/lib/utils";
 import { LoadingAnimation } from "@/components/ui/loading-animation";
@@ -67,7 +65,6 @@ export default function PaymentStep({
   holdTokens,
   summary,
   details,
-  estimate,
   busy,
   setBusy,
   onBack,
@@ -77,7 +74,6 @@ export default function PaymentStep({
   holdTokens: string[];
   summary: BookingSummary;
   details: DetailsValues;
-  estimate: number;
   busy: boolean;
   setBusy: (b: boolean) => void;
   onBack: () => void;
@@ -213,22 +209,6 @@ export default function PaymentStep({
 
   return (
     <div className="space-y-6">
-      {/* Total Due Banner */}
-      <div className="flex flex-col gap-3 rounded-3xl border border-line-warm/70 bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-7">
-        <div>
-          <span className="text-xs font-bold tracking-wider text-flame uppercase">
-            Total Amount Due
-          </span>
-          <p className="mt-0.5 text-xs text-warm-muted">
-            Send this exact amount to complete your reservation.
-          </p>
-        </div>
-        <div className="flex items-baseline gap-2">
-          <span className="text-3xl font-black text-flame">{peso(estimate)}</span>
-          <span className="text-xs font-semibold text-warm-muted">PHP</span>
-        </div>
-      </div>
-
       {/* Payment Instructions Card */}
       <div className="rounded-3xl border border-line-warm/70 bg-white p-6 shadow-sm sm:p-8">
         <div className="mb-6 flex items-center justify-between border-b border-line-warm/40 pb-4">

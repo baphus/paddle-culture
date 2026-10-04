@@ -29,7 +29,7 @@ export default async function HowItWorksPage() {
   const faqs = [
     {
       q: "Do I need an account to book?",
-      a: "No. Pick your hours, hold them for 10 minutes, add your name + contact, pay by QR and upload proof. Your tracking code + QR arrive by email instantly.",
+      a: "No. Pick your hours, hold them for 10 minutes, add your name + contact, pay by QR and upload proof. Your QR pass arrives by email instantly.",
     },
     {
       q: "How do holds and payment work?",
@@ -146,10 +146,10 @@ export default async function HowItWorksPage() {
                   Step 4
                 </span>
               </div>
-              <h2 className="mt-5 text-xl font-bold text-pine">Receive Tracking QR</h2>
+              <h2 className="mt-5 text-xl font-bold text-pine">Receive Your QR Pass</h2>
               <p className="mt-2 flex-1 text-sm leading-relaxed text-warm-muted">
-                Your tracking code + QR land instantly — on screen and by email. Use it to check
-                your booking status anytime.
+                Your QR pass lands instantly — on screen and by email. Scan it at the front desk
+                for fast check-in on your game day.
               </p>
               <p className="mt-5 flex items-center gap-1.5 border-t border-line pt-4 text-[13px] font-bold text-pine">
                 <Mail className="size-4 shrink-0 text-flame" aria-hidden />

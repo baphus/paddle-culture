@@ -272,3 +272,72 @@ export async function revenueByDay(
     totalCents,
   };
 }
+
+export interface RevenueMonth {
+  month: string; // "YYYY-MM"
+  bookings: number;
+  revenueCents: number;
+}
+
+export interface RevenueMonthResult {
+  months: RevenueMonth[];
+  totalBookings: number;
+  totalCents: number;
+}
+
+/**
+ * Revenue from Approved bookings only, broken down by calendar month
+ * (Manila slot date). No date range — always returns all months that
+ * have at least one approved booking (newest first).
+ */
+export async function revenueByMonth(db: Db): Promise<RevenueMonthResult> {
+  const approvedRows = await db
+    .select({ id: bookings.id, total: bookings.total })
+    .from(bookings)
+    .where(eq(bookings.status, "Approved"));
+
+  if (approvedRows.length === 0) {
+    return { months: [], totalBookings: 0, totalCents: 0 };
+  }
+
+  const approved = new Map(approvedRows.map((b) => [b.id, b.total]));
+  const allSlots = await db
+    .select({ bookingId: bookingSlots.bookingId, slotStart: bookingSlots.slotStart })
+    .from(bookingSlots)
+    .where(inArray(bookingSlots.bookingId, [...approved.keys()]));
+
+  // Earliest slot per booking
+  const minByBooking = new Map<string, number>();
+  for (const s of allSlots) {
+    const t = s.slotStart.getTime();
+    const prev = minByBooking.get(s.bookingId);
+    if (prev === undefined || t < prev) minByBooking.set(s.bookingId, t);
+  }
+
+  const monthMap = new Map<string, { bookings: number; revenueCents: number }>();
+  let totalBookings = 0;
+  let totalCents = 0;
+
+  for (const [id, total] of approved) {
+    const min = minByBooking.get(id);
+    if (min === undefined) continue;
+    const day = manilaDateStr(new Date(min)); // "YYYY-MM-DD"
+    const monthKey = day.slice(0, 7); // "YYYY-MM"
+    const cents = Math.round(Number(total) * 100);
+    const entry = monthMap.get(monthKey);
+    if (entry) {
+      entry.bookings += 1;
+      entry.revenueCents += cents;
+    } else {
+      monthMap.set(monthKey, { bookings: 1, revenueCents: cents });
+    }
+    totalBookings += 1;
+    totalCents += cents;
+  }
+
+  const months: RevenueMonth[] = [...monthMap.entries()]
+    .map(([month, v]) => ({ month, ...v }))
+    .sort((a, b) => (a.month < b.month ? 1 : -1)); // newest first
+
+  return { months, totalBookings, totalCents };
+}

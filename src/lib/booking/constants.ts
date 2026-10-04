@@ -29,7 +29,7 @@ export const PROOF_READ_TTL_SECONDS = 300;
 // admin-decision lane, not here).
 export const OUTBOX_TEMPLATE_CUSTOMER_SUBMITTED = "booking_customer_submitted";
 export const OUTBOX_TEMPLATE_OWNER_ALERT = "booking_owner_alert";
-export const OWNER_ALERT_EMAIL = "paddleculture0@gmail.com";
+export const OWNER_ALERT_EMAIL = "ckgrounds1@gmail.com";
 
 // Booking slot states considered "live" for overlap + availability.
 export const LIVE_SLOT_STATES = ["held", "pending", "approved"] as const;

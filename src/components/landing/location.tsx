@@ -1,8 +1,10 @@
 import { CarFront, Clock, ExternalLink, MapPin } from "lucide-react";
 import { FALLBACK_RATES, type DisplayRates } from "@/lib/pricing-display";
 
-const MAP_EMBED = "https://www.google.com/maps?q=Tabuelan,+Cebu,+Philippines&output=embed";
-const MAP_LINK = "https://www.google.com/maps/search/?api=1&query=Tabuelan+Cebu+Philippines";
+const MAP_EMBED =
+  "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d491.4386556!2d123.8695702!3d10.8232574!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x33a85725c976d467%3A0x3ec0c36bd48bb35!2sRVF9%2B6XW%2C+Poblacion%2C+Tabuelan%2C+Cebu!5e0!3m2!1sen!2sph!4v1700000000000!5m2!1sen!2sph";
+const MAP_LINK = "https://maps.app.goo.gl/ceUS9UK4TzD5FTK37";
+const FB_LINK = "https://www.facebook.com/profile.php?id=61595287250420";
 
 export default function Location({ rates = FALLBACK_RATES }: { rates?: DisplayRates }) {
   void rates;
@@ -64,14 +66,32 @@ export default function Location({ rates = FALLBACK_RATES }: { rates?: DisplayRa
               </li>
             </ul>
 
-            <a
-              href={MAP_LINK}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-flame px-5 py-3.5 text-sm font-bold text-white transition-all hover:-translate-y-0.5 hover:bg-flame-hover"
-            >
-              Open in Google Maps <ExternalLink className="size-4" aria-hidden />
-            </a>
+            <div className="mt-5 flex flex-col gap-2.5">
+              <a
+                href={MAP_LINK}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex w-full items-center justify-center gap-2 rounded-full bg-flame px-5 py-3.5 text-sm font-bold text-white transition-all hover:-translate-y-0.5 hover:bg-flame-hover"
+              >
+                Open in Google Maps <ExternalLink className="size-4" aria-hidden />
+              </a>
+              <a
+                href={FB_LINK}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex w-full items-center justify-center gap-2 rounded-full border border-line bg-cream px-5 py-3.5 text-sm font-bold text-ink transition-all hover:-translate-y-0.5 hover:bg-oat"
+              >
+                <svg
+                  aria-hidden="true"
+                  className="size-4 shrink-0"
+                  viewBox="0 0 24 24"
+                  fill="#1877F2"
+                >
+                  <path d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047V9.41c0-3.025 1.792-4.697 4.533-4.697 1.312 0 2.686.236 2.686.236v2.97h-1.513c-1.491 0-1.956.93-1.956 1.883v2.26h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.1 24 12.073z" />
+                </svg>
+                Follow us on Facebook
+              </a>
+            </div>
           </div>
 
           <div className="relative overflow-hidden rounded-3xl border border-line bg-[repeating-linear-gradient(-45deg,#e9e4d8_0_8px,#f4efe2_8px_16px)] shadow-[0_20px_50px_rgba(66,48,45,0.12)]">

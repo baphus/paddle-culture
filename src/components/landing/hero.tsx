@@ -8,16 +8,6 @@ export default function Hero({ rates = FALLBACK_RATES }: { rates?: DisplayRates 
     <section id="top" className="scroll-mt-20 pt-16" aria-labelledby="hero-heading">
       <div className="mx-auto grid w-full max-w-6xl items-center gap-10 px-4 pt-10 pb-14 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:pt-14 lg:pb-16">
         <div className="space-y-6">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-parchment px-3 py-1.5 text-[11px] font-bold text-ink">
-              <MapPin className="size-3.5 text-flame" aria-hidden />
-              Poblacion, Tabuelan, Cebu
-            </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-parchment px-3 py-1.5 text-[11px] font-bold text-ink">
-              <MapPin className="size-3.5 text-flame" aria-hidden />
-              Cebu, Philippines
-            </span>
-          </div>
 
           <h1
             id="hero-heading"
@@ -61,9 +51,6 @@ export default function Hero({ rates = FALLBACK_RATES }: { rates?: DisplayRates 
             className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/35 to-transparent px-6 pt-16 pb-5"
             aria-hidden
           >
-            <p className="text-base font-extrabold text-white sm:text-lg">
-              World-class cushioned acrylic courts
-            </p>
             <p className="mt-0.5 text-xs font-semibold text-white/80 sm:text-sm">
               Open daily 6:00 AM – 3:00 AM
             </p>

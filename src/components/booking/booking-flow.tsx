@@ -18,6 +18,11 @@ import ConfirmationStep from "./confirmation-step";
 import DetailsForm, { type DetailsValues } from "./details-form";
 import PaymentStep from "./payment-step";
 import Step1DateTime, { type HoldState } from "./step1-date-time";
+import {
+  BookingSummaryDesktop,
+  BookingSummaryMobile,
+  type SummaryData,
+} from "./booking-summary-panel";
 
 type Step = "select" | "details" | "payment" | "done";
 
@@ -197,8 +202,6 @@ export default function BookingFlow({
 
   const releaseHold = useCallback((holdToRelease: HoldState | null) => {
     if (!holdToRelease) return;
-    // Best-effort release: the server still expires holds on its own clock if
-    // the request is interrupted, but navigating back should free them now.
     void fetch("/api/holds", {
       method: "DELETE",
       headers: { "content-type": "application/json" },
@@ -229,82 +232,80 @@ export default function BookingFlow({
     [courtIds, courts],
   );
 
-  // Live estimate for payment step
-  const estimate = useMemo(() => {
-    let courtTotal = 0;
-    for (const iso of selectedSlots) {
-      const d = new Date(iso);
-      const isEvening = d.getUTCHours() >= 10 || d.getUTCHours() < 19; // UTC for Manila 18:00+
-      const rate = isEvening ? rates.evening : rates.morning;
-      courtTotal += rate * courtIds.length;
-    }
-    let gearTotal = 0;
-    if (details) {
-      if (details.paddleQty > 0) {
-        const hours = details.paddleHours ?? selectedSlots.length;
-        gearTotal += details.paddleQty * hours * rates.paddle;
-      }
-      if (details.ball) {
-        gearTotal += rates.ball;
-      }
-    }
-    return courtTotal + gearTotal;
-  }, [selectedSlots, courtIds.length, rates, details]);
-
   const currentStepIndex = STEPS.findIndex((s) => s.id === step);
+
+  // Summary data fed to the floating panel (steps 1–3 only)
+  const summaryData: SummaryData = useMemo(
+    () => ({
+      selectedDate,
+      selectedSlots,
+      courtNames,
+      rates,
+      details,
+      isHeld: !!hold,
+    }),
+    [selectedDate, selectedSlots, courtNames, rates, details, hold],
+  );
+
+  // Whether the floating summary panel should be shown
+  const showSummaryPanel = step !== "done";
 
   return (
     <div className="space-y-6">
       {/* Stepper Navigation Indicator */}
-      <nav aria-label="Booking flow progress" className="rounded-2xl border border-line-warm/60 bg-white p-3 shadow-xs">
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+      <nav aria-label="Booking flow progress" className="px-4 py-5">
+        <div className="flex items-start justify-between">
           {STEPS.map((s, idx) => {
             const isCurrent = s.id === step;
             const isCompleted = idx < currentStepIndex || step === "done";
             const StepIcon = s.icon;
+            const isLast = idx === STEPS.length - 1;
 
             return (
-              <div
-                key={s.id}
-                className={cn(
-                  "flex items-center gap-2.5 rounded-xl px-3 py-2 transition-all",
-                  isCurrent
-                    ? "bg-flame text-white shadow-xs"
-                    : isCompleted
-                      ? "bg-oat/50 text-pine"
-                      : "text-warm-muted opacity-60",
+              <div key={s.id} className="relative flex flex-1 flex-col items-center">
+                {/* Connector line (right side, skip on last item) */}
+                {!isLast && (
+                  <div
+                    className={cn(
+                      "absolute top-5 left-1/2 h-0.5 w-full -translate-y-1/2 transition-colors",
+                      isCompleted ? "bg-pine" : "bg-line-warm/60",
+                    )}
+                    aria-hidden="true"
+                  />
                 )}
-              >
+
+                {/* Circle */}
                 <div
+                  aria-current={isCurrent ? "step" : undefined}
                   className={cn(
-                    "flex size-7 shrink-0 items-center justify-center rounded-lg text-xs font-black",
+                    "relative z-10 flex size-10 items-center justify-center rounded-full border-2 transition-all",
                     isCurrent
-                      ? "bg-white/20 text-white"
+                      ? "border-flame bg-flame text-white shadow-md"
                       : isCompleted
-                        ? "bg-pine text-white"
-                        : "bg-cream text-warm-muted",
+                        ? "border-pine bg-pine text-white"
+                        : "border-line-warm/60 bg-cream text-warm-muted",
                   )}
                 >
-                  {isCompleted && !isCurrent ? <Check className="size-4" /> : s.number}
+                  {isCompleted && !isCurrent ? (
+                    <Check className="size-4" strokeWidth={3} />
+                  ) : (
+                    <StepIcon className="size-4" />
+                  )}
                 </div>
-                <div className="min-w-0">
-                  <span
-                    className={cn(
-                      "block truncate text-xs font-extrabold leading-tight",
-                      isCurrent ? "text-white" : isCompleted ? "text-pine" : "text-ink",
-                    )}
-                  >
-                    {s.label}
-                  </span>
-                  <span
-                    className={cn(
-                      "hidden truncate text-[10px] leading-tight sm:block",
-                      isCurrent ? "text-white/80" : "text-warm-muted",
-                    )}
-                  >
-                    {s.description}
-                  </span>
-                </div>
+
+                {/* Label */}
+                <span
+                  className={cn(
+                    "mt-2 text-center text-[11px] font-bold leading-tight",
+                    isCurrent
+                      ? "text-flame"
+                      : isCompleted
+                        ? "text-pine"
+                        : "text-warm-muted",
+                  )}
+                >
+                  {s.label}
+                </span>
               </div>
             );
           })}
@@ -316,68 +317,83 @@ export default function BookingFlow({
         <HoldTimerBar deadlineMs={hold.deadlineMs} onExpired={handleHoldExpired} />
       )}
 
-      {/* Step 1: Select Date, Time & Court */}
-      {step === "select" && (
-        <Step1DateTime
-          initialCourts={courts}
-          initialRates={rates}
-          existingHold={hold}
-          initialSelectedDate={selectedDate}
-          initialCourtIds={courtIds}
-          initialSelectedSlots={selectedSlots}
-          onHoldSuccess={handleHoldSuccess}
-          onHoldExpired={handleHoldExpired}
-          onCancel={startOver}
-        />
-      )}
+      {/* Two-column layout for steps 1–3: main content + sticky summary */}
+      {showSummaryPanel ? (
+        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-12 lg:gap-8">
+          {/* Main content — 8 cols on desktop */}
+          <div className="lg:col-span-8">
+            {/* Step 1: Select Date, Time & Court */}
+            {step === "select" && (
+              <Step1DateTime
+                initialCourts={courts}
+                initialRates={rates}
+                existingHold={hold}
+                initialSelectedDate={selectedDate}
+                initialCourtIds={courtIds}
+                initialSelectedSlots={selectedSlots}
+                onHoldSuccess={handleHoldSuccess}
+                onHoldExpired={handleHoldExpired}
+                onCancel={startOver}
+              />
+            )}
 
-      {/* Step 2: Player Details & Equipment Rentals */}
-      {step === "details" && hold && (
-        <div className="animate-rise">
-          <DetailsForm
-            maxHours={selectedSlots.length}
-            defaultValues={details ?? undefined}
-            busy={false}
-            onBack={returnToTimeSlots}
-            onSubmit={(vals) => {
-              setDetails(vals);
-              setStep("payment");
-              window.scrollTo({ top: 0, behavior: "smooth" });
-            }}
-          />
+            {/* Step 2: Player Details & Equipment Rentals */}
+            {step === "details" && hold && (
+              <div className="animate-rise">
+                <DetailsForm
+                  maxHours={selectedSlots.length}
+                  defaultValues={details ?? undefined}
+                  busy={false}
+                  onBack={returnToTimeSlots}
+                  onSubmit={(vals) => {
+                    setDetails(vals);
+                    setStep("payment");
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                />
+              </div>
+            )}
+
+            {/* Step 3: Payment & Proof Upload */}
+            {step === "payment" && hold && details && idempotencyKey && (
+              <div className="animate-rise">
+                <PaymentStep
+                  holdTokens={hold.tokens}
+                  summary={{
+                    courtNames,
+                    slotStarts: selectedSlots,
+                    idempotencyKey,
+                  }}
+                  details={details}
+                  busy={submitting}
+                  setBusy={setSubmitting}
+                  onBack={() => {
+                    setStep("details");
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                  onHoldExpired={handleHoldExpired}
+                  onSuccess={(res) => {
+                    setResult(res);
+                    setHold(null);
+                    setStep("done");
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Sticky summary panel — 4 cols on desktop, hidden on mobile */}
+          <div className="hidden lg:col-span-4 lg:block lg:sticky lg:top-24 lg:self-start">
+            <BookingSummaryDesktop data={summaryData} />
+          </div>
         </div>
-      )}
+      ) : null}
 
-      {/* Step 3: Payment & Proof Upload */}
-      {step === "payment" && hold && details && idempotencyKey && (
-        <div className="animate-rise">
-          <PaymentStep
-            holdTokens={hold.tokens}
-            summary={{
-              courtNames,
-              slotStarts: selectedSlots,
-              idempotencyKey,
-            }}
-            details={details}
-            estimate={estimate}
-            busy={submitting}
-            setBusy={setSubmitting}
-            onBack={() => {
-              setStep("details");
-              window.scrollTo({ top: 0, behavior: "smooth" });
-            }}
-            onHoldExpired={handleHoldExpired}
-            onSuccess={(res) => {
-              setResult(res);
-              setHold(null);
-              setStep("done");
-              window.scrollTo({ top: 0, behavior: "smooth" });
-            }}
-          />
-        </div>
-      )}
+      {/* Mobile floating summary — shown on steps 1–3 */}
+      {showSummaryPanel && <BookingSummaryMobile data={summaryData} />}
 
-      {/* Step 4: Confirmation & Instant Tracking Pass */}
+      {/* Step 4: Confirmation — full width, no sidebar */}
       {step === "done" && result && details && (
         <ConfirmationStep
           trackingToken={result.trackingToken}
@@ -386,6 +402,7 @@ export default function BookingFlow({
           slotStarts={selectedSlots}
           dateStr={selectedDate}
           details={details}
+          rates={rates}
           onBookAnother={startOver}
         />
       )}

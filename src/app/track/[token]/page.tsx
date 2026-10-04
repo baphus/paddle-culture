@@ -20,7 +20,7 @@ export const metadata = {
   description: "Check your court reservation status, details, and access digital check-in pass.",
 };
 
-async function absoluteTrackingUrl(token: string): Promise<string> {
+async function absoluteBookingUrl(token: string): Promise<string> {
   const base = (process.env.APP_URL ?? "").replace(/\/$/, "");
   if (base) return `${base}/track/${token}`;
   const h = await headers();
@@ -81,7 +81,7 @@ export default async function TrackPage({
   const rental = rentalRows[0] ?? null;
 
   const [url, rates] = await Promise.all([
-    absoluteTrackingUrl(token),
+    absoluteBookingUrl(token),
     loadRates(),
   ]);
 

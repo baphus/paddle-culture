@@ -47,10 +47,10 @@ export default function BookTrack({ rates = FALLBACK_RATES }: { rates?: DisplayR
             </a>
           </div>
 
-          <div className="rounded-2xl bg-white p-6 text-ink sm:p-7" aria-label="Track an existing booking">
-            <h3 className="text-xl font-black tracking-tight text-ink">Track Booking</h3>
+          <div className="rounded-2xl bg-white p-6 text-ink sm:p-7" aria-label="View an existing booking">
+            <h3 className="text-xl font-black tracking-tight text-ink">View Your Booking</h3>
             <p className="mt-1 mb-4 text-sm leading-6 text-ink/70">
-              Enter your booking code to view status and court details.
+              Scan your QR code or paste the booking link from your email to check status.
             </p>
             <TrackInput />
             <div className="mt-5 flex items-center justify-between gap-3 border-t border-line pt-4 text-xs font-semibold">

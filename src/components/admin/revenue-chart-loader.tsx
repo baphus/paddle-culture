@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import type { RevenueDay } from "@/lib/admin/bookings";
+import type { RevenueDay, RevenueMonth } from "@/lib/admin/bookings";
 import { LoadingAnimation } from "@/components/ui/loading-animation";
 
 // ADR-10: recharts stays admin-only and client-rendered — this wrapper owns
@@ -16,6 +16,12 @@ const Chart = dynamic(() => import("./revenue-chart"), {
   ),
 });
 
-export default function RevenueChartLoader({ days }: { days: RevenueDay[] }) {
-  return <Chart days={days} />;
+interface Props {
+  days: RevenueDay[];
+  months: RevenueMonth[];
+  mode?: "full" | "mini";
+}
+
+export default function RevenueChartLoader({ days, months, mode = "full" }: Props) {
+  return <Chart days={days} months={months} mode={mode} />;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -10,7 +10,7 @@ import {
   Check,
   Clock,
   Copy,
-  ExternalLink,
+  Download,
   MapPin,
   QrCode,
   Receipt,
@@ -21,7 +21,6 @@ import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
 import { formatManilaLong, formatSlotRange } from "@/lib/courts";
 import { peso } from "@/lib/pricing-display";
-import { cn } from "@/lib/utils";
 
 interface SlotItem {
   courtName: string;
@@ -55,29 +54,32 @@ export default function TrackView({
   slots,
   rental,
 }: TrackViewProps) {
-  const [copiedCode, setCopiedCode] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
-
-  const copyCode = async () => {
-    try {
-      await navigator.clipboard.writeText(token);
-      setCopiedCode(true);
-      toast.success("Tracking code copied!");
-      setTimeout(() => setCopiedCode(false), 2000);
-    } catch {
-      toast.error("Could not copy tracking code.");
-    }
-  };
+  const qrRef = useRef<SVGSVGElement>(null);
 
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(url);
       setCopiedLink(true);
-      toast.success("Tracking link copied!");
+      toast.success("QR link copied!");
       setTimeout(() => setCopiedLink(false), 2000);
     } catch {
-      toast.error("Could not copy tracking link.");
+      toast.error("Could not copy QR link.");
     }
+  };
+
+  const downloadQr = () => {
+    const svg = qrRef.current;
+    if (!svg) return;
+    const svgData = new XMLSerializer().serializeToString(svg);
+    const blob = new Blob([svgData], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ck-grounds-qr-${token.slice(0, 8)}.svg`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("QR code downloaded!");
   };
 
   // Courts list
@@ -104,7 +106,7 @@ export default function TrackView({
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-line-warm/40 pb-6">
           <div>
             <span className="block text-xs font-bold tracking-wider text-warm-muted uppercase">
-              Booking Tracking
+              Booking Status
             </span>
             <h1 className="mt-1 text-2xl font-black tracking-tight text-ink sm:text-3xl">
               Hello, {fullName}!
@@ -138,8 +140,8 @@ export default function TrackView({
             <p className="flex items-start gap-2 text-live-dot font-semibold">
               <Sparkles className="size-4 shrink-0 mt-0.5" />
               <span>
-                Your court reservation is confirmed! Bring your digital pass QR code or tracking
-                code when you arrive at CK Grounds.
+                Your court reservation is confirmed! Show your QR code at the CK Grounds front desk
+                for fast check-in on your game day.
               </span>
             </p>
           ) : status === "Rejected" ? (
@@ -157,43 +159,6 @@ export default function TrackView({
               screenshot. You will receive an approval email shortly once confirmed.
             </p>
           )}
-        </div>
-      </div>
-
-      {/* Tracking Code Highlight Card */}
-      <div className="rounded-3xl border border-flame/30 bg-gradient-to-br from-flame-light/50 via-white to-oat/50 p-6 shadow-sm sm:p-8">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <span className="block text-xs font-bold tracking-wider text-flame uppercase">
-              Tracking Code
-            </span>
-            <p className="mt-0.5 text-xs text-warm-muted">
-              Keep this reference code handy for inquiries or venue check-in.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={copyCode}
-            className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-flame px-4 py-2 text-xs font-bold text-white shadow-sm transition-all hover:bg-flame-hover active:scale-[0.98]"
-          >
-            {copiedCode ? (
-              <>
-                <Check className="size-4" />
-                <span>Copied Code!</span>
-              </>
-            ) : (
-              <>
-                <Copy className="size-4" />
-                <span>Copy Tracking Code</span>
-              </>
-            )}
-          </button>
-        </div>
-
-        <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-line-warm/80 bg-white p-3.5 shadow-inner">
-          <code className="font-mono text-xs font-bold tracking-wider text-ink sm:text-sm select-all break-all">
-            {token}
-          </code>
         </div>
       </div>
 
@@ -279,30 +244,40 @@ export default function TrackView({
           </div>
 
           <div className="my-3 rounded-2xl border-2 border-line-warm/80 bg-white p-3 shadow-xs">
-            <QRCodeSVG value={url} size={160} level="M" />
+            <QRCodeSVG ref={qrRef} value={url} size={160} level="M" />
           </div>
 
           <p className="text-[11px] leading-relaxed text-warm-muted">
             Show this QR code at CK Grounds front desk for fast check-in.
           </p>
 
-          <button
-            type="button"
-            onClick={copyLink}
-            className="mt-4 inline-flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-xl border border-line-warm/70 bg-cream px-3 py-2 text-xs font-bold text-pine transition-colors hover:bg-oat"
-          >
-            {copiedLink ? (
-              <>
-                <Check className="size-3.5 text-live-dot" />
-                <span>Link Copied!</span>
-              </>
-            ) : (
-              <>
-                <Copy className="size-3.5" />
-                <span>Copy Pass Link</span>
-              </>
-            )}
-          </button>
+          <div className="mt-4 flex w-full flex-col gap-2">
+            <button
+              type="button"
+              onClick={downloadQr}
+              className="inline-flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-xl bg-flame px-3 py-2 text-xs font-bold text-white shadow-sm transition-all hover:bg-flame-hover active:scale-[0.98]"
+            >
+              <Download className="size-3.5" />
+              <span>Download QR</span>
+            </button>
+            <button
+              type="button"
+              onClick={copyLink}
+              className="inline-flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-xl border border-line-warm/70 bg-cream px-3 py-2 text-xs font-bold text-pine transition-colors hover:bg-oat"
+            >
+              {copiedLink ? (
+                <>
+                  <Check className="size-3.5 text-live-dot" />
+                  <span>Link Copied!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="size-3.5" />
+                  <span>Copy QR Link</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
 

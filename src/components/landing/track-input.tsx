@@ -6,7 +6,7 @@ import { Search } from "lucide-react";
 import { toast } from "sonner";
 import { LoadingAnimation } from "@/components/ui/loading-animation";
 
-const TOKEN_RE = /^(PC-\d{4}-[A-Z0-9]{4}|[A-Za-z0-9_-]{8,128})$/;
+const TOKEN_RE = /^[A-Za-z0-9_-]{8,128}$/;
 
 export default function TrackInput() {
   const router = useRouter();
@@ -14,15 +14,22 @@ export default function TrackInput() {
   const [busy, setBusy] = useState(false);
 
   function go(raw: string) {
-    const trimmed = raw.trim();
+    const trimmed = raw.trim().replace(/\s+/g, "");
     if (!trimmed) {
-      toast.error("Enter your tracking code first — it looks like PC-2026-XXXX.");
+      toast.error("Paste the booking link or code from your email.");
       return;
     }
-    const upper = trimmed.toUpperCase();
-    const candidate = upper.startsWith("PC-") ? upper.replace(/\s+/g, "") : trimmed.replace(/\s+/g, "");
+    // Accept a full URL — extract the token from /track/<token>
+    let candidate = trimmed;
+    try {
+      const parsed = new URL(trimmed);
+      const match = parsed.pathname.match(/\/track\/([^/]+)/);
+      if (match?.[1]) candidate = match[1];
+    } catch {
+      // not a URL, use as-is
+    }
     if (!TOKEN_RE.test(candidate)) {
-      toast.error("That code doesn't look right. Check your email for the full tracking code.");
+      toast.error("That doesn't look right. Check your email for the booking link or QR code.");
       return;
     }
     setBusy(true);
@@ -38,7 +45,7 @@ export default function TrackInput() {
       }}
     >
       <label htmlFor="track-token" className="sr-only">
-        Tracking code
+        Booking link or reference
       </label>
       <div className="flex flex-col gap-2 sm:flex-row">
         <input
@@ -46,11 +53,11 @@ export default function TrackInput() {
           name="token"
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder="PC-2026-XXXX"
+          placeholder="Paste booking link or scan QR"
           autoComplete="off"
           spellCheck={false}
-          inputMode="text"
-          className="h-12 flex-1 rounded-xl border border-line bg-oat/60 px-4 font-mono text-sm font-bold tracking-[0.1em] text-ink uppercase placeholder:text-warm-muted/70 focus:border-flame focus:outline-none"
+          inputMode="url"
+          className="h-12 flex-1 rounded-xl border border-line bg-oat/60 px-4 text-sm font-medium text-ink placeholder:text-warm-muted/70 focus:border-flame focus:outline-none"
         />
         <button
           type="submit"
@@ -60,7 +67,7 @@ export default function TrackInput() {
           {busy ? (
             <><LoadingAnimation size="compact" label="Checking booking" /> Checking…</>
           ) : (
-            <><Search className="size-4" aria-hidden /> Track</>
+            <><Search className="size-4" aria-hidden /> View Booking</>
           )}
         </button>
       </div>
