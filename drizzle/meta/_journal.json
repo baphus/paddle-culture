@@ -15,6 +15,13 @@
       "when": 1791086053798,
       "tag": "0001_solid_angel",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791089015620,
+      "tag": "0002_rename_bands",
+      "breakpoints": true
     }
   ]
 }

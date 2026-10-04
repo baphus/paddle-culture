@@ -27,7 +27,7 @@ export default async function PricingPage() {
       <p>
         Only the <strong>amount</strong> of each row is editable — the
         court / day-type / time-band / item-type vocabulary is fixed by the
-        pricing engine (peak 18:00–03:00, off-peak 06:00–18:00, all days).
+        pricing engine (evening 18:00–03:00, morning 06:00–18:00, all days).
         Every change is audit-logged.
       </p>
       <PricingManager initial={rules} />

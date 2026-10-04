@@ -5,7 +5,7 @@
 //                      owner can rename in /admin/courts). If non-empty → touch nothing.
 //   2. operating_hours: if empty → insert 7 GLOBAL (court_id NULL) rows, one per
 //                      weekday, open 06:00 close 03:00 — the frozen 06:00–03:00
-//                      daily schedule (ADR-02, peak-correction 18:00). The
+//                      daily schedule (ADR-02, evening-correction 18:00). The
 //                      close<=open overnight form is exactly what
 //                      src/lib/booking/hours.ts:isSlotOpen expects (spill into
 //                      the next Manila day); global rows cover current + future

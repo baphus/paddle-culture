@@ -21,8 +21,8 @@ import PaymentStep from "./payment-step";
 
 // Frozen rate card (ADR-02) — client ESTIMATE only; the server recalculates
 // the authoritative total at submit and never trusts this number.
-const RATE_OFF_PEAK = 150;
-const RATE_PEAK = 200;
+const RATE_MORNING = 150;
+const RATE_EVENING = 200;
 const RATE_PADDLE_PER_HOUR = 25;
 const RATE_BALL_FLAT = 15;
 
@@ -89,7 +89,7 @@ function estimateTotal(
 ): number {
   let total = 0;
   for (const s of slotStarts) {
-    total += (timeBandFor(new Date(s)) === "peak" ? RATE_PEAK : RATE_OFF_PEAK) * courtCount;
+    total += (timeBandFor(new Date(s)) === "evening" ? RATE_EVENING : RATE_MORNING) * courtCount;
   }
   if (paddleQty > 0) total += RATE_PADDLE_PER_HOUR * paddleQty * (paddleHours ?? slotStarts.length);
   if (ball) total += RATE_BALL_FLAT;

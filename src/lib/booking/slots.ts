@@ -74,8 +74,8 @@ export function isFutureSlot(start: Date, now: Date = new Date()): boolean {
 // pricing lane owns the vocabulary; these derivations must stay in sync
 // with whatever the admin UI writes:
 //   day_type:  'weekend' (Sat/Sun Manila) else 'weekday'
-//   time_band: 'peak' for slot starts 18:00–02:59 Manila (frozen rate card,
-//     ADR-02) else 'off-peak' (06:00–18:00)
+//   time_band: 'evening' for slot starts 18:00–02:59 Manila (frozen rate card,
+//     ADR-02) else 'morning' (06:00–18:00)
 //   item_type: 'court' | 'paddle' | 'ball'
 export function dayTypeFor(instant: Date): string {
   const { day } = manilaParts(instant);
@@ -84,7 +84,7 @@ export function dayTypeFor(instant: Date): string {
 
 export function timeBandFor(instant: Date): string {
   const { hour } = manilaParts(instant);
-  // Peak 18:00–03:00 (hour 18–23 or 0–2; slots end at 03:00 so hour 3+ never
-  // occurs); off-peak 06:00–18:00.
-  return hour >= 18 || hour < 3 ? "peak" : "off-peak";
+  // Evening 18:00–03:00 (hour 18–23 or 0–2; slots end at 03:00 so hour 3+ never
+  // occurs); morning 06:00–18:00.
+  return hour >= 18 || hour < 3 ? "evening" : "morning";
 }
