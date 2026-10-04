@@ -18,6 +18,7 @@ import {
 import { toast } from "sonner";
 import { QRCodeSVG } from "qrcode.react";
 import { cn } from "@/lib/utils";
+import { LoadingAnimation } from "@/components/ui/loading-animation";
 import { MAX_SLOTS_PER_BOOKING } from "@/lib/booking/constants";
 import { slotsForDate, timeBandFor } from "@/lib/booking/slots";
 import {
@@ -37,6 +38,7 @@ import {
 import { FALLBACK_RATES, peso, type DisplayRates } from "@/lib/pricing-display";
 import DetailsForm, { type DetailsValues } from "./details-form";
 import PaymentStep from "./payment-step";
+import LandingImage from "@/components/landing/landing-image";
 
 interface AvailabilitySlot {
   index: number;
@@ -50,7 +52,7 @@ interface CourtAvailability {
   slots: AvailabilitySlot[];
 }
 
-interface HoldState {
+export interface HoldState {
   tokens: string[];
   deadlineMs: number;
   expiresAt: string;
@@ -160,34 +162,62 @@ const CARD = "bg-cream border border-line-warm/60 rounded-2xl p-6 sm:p-7 shadow-
  * step 2, which consumes a subset of these hold tokens). Pairs are capped at
  * MAX_SLOTS_PER_BOOKING, enforced client-side with toast() before POST.
  */
+export interface Step1DateTimeProps {
+  initialCourts: CourtOption[];
+  initialRates?: DisplayRates;
+  existingHold?: HoldState | null;
+  initialSelectedDate?: string | null;
+  initialCourtIds?: string[];
+  initialSelectedSlots?: string[];
+  onHoldSuccess?: (
+    hold: HoldState,
+    courtIds: string[],
+    slotStarts: string[],
+    date: string,
+  ) => void;
+  onHoldExpired?: () => void;
+  onCancel?: () => void;
+}
+
 export default function Step1DateTime({
   initialCourts,
   initialRates = FALLBACK_RATES,
-}: {
-  initialCourts: CourtOption[];
-  initialRates?: DisplayRates;
-}) {
+  existingHold = null,
+  initialSelectedDate = null,
+  initialCourtIds,
+  initialSelectedSlots,
+  onHoldSuccess,
+  onHoldExpired,
+  onCancel,
+}: Step1DateTimeProps) {
   const todayStr = useMemo(() => manilaTodayStr(), []);
   const tomorrowStr = useMemo(() => manilaTomorrowStr(), []);
   const maxStr = useMemo(() => maxBookableDateStr(), []);
 
   const [courts, setCourts] = useState<CourtOption[]>(initialCourts);
-  const [courtIds, setCourtIds] = useState<string[]>(() => initialCourts.map((c) => c.id));
+  const [courtIds, setCourtIds] = useState<string[]>(() =>
+    initialCourtIds && initialCourtIds.length > 0
+      ? initialCourtIds
+      : initialCourts.length > 0
+        ? [initialCourts[0].id]
+        : [],
+  );
   const [rates, setRates] = useState<DisplayRates>(initialRates);
-  // No date pre-selected: progressive reveal shows ONLY the date card first.
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [view, setView] = useState(() => partsOf(tomorrowStr));
+  // No date pre-selected: progressive reveal shows ONLY the date card first unless initialSelectedDate is provided.
+  const [selectedDate, setSelectedDate] = useState<string | null>(initialSelectedDate ?? null);
+  const [view, setView] = useState(() => partsOf(initialSelectedDate ?? todayStr));
   const [avail, setAvail] = useState<CourtAvailability[] | null>(null);
   const [loadingAvail, setLoadingAvail] = useState(false);
   const [availFailed, setAvailFailed] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
-  const [selected, setSelected] = useState<string[]>([]);
-  const [hold, setHold] = useState<HoldState | null>(null);
+  const [selected, setSelected] = useState<string[]>(initialSelectedSlots ?? []);
+  const [hold, setHold] = useState<HoldState | null>(existingHold ?? null);
   const [holding, setHolding] = useState(false);
 
-  // Carousel state: panel 0 = date, panel 1 = time. Summary + mobile bar key
-  // off selectedDate (never off panel), so going Back keeps them visible.
-  const [panel, setPanel] = useState<0 | 1>(0);
+  // Carousel state: panel 0 = date, panel 1 = time.
+  // Court choice is deliberately first: availability is then calculated for
+  // exactly the courts the guest intends to reserve.
+  const [panel, setPanel] = useState<0 | 1 | 2>(initialSelectedDate ? 2 : 0);
   const panelHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const selectedRef = useRef<string[]>([]);
   selectedRef.current = selected;
@@ -205,7 +235,7 @@ export default function Step1DateTime({
           setCourtIds((prev) =>
             prev.length > 0
               ? prev.filter((id) => b.courts!.some((c) => c.id === id))
-              : b.courts!.map((c) => c.id),
+              : [b.courts![0].id],
           );
         }
       })
@@ -402,12 +432,18 @@ export default function Step1DateTime({
         expiresAt: string;
         deadlineMs: number;
       };
-      setHold({
+      const holdState: HoldState = {
         tokens: body.holds.map((h) => h.holdToken),
         deadlineMs: body.deadlineMs,
         expiresAt: body.expiresAt,
-      });
-      toast.success("Slots held — continue to court selection before the timer ends.");
+        courtIds: [...courtIds].sort(),
+        slotStarts: selectedSorted,
+      };
+      setHold(holdState);
+      toast.success("Slots held — continue to details before the timer ends.");
+      if (onHoldSuccess && selectedDate) {
+        onHoldSuccess(holdState, courtIds, selectedSorted, selectedDate);
+      }
     } catch {
       toast.error("Could not hold those slots. Check your connection and retry.");
     } finally {
@@ -417,10 +453,19 @@ export default function Step1DateTime({
 
   const handleHoldExpired = useCallback(() => {
     setHold(null);
-    toast.error("Your hold expired — tap “Continue to Select Court” again to continue.", {
+    if (onHoldExpired) onHoldExpired();
+    toast.error("Your hold expired — tap “Hold & Continue” again to re-hold your slots.", {
       duration: 8000,
     });
-  }, []);
+  }, [onHoldExpired]);
+
+  function handleContinueCta() {
+    if (hold && onHoldSuccess && selectedDate) {
+      onHoldSuccess(hold, courtIds, selectedSorted, selectedDate);
+      return;
+    }
+    void createHold();
+  }
 
   function resetSlots() {
     if (hold) return;
@@ -447,8 +492,12 @@ export default function Step1DateTime({
     panelHeadingRef.current?.focus({ preventScroll: true });
   }, [panel]);
 
-  function goPanel(p: 0 | 1) {
-    if (p === 1 && !selectedDate) {
+  function goPanel(p: 0 | 1 | 2) {
+    if (p === 1 && courtIds.length === 0) {
+      toast.error("Choose at least one court first.");
+      return;
+    }
+    if (p === 2 && !selectedDate) {
       toast.error("Pick a play date first.");
       return;
     }
@@ -471,10 +520,10 @@ export default function Step1DateTime({
   }
 
   function pickDate(dateStr: string) {
-    if (dateStr < tomorrowStr || dateStr > maxStr) return;
+    if (dateStr < todayStr || dateStr > maxStr) return;
     if (dateStr === selectedDate) {
       // Re-tapping the active date just opens the time panel.
-      setPanel(1);
+      setPanel(2);
       panelHeadingRef.current?.focus({ preventScroll: true });
       return;
     }
@@ -499,15 +548,16 @@ export default function Step1DateTime({
     // Keep the month view on the picked date (single source, no label drift).
     setView(partsOf(dateStr));
     // Selecting a date auto-advances to the time panel (no scrolling).
-    setPanel(1);
+    setPanel(2);
   }
 
   type DayKind = "past" | "today" | "open" | "selected" | "beyond";
   function dayKind(dateStr: string): DayKind {
     if (dateStr < todayStr) return "past";
-    if (dateStr === todayStr) return "today";
     if (dateStr > maxStr) return "beyond";
-    return dateStr === selectedDate ? "selected" : "open";
+    if (dateStr === selectedDate) return "selected";
+    if (dateStr === todayStr) return "today";
+    return "open";
   }
 
   // Chunk leading blanks + month days into week rows (grid > row > gridcell).
@@ -663,16 +713,16 @@ export default function Step1DateTime({
           <div className="mb-6">
             <div className="flex items-center justify-between gap-3">
               <h1 id="wizard-heading" className="text-2xl font-extrabold tracking-tight text-ink sm:text-3xl">
-                {panel === 0 ? "Step 1 of 2 — Date" : "Step 2 of 2 — Time"}
+                {panel === 0 ? "Step 1 of 3 — Courts" : panel === 1 ? "Step 2 of 3 — Date" : "Step 3 of 3 — Time"}
               </h1>
               <nav aria-label="Booking steps" className="flex shrink-0 items-center gap-1.5">
-                {([0, 1] as const).map((i) => (
+                {([0, 1, 2] as const).map((i) => (
                   <button
                     key={i}
                     type="button"
                     onClick={() => goPanel(i)}
                     aria-current={panel === i ? "step" : undefined}
-                    aria-label={i === 0 ? "Step 1: pick a date" : "Step 2: pick a time"}
+                    aria-label={i === 0 ? "Step 1: choose courts" : i === 1 ? "Step 2: pick a date" : "Step 3: pick a time"}
                     className={cn(
                       "inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 rounded-full px-2.5 text-xs font-bold transition-all",
                       panel === i
@@ -688,7 +738,7 @@ export default function Step1DateTime({
                     >
                       {i + 1}
                     </span>
-                    <span className="hidden sm:inline">{i === 0 ? "Date" : "Time"}</span>
+                    <span className="hidden sm:inline">{i === 0 ? "Courts" : i === 1 ? "Date" : "Time"}</span>
                   </button>
                 ))}
               </nav>
@@ -697,16 +747,18 @@ export default function Step1DateTime({
               className="mt-3 h-1.5 overflow-hidden rounded-full bg-oat"
               role="progressbar"
               aria-valuemin={1}
-              aria-valuemax={2}
+              aria-valuemax={3}
               aria-valuenow={panel + 1}
               aria-label="Booking progress"
             >
-              <div className={cn("h-full rounded-full bg-flame transition-all", panel === 0 ? "w-1/2" : "w-full")} />
+              <div className={cn("h-full rounded-full bg-flame transition-all", panel === 0 ? "w-1/3" : panel === 1 ? "w-2/3" : "w-full")} />
             </div>
             <p className="mt-2 text-xs text-warm-muted sm:text-sm">
               {panel === 0
-                ? "Select an active calendar date to view available court hourly slots."
-                : `${dateLabel} · all courts share the same hours`}
+                ? "Choose one or more courts. Times must be free on every court you select."
+                : panel === 1
+                  ? "Select an active calendar date to view available hours."
+                  : `${dateLabel} · times shown are free on every selected court`}
             </p>
           </div>
 
@@ -721,11 +773,47 @@ export default function Step1DateTime({
               const dx = (e.changedTouches[0]?.clientX ?? 0) - touchX.current;
               touchX.current = null;
               if (Math.abs(dx) < 60) return;
-              if (dx < 0) goPanel(1);
-              else setPanel(0);
+              if (dx < 0) goPanel(panel === 0 ? 1 : 2);
+              else setPanel(panel === 2 ? 1 : 0);
             }}
           >
           {panel === 0 ? (
+          <div key="panel-courts" className="animate-rise motion-reduce:animate-none">
+            <h2 ref={panelHeadingRef} tabIndex={-1} className="text-lg font-extrabold tracking-tight text-ink outline-none sm:text-xl">
+              Choose your court{courts.length === 1 ? "" : "s"}
+            </h2>
+            <p className="mt-1 text-sm text-warm-muted">Select every court you need. We will only offer times available on all of them.</p>
+            {courts.length === 0 ? (
+              <p className="mt-5 rounded-xl border border-line-warm/60 bg-white p-4 text-sm text-warm-muted">No courts listed right now — check back soon.</p>
+            ) : (
+              <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                {courts.map((court, index) => {
+                  const isSelected = courtIds.includes(court.id);
+                  return (
+                    <button
+                      key={court.id}
+                      type="button"
+                      aria-pressed={isSelected}
+                      onClick={() => {
+                        if (hold) return;
+                        setCourtIds((current) => current.includes(court.id) ? current.filter((id) => id !== court.id) : [...current, court.id]);
+                        setSelected([]);
+                        setAvail(null);
+                      }}
+                      className={cn("overflow-hidden rounded-2xl border-2 bg-white text-left shadow-sm transition-all hover:-translate-y-0.5", isSelected ? "border-flame ring-2 ring-flame/20" : "border-line-warm/60 hover:border-flame/50")}
+                    >
+                      <LandingImage src={`/images/court-${(index % 2) + 1}.jpg`} alt={`${court.name} court`} label={`${court.name} photo`} className="aspect-[16/8]" imgClassName="object-cover" />
+                      <span className="flex items-center justify-between gap-3 p-4">
+                        <span><span className="block text-base font-extrabold text-ink">{court.name}</span><span className="mt-0.5 block text-xs font-semibold text-warm-muted">{peso(rates.morning)}/hr day · {peso(rates.evening)}/hr evening</span></span>
+                        <span className={cn("grid size-7 shrink-0 place-items-center rounded-full border", isSelected ? "border-flame bg-flame text-white" : "border-line-warm text-transparent")}>{isSelected && <Check className="size-4" />}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          ) : panel === 1 ? (
           <div key="panel-date" className="animate-rise motion-reduce:animate-none">
           <div className="rounded-xl border border-line-warm/50 bg-white p-4 shadow-inner sm:p-5">
             <div className="mb-3 flex items-center justify-between border-b border-line-warm/40 pb-4">
@@ -757,19 +845,19 @@ export default function Step1DateTime({
               </div>
             </div>
 
-            <div className="mb-2 grid grid-cols-7 gap-1 text-center text-[11px] font-bold tracking-wider text-warm-muted uppercase">
+            <div className="mb-2 grid grid-cols-7 gap-1 text-center text-[10px] font-bold tracking-wide text-warm-muted uppercase sm:text-[11px] sm:tracking-wider">
               {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
                 <div key={d}>{d}</div>
               ))}
             </div>
 
-            <div role="grid" aria-label={`Choose a play date — ${monthLabel}`} className="grid grid-cols-7 gap-1.5 sm:gap-2">
+            <div role="grid" aria-label={`Choose a play date — ${monthLabel}`} className="grid grid-cols-7 gap-1 sm:gap-2">
               {weekRows.map((row, ri) => (
                 <div key={`row-${ri}`} role="row" className="contents">
                     {row.map((cell) => {
                       if (!cell.dateStr) {
                         return (
-                          <div key={cell.key} role="gridcell" aria-disabled="true" className="h-14 sm:h-20" />
+                          <div key={cell.key} role="gridcell" aria-disabled="true" className="h-12 sm:h-20" />
                         );
                       }
                       const dateStr = cell.dateStr;
@@ -782,7 +870,7 @@ export default function Step1DateTime({
                             role="gridcell"
                             aria-disabled="true"
                             aria-label={`${formatManilaLong(dateStr)} — unavailable`}
-                            className="flex h-14 cursor-not-allowed flex-col justify-between rounded-xl border border-line-warm/20 bg-surface-dim/20 p-1.5 text-xs text-warm-muted/50 sm:h-20"
+                            className="flex h-12 cursor-not-allowed flex-col justify-between rounded-lg border border-line-warm/20 bg-surface-dim/20 p-1 text-xs text-warm-muted/50 sm:h-20 sm:rounded-xl sm:p-1.5"
                           >
                             <span className="font-medium">{dayNum}</span>
                             {kind === "past" ? (
@@ -792,23 +880,40 @@ export default function Step1DateTime({
                         );
                       }
                       if (kind === "today") {
+                        const isSel = selectedDate === dateStr;
                         return (
-                          <div
-                            key={cell.key}
-                            role="gridcell"
-                            aria-disabled="true"
-                            aria-label={`${formatManilaLong(dateStr)} — today, walk-in only`}
-                            title="Same-day online booking unavailable. Walk-in only."
-                            className="relative flex h-14 cursor-not-allowed flex-col justify-between rounded-xl border border-error/20 bg-oat/50 p-1.5 text-xs sm:h-20"
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="font-bold text-warm-muted">{dayNum}</span>
-                              <span className="size-1.5 rounded-full bg-error" aria-hidden />
-                            </div>
-                            <div>
-                              <span className="block text-[9px] font-bold uppercase text-error">Today</span>
-                              <span className="block text-[8px] text-warm-muted">Walk-in only</span>
-                            </div>
+                          <div key={cell.key} role="gridcell" aria-selected={isSel}>
+                            <button
+                              type="button"
+                              onClick={() => pickDate(dateStr)}
+                              aria-pressed={isSel}
+                              aria-label={`${formatManilaLong(dateStr)} — today`}
+                              className={cn(
+                                "flex h-12 w-full flex-col justify-between rounded-lg border p-1 text-left transition-all sm:h-20 sm:rounded-xl sm:p-1.5",
+                                isSel
+                                  ? "border-2 border-flame bg-pine text-white shadow-md"
+                                  : "border-flame/40 bg-flame-light/30 text-ink hover:bg-flame-light/50",
+                              )}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span
+                                  className={cn(
+                                    "text-sm font-bold sm:text-base",
+                                    isSel ? "font-extrabold text-white" : "font-extrabold text-flame",
+                                  )}
+                                >
+                                  {dayNum}
+                                </span>
+                              </div>
+                              <div className="leading-tight">
+                                <span className={cn(
+                                  "block text-[9px] font-black uppercase tracking-wide",
+                                  isSel ? "text-flame" : "text-flame",
+                                )}>
+                                  Today
+                                </span>
+                              </div>
+                            </button>
                           </div>
                         );
                       }
@@ -821,7 +926,7 @@ export default function Step1DateTime({
                             aria-pressed={isSel}
                             aria-label={`${formatManilaLong(dateStr)}${dateStr === tomorrowStr ? " — tomorrow" : ""}`}
                             className={cn(
-                              "flex h-14 w-full flex-col justify-between rounded-xl border p-1.5 text-left transition-all sm:h-20",
+                                "flex h-12 w-full flex-col justify-between rounded-lg border p-1 text-left transition-all sm:h-20 sm:rounded-xl sm:p-1.5",
                               isSel
                                 ? "border-2 border-flame bg-pine text-white shadow-md"
                                 : "border-line-warm/70 bg-white text-ink hover:bg-oat",
@@ -836,13 +941,6 @@ export default function Step1DateTime({
                               >
                                 {dayNum}
                               </span>
-                              <span
-                                className={cn(
-                                  "size-1.5 rounded-full",
-                                  isSel ? "size-2 animate-pulse bg-flame" : "bg-live-dot",
-                                )}
-                                aria-hidden
-                              />
                             </div>
                             <div className="leading-tight">
                               {isSel ? (
@@ -872,28 +970,85 @@ export default function Step1DateTime({
                   Selected Date
                 </span>
                 <span className="inline-flex items-center gap-1.5">
-                  <span className="size-2 rounded-full bg-live-dot" aria-hidden />
-                  Available Days
-                </span>
-                <span className="inline-flex items-center gap-1.5">
                   <span className="size-2 rounded-full bg-warm-muted/40" aria-hidden />
                   Unavailable
                 </span>
-              </div>
-              <div className="font-medium text-pine">
-                Active Date: <span className="font-bold text-ink">{dateLabel}</span>
               </div>
             </div>
           </div>
           <p className="sr-only" role="status">
             {selectedDate
-              ? `Step ${panel + 1} of 2. Active date ${dateLabel}. ${selectedSorted.length} hours selected.`
+              ? `Step ${panel + 1} of 3. Active date ${dateLabel}. ${selectedSorted.length} hours selected.`
               : "No date selected yet. Pick a play date to see time slots."}
           </p>
           </div>
           ) : (
           <div key="panel-time" className="animate-rise motion-reduce:animate-none">
           <div className="rounded-xl border border-line-warm/50 bg-white p-4 shadow-inner sm:p-5">
+            {/* Court selection belongs to the first panel; this compact line
+                keeps the time step focused on availability. */}
+            <p className="mb-5 text-xs font-semibold text-warm-muted">
+              {courtIds.length} court{courtIds.length === 1 ? "" : "s"} selected. Change them from the Courts step.
+            </p>
+            {false && courts.length > 0 && (
+              <div className="mb-5 rounded-2xl border border-line-warm/70 bg-cream/40 p-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-xs font-bold text-pine uppercase tracking-wider">
+                    Select Court(s)
+                  </span>
+                  <span className="text-[11px] font-semibold text-warm-muted">
+                    {courtIds.length === 1
+                      ? courts.find((c) => c.id === courtIds[0])?.name ?? "1 Court"
+                      : `${courtIds.length} Courts (${peso(rates.morning * courtIds.length)}/hr Day · ${peso(rates.evening * courtIds.length)}/hr Night)`}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {courts.map((c) => {
+                    const isSelected = courtIds.includes(c.id) && courtIds.length === 1;
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => {
+                          if (hold) return;
+                          setCourtIds([c.id]);
+                          setSelected([]);
+                        }}
+                        className={cn(
+                          "inline-flex min-h-[40px] items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition-all",
+                          isSelected
+                            ? "bg-pine text-white shadow-xs"
+                            : "border border-line-warm bg-white text-ink hover:bg-cream",
+                        )}
+                      >
+                        <span>{c.name}</span>
+                        {isSelected && <Check className="size-3.5" />}
+                      </button>
+                    );
+                  })}
+                  {courts.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (hold) return;
+                        setCourtIds(courts.map((c) => c.id));
+                        setSelected([]);
+                      }}
+                      className={cn(
+                        "inline-flex min-h-[40px] items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition-all",
+                        courtIds.length === courts.length
+                          ? "bg-pine text-white shadow-xs"
+                          : "border border-line-warm bg-white text-ink hover:bg-cream",
+                      )}
+                    >
+                      <span>All Courts ({courts.length})</span>
+                      {courtIds.length === courts.length && <Check className="size-3.5" />}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="mb-4 flex items-center gap-2">
               <h2
                 ref={panelHeadingRef}
@@ -910,7 +1065,9 @@ export default function Step1DateTime({
               No courts listed right now — check back soon.
             </p>
           ) : loadingAvail && !avail ? (
-            <p className="text-sm text-warm-muted">Loading slots…</p>
+              <div className="flex min-h-32 items-center justify-center">
+                <LoadingAnimation label="Loading available court times" />
+              </div>
           ) : availFailed || !avail ? (
             <div className="rounded-xl border border-line-warm/60 bg-white p-4 text-sm">
               <p className="text-warm-muted">Could not load availability for this date.</p>
@@ -991,10 +1148,10 @@ export default function Step1DateTime({
 
           {/* Thumb-reachable controls at the card bottom */}
           <div className="mt-6 flex items-center justify-between gap-3 border-t border-line-warm/40 pt-4">
-            {panel === 1 ? (
+            {panel > 0 ? (
               <button
                 type="button"
-                onClick={() => setPanel(0)}
+                onClick={() => setPanel(panel === 1 ? 0 : 1)}
                 className="inline-flex min-h-[44px] items-center gap-1 rounded-xl border border-line-warm/60 bg-white px-5 text-sm font-bold text-pine transition-all hover:bg-oat"
               >
                 <ChevronLeft className="size-4" aria-hidden /> Back
@@ -1011,6 +1168,15 @@ export default function Step1DateTime({
               <button
                 type="button"
                 onClick={() => goPanel(1)}
+                disabled={courtIds.length === 0}
+                className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-flame px-5 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
+              >
+                Continue to date <ArrowRight className="size-4" aria-hidden />
+              </button>
+            ) : panel === 1 ? (
+              <button
+                type="button"
+                onClick={() => goPanel(2)}
                 disabled={!selectedDate}
                 className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-flame px-5 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
               >
@@ -1019,12 +1185,15 @@ export default function Step1DateTime({
             ) : (
               <button
                 type="button"
-                onClick={createHold}
+                onClick={handleContinueCta}
                 disabled={ctaDisabled}
                 className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-flame px-5 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
               >
-                {holding ? "Holding…" : hold ? "Slots Held" : "Continue to Select Court"}
-                <ArrowRight className="size-4" aria-hidden />
+                {holding ? (
+                  <><LoadingAnimation size="compact" label="Holding selected court times" /> Holding…</>
+                ) : (
+                  <>{hold ? "Continue to Details" : "Hold & Continue"}<ArrowRight className="size-4" aria-hidden /></>
+                )}
               </button>
             )}
           </div>
@@ -1090,12 +1259,15 @@ export default function Step1DateTime({
           <div className="flex flex-col gap-2 pt-1">
             <button
               type="button"
-              onClick={createHold}
+              onClick={handleContinueCta}
               disabled={ctaDisabled}
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-flame px-4 py-3.5 text-center text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
             >
-              <span>{holding ? "Holding…" : hold ? "Slots Held" : "Continue to Select Court"}</span>
-              <ArrowRight className="size-[18px]" aria-hidden />
+                {holding ? (
+                  <><LoadingAnimation size="compact" label="Holding selected court times" /> <span>Holding…</span></>
+                ) : (
+                  <><span>{hold ? "Continue to Details" : "Hold & Continue"}</span><ArrowRight className="size-[18px]" aria-hidden /></>
+                )}
             </button>
             {hold ? (
               <button
@@ -1139,12 +1311,15 @@ export default function Step1DateTime({
               </div>
               <button
                 type="button"
-                onClick={createHold}
+                onClick={handleContinueCta}
                 disabled={ctaDisabled}
                 className="inline-flex min-h-[44px] shrink-0 items-center justify-center gap-1.5 rounded-xl bg-flame px-5 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
               >
-                {holding ? "Holding…" : hold ? "Held" : "Continue"}
-                <ArrowRight className="size-4" aria-hidden />
+                {holding ? (
+                  <><LoadingAnimation size="compact" label="Holding selected court times" /> Holding…</>
+                ) : (
+                  <>{hold ? "Continue" : "Hold"}<ArrowRight className="size-4" aria-hidden /></>
+                )}
               </button>
             </div>
           </div>

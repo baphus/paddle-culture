@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 import { toast } from "sonner";
+import { LoadingAnimation } from "@/components/ui/loading-animation";
 
 const TOKEN_RE = /^(PC-\d{4}-[A-Z0-9]{4}|[A-Za-z0-9_-]{8,128})$/;
 
@@ -56,8 +57,11 @@ export default function TrackInput() {
           disabled={busy}
           className="inline-flex h-12 items-center justify-center gap-1.5 rounded-xl bg-pine px-6 text-sm font-bold whitespace-nowrap text-white transition-all hover:-translate-y-0.5 hover:bg-pine-high disabled:opacity-60"
         >
-          <Search className="size-4" aria-hidden />
-          {busy ? "Checking…" : "Track"}
+          {busy ? (
+            <><LoadingAnimation size="compact" label="Checking booking" /> Checking…</>
+          ) : (
+            <><Search className="size-4" aria-hidden /> Track</>
+          )}
         </button>
       </div>
     </form>

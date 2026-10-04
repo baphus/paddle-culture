@@ -1,7 +1,6 @@
 import { eq } from "drizzle-orm";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
-import { QRCodeSVG } from "qrcode.react";
 import { getDb } from "@/db/client";
 import {
   bookingRentals,
@@ -9,25 +8,17 @@ import {
   bookings,
   courts,
 } from "@/db/schema";
+import { FALLBACK_RATES, getDisplayRates, type DisplayRates } from "@/lib/pricing-display";
+import Header from "@/components/landing/header";
+import Footer from "@/components/landing/footer";
+import TrackView from "@/components/tracking/track-view";
 
 export const dynamic = "force-dynamic";
 
-const manilaFmt = new Intl.DateTimeFormat("en-PH", {
-  timeZone: "Asia/Manila",
-  weekday: "short",
-  year: "numeric",
-  month: "short",
-  day: "numeric",
-  hour: "numeric",
-  minute: "2-digit",
-  hour12: true,
-});
-
-function formatRange(startIso: string): string {
-  const start = new Date(startIso);
-  const end = new Date(start.getTime() + 3_600_000);
-  return `${manilaFmt.format(start)} – ${manilaFmt.format(end)} (Manila)`;
-}
+export const metadata = {
+  title: "Track Booking — CK Grounds",
+  description: "Check your court reservation status, details, and access digital check-in pass.",
+};
 
 async function absoluteTrackingUrl(token: string): Promise<string> {
   const base = (process.env.APP_URL ?? "").replace(/\/$/, "");
@@ -36,6 +27,14 @@ async function absoluteTrackingUrl(token: string): Promise<string> {
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
   const proto = h.get("x-forwarded-proto") ?? "https";
   return host ? `${proto}://${host}/track/${token}` : `/track/${token}`;
+}
+
+async function loadRates(): Promise<DisplayRates> {
+  try {
+    return await getDisplayRates(getDb());
+  } catch {
+    return FALLBACK_RATES;
+  }
 }
 
 // Public tracking page (no auth — the 256-bit token IS the capability).
@@ -74,40 +73,49 @@ export default async function TrackPage({
     .innerJoin(courts, eq(bookingSlots.courtId, courts.id))
     .where(eq(bookingSlots.bookingId, booking.id))
     .orderBy(bookingSlots.slotStart);
+
   const rentalRows = await db
     .select()
     .from(bookingRentals)
     .where(eq(bookingRentals.bookingId, booking.id));
   const rental = rentalRows[0] ?? null;
 
-  const url = await absoluteTrackingUrl(token);
+  const [url, rates] = await Promise.all([
+    absoluteTrackingUrl(token),
+    loadRates(),
+  ]);
+
+  const serializedSlots = slotRows.map((s) => ({
+    courtName: s.courtName,
+    slotStart: s.slotStart.toISOString(),
+  }));
+
+  const serializedRental = rental
+    ? {
+        paddleQty: rental.paddleQty,
+        paddleHours: rental.paddleHours,
+        ballFee: rental.ballFee,
+      }
+    : null;
 
   return (
-    <main>
-      <h1>Booking {booking.status}</h1>
-      <p>{booking.fullName}</p>
-      <ul>
-        {slotRows.map((s) => (
-          <li key={`${s.courtName}-${s.slotStart.toISOString()}`}>
-            {s.courtName} — {formatRange(s.slotStart.toISOString())}
-          </li>
-        ))}
-      </ul>
-      {rental && (rental.paddleQty > 0 || rental.ballFee != null) ? (
-        <p>
-          {rental.paddleQty > 0
-            ? `${rental.paddleQty} paddle(s)${rental.paddleHours ? ` × ${rental.paddleHours}h` : ""}`
-            : null}
-          {rental.paddleQty > 0 && rental.ballFee != null ? " + " : null}
-          {rental.ballFee != null ? "Ball" : null}
-        </p>
-      ) : null}
-      <p>Total: ₱{booking.total}</p>
-      {booking.status === "Rejected" && booking.rejectReason ? (
-        <p>Reason: {booking.rejectReason}</p>
-      ) : null}
-      <QRCodeSVG value={url} size={200} />
-      <p>{url}</p>
-    </main>
+    <>
+      <Header />
+      <main id="main" className="min-h-screen bg-cream pt-20 pb-16">
+        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+          <TrackView
+            token={token}
+            url={url}
+            status={booking.status}
+            fullName={booking.fullName}
+            total={booking.total}
+            rejectReason={booking.rejectReason}
+            slots={serializedSlots}
+            rental={serializedRental}
+          />
+        </div>
+      </main>
+      <Footer rates={rates} />
+    </>
   );
 }

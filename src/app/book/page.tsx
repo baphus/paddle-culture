@@ -5,14 +5,14 @@ import { FALLBACK_COURTS, type CourtOption } from "@/lib/courts";
 import { FALLBACK_RATES, getDisplayRates, type DisplayRates } from "@/lib/pricing-display";
 import Header from "@/components/landing/header";
 import Footer from "@/components/landing/footer";
-import Step1DateTime from "@/components/booking/step1-date-time";
+import BookingFlow from "@/components/booking/booking-flow";
 
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "Book a Court",
+  title: "Book a Court — CK Grounds",
   description:
-    "Pick a date and consecutive hours, hold your slots, and continue to court selection. Day ₱150/hr · Night ₱200/hr. No account needed.",
+    "Pick a date and consecutive hours, hold your slots, and submit with payment proof. Day ₱150/hr · Night ₱200/hr. No account needed.",
 };
 
 // Same fail-soft SSR pattern as the landing page: courts → FALLBACK_COURTS,
@@ -45,18 +45,17 @@ export default async function BookPage() {
   return (
     <>
       <Header />
-      <main id="main" className="bg-cream pt-16">
+      <main id="main" className="bg-cream pt-16 min-h-screen">
         <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
           <div className="mb-6 space-y-1">
             <h1 className="text-2xl font-black tracking-tight text-pine sm:text-3xl">
-              Book a court
+              Book a Court
             </h1>
             <p className="text-sm leading-6 text-ink sm:text-base sm:leading-[26px]">
-              Step 1 — pick your date and consecutive hours. Booking opens tomorrow; today is
-              walk-in only.
+              Reserve your court online with instant 10-minute hold protection. Day ₱150/hr · Night ₱200/hr. No account needed.
             </p>
           </div>
-          <Step1DateTime initialCourts={initialCourts} initialRates={initialRates} />
+          <BookingFlow initialCourts={initialCourts} initialRates={initialRates} />
         </div>
       </main>
       <Footer rates={initialRates} />

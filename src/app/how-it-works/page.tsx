@@ -43,6 +43,10 @@ export default async function HowItWorksPage() {
       q: "Can I book for today?",
       a: "Yes — same-day booking is allowed for future slots only. Anything that already started is marked Past and can't be picked. You can also book up to 12 months ahead.",
     },
+    {
+      q: "Can I cancel or get a refund?",
+      a: "No. Bookings are final: cancellations, rescheduling, and refunds are not allowed. Please review your date, time, and booking details carefully before submitting payment.",
+    },
   ];
 
   return (

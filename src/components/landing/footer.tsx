@@ -39,7 +39,7 @@ export default function Footer({ rates = FALLBACK_RATES }: { rates?: DisplayRate
             {[
               { href: "/#top", label: "Home" },
               { href: "/book", label: "Book Now" },
-              { href: "/#how-it-works", label: "How It Works" },
+              { href: "/how-it-works", label: "How It Works" },
               { href: "/#contact", label: "Contact" },
               { href: "/#faq", label: "FAQ" },
             ].map((l) => (

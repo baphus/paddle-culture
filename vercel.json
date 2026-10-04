@@ -8,6 +8,10 @@
     {
       "path": "/api/cron/retention",
       "schedule": "0 2 * * 0"
+    },
+    {
+      "path": "/api/cron/keepalive",
+      "schedule": "10 2 * * *"
     }
   ]
 }

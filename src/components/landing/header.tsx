@@ -1,15 +1,35 @@
+"use client";
+
 import Image from "next/image";
+import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { CalendarCheck, Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const LINKS = [
   { href: "/#top", label: "Home" },
   { href: "/book", label: "Book Now" },
-  { href: "/#how-it-works", label: "How It Works" },
+  { href: "/how-it-works", label: "How It Works" },
   { href: "/#contact", label: "Contact" },
 ];
 
 export default function Header() {
+  const pathname = usePathname();
+  const [hash, setHash] = useState("");
+
+  useEffect(() => {
+    const updateHash = () => setHash(window.location.hash);
+    updateHash();
+    window.addEventListener("hashchange", updateHash);
+    return () => window.removeEventListener("hashchange", updateHash);
+  }, []);
+
+  const isActive = (href: string) => {
+    if (href === "/#top") return pathname === "/" && hash !== "#contact";
+    if (href === "/#contact") return pathname === "/" && hash === "#contact";
+    return pathname === href;
+  };
+
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-line/70 bg-cream/95 backdrop-blur-md">
       <a
@@ -43,7 +63,13 @@ export default function Header() {
             <a
               key={l.href}
               href={l.href}
-              className="rounded-full px-4 py-2 text-sm font-semibold text-ink/80 transition-colors hover:bg-oat hover:text-ink"
+              aria-current={isActive(l.href) ? "page" : undefined}
+              className={cn(
+                "rounded-full px-4 py-2 text-sm font-semibold transition-colors",
+                isActive(l.href)
+                  ? "bg-pine text-white"
+                  : "text-ink/80 hover:bg-oat hover:text-ink",
+              )}
             >
               {l.label}
             </a>
@@ -84,7 +110,13 @@ export default function Header() {
               <a
                 key={l.href}
                 href={l.href}
-                className="block rounded-xl px-4 py-2.5 text-sm font-semibold text-ink hover:bg-oat"
+                aria-current={isActive(l.href) ? "page" : undefined}
+                className={cn(
+                  "block rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors",
+                  isActive(l.href)
+                    ? "bg-pine text-white"
+                    : "text-ink hover:bg-oat",
+                )}
               >
                 {l.label}
               </a>

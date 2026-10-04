@@ -7,6 +7,7 @@ import { Check, Copy, Eye, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LoadingAnimation } from "@/components/ui/loading-animation";
 import {
   Sheet,
   SheetContent,
@@ -140,7 +141,7 @@ export default function BookingActions({ booking }: { booking: BookingDetail }) 
               ) : proofFailed || !booking.proofPath ? (
                 <p>Proof unavailable.</p>
               ) : (
-                <p>Loading proof…</p>
+                <div className="flex min-h-20 items-center"><LoadingAnimation label="Loading payment proof" /></div>
               )}
             </div>
             <div>

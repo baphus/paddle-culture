@@ -32,6 +32,8 @@ export interface PaymentMethod {
   instructions: string;
   /** Served from `public/payment-qr/*.png`; fallback shown when missing. */
   qrPath: string;
+  /** Brand mark served from `public/`. */
+  logoPath: string;
   /** Owner flips to true once details + QR image are live. */
   configured: boolean;
 }
@@ -45,6 +47,7 @@ export const PAYMENT_METHODS: PaymentMethod[] = [
     instructions:
       "Send the exact booking total to the GCash account below, then screenshot the confirmation and upload it as your payment proof.",
     qrPath: "/payment-qr/gcash.png",
+    logoPath: "/gcash.png",
     configured: false,
   },
   {
@@ -55,6 +58,7 @@ export const PAYMENT_METHODS: PaymentMethod[] = [
     instructions:
       "Transfer the exact booking total to the BDO account below (InstaPay/PESONet accepted), then screenshot the confirmation and upload it as your payment proof.",
     qrPath: "/payment-qr/bdo.png",
+    logoPath: "/bdo.png",
     configured: false,
   },
   {
@@ -65,6 +69,7 @@ export const PAYMENT_METHODS: PaymentMethod[] = [
     instructions:
       "Transfer the exact booking total to the BPI account below (InstaPay/PESONet accepted), then screenshot the confirmation and upload it as your payment proof.",
     qrPath: "/payment-qr/bpi.png",
+    logoPath: "/bpi.png",
     configured: false,
   },
 ];

@@ -15,8 +15,8 @@ export default function Faq({ rates = FALLBACK_RATES }: { rates?: DisplayRates }
       a: "Tapping “Hold these slots” locks your hours for 10 minutes while you finish your details and payment proof. If the timer ends without a submission, the hold expires and the slots reopen — nobody can snipe them mid-checkout.",
     },
     {
-      q: "Can I cancel or reschedule?",
-      a: "Message us directly with your tracking code (it looks like PC-2026-XXXX) and our venue team will help. Approved bookings are verified by staff, so reach out as early as you can and we'll sort it out.",
+      q: "Can I cancel or get a refund?",
+      a: "No. Bookings are final: cancellations, rescheduling, and refunds are not allowed. Please review your date, time, and booking details carefully before submitting payment.",
     },
   ];
   return (

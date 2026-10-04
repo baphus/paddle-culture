@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LoadingAnimation } from "@/components/ui/loading-animation";
 
 export default function LoginForm() {
   const router = useRouter();
@@ -65,7 +66,7 @@ export default function LoginForm() {
       </div>
       {error ? <p role="alert">{error}</p> : null}
       <Button type="submit" disabled={busy}>
-        {busy ? "Signing in…" : "Sign in"}
+        {busy ? <><LoadingAnimation size="compact" label="Signing in" /> Signing in…</> : "Sign in"}
       </Button>
     </form>
   );

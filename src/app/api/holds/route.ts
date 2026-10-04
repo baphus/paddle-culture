@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import * as Sentry from "@sentry/nextjs";
-import { inArray } from "drizzle-orm";
+import { and, gt, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db/client";
 import { courts, holds } from "@/db/schema";
@@ -8,7 +8,7 @@ import { getAvailability } from "@/lib/booking/availability";
 import { HOLD_TTL_MINUTES, MAX_SLOTS_PER_BOOKING } from "@/lib/booking/constants";
 import { LaneError, err } from "@/lib/booking/errors";
 import { isFutureSlot, isOnSlotGrid, selectionDateStr } from "@/lib/booking/slots";
-import { holdsBodySchema } from "@/lib/booking/validation";
+import { holdsBodySchema, releaseHoldsBodySchema } from "@/lib/booking/validation";
 
 export const runtime = "nodejs";
 
@@ -157,6 +157,31 @@ export async function POST(request: Request) {
     console.error("holds failed", e);
     Sentry.captureException(e);
     return err("INTERNAL", "Hold creation failed.", 500);
+  }
+}
+
+// DELETE /api/holds — release an unfinished selection immediately. Tokens are
+// random capability values and only live, unexpired rows are eligible.
+export async function DELETE(request: Request) {
+  try {
+    const parsed = releaseHoldsBodySchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return err("BAD_REQUEST", parsed.error.issues[0]?.message ?? "Bad request.", 400);
+    }
+    let db;
+    try {
+      db = getDb();
+    } catch {
+      return err("NOT_CONFIGURED", "Database is not configured.", 500);
+    }
+    await db
+      .delete(holds)
+      .where(and(inArray(holds.holdToken, parsed.data.holdTokens), gt(holds.expiresAt, new Date())));
+    return new NextResponse(null, { status: 204 });
+  } catch (e) {
+    console.error("hold release failed", e);
+    Sentry.captureException(e);
+    return err("INTERNAL", "Could not release held slots.", 500);
   }
 }
 

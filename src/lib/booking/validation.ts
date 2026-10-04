@@ -34,6 +34,12 @@ export const holdsBodySchema = z
 
 export type HoldsBody = z.infer<typeof holdsBodySchema>;
 
+// DELETE /api/holds — hold tokens are unguessable capability values, so the
+// client can release only the exact rows it owns when navigating back.
+export const releaseHoldsBodySchema = z.object({
+  holdTokens: z.array(z.string().min(16).max(128)).min(1).max(MAX_SLOTS_PER_BOOKING),
+});
+
 // POST /api/submit
 export const submitBodySchema = z.object({
   holdTokens: z.array(z.string().min(16).max(128)).min(1).max(12),

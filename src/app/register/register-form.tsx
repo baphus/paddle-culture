@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LoadingAnimation } from "@/components/ui/loading-animation";
 
 export default function RegisterForm() {
   const router = useRouter();
@@ -55,7 +56,7 @@ export default function RegisterForm() {
     }
   }
 
-  if (valid === null) return <p>Checking invite…</p>;
+  if (valid === null) return <LoadingAnimation label="Checking invite" className="min-h-24" />;
   if (!valid) return <p role="alert">This invite link is invalid or already used.</p>;
 
   return (
@@ -89,7 +90,7 @@ export default function RegisterForm() {
       </div>
       {error ? <p role="alert">{error}</p> : null}
       <Button type="submit" disabled={busy}>
-        {busy ? "Creating account…" : "Create admin account"}
+        {busy ? <><LoadingAnimation size="compact" label="Creating account" /> Creating account…</> : "Create admin account"}
       </Button>
     </form>
   );
