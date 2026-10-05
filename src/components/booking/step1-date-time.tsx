@@ -8,6 +8,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Dumbbell,
   Info,
   Moon,
   Sun,
@@ -31,8 +32,7 @@ import {
   type CourtOption,
 } from "@/lib/courts";
 import { FALLBACK_RATES, peso, type DisplayRates } from "@/lib/pricing-display";
-import DetailsForm, { type DetailsValues } from "./details-form";
-import PaymentStep from "./payment-step";
+import Image from "next/image";
 import LandingImage from "@/components/landing/landing-image";
 
 interface AvailabilitySlot {
@@ -115,14 +115,26 @@ export interface Step1DateTimeProps {
   initialSelectedDate?: string | null;
   initialCourtIds?: string[];
   initialSelectedSlots?: string[];
+  initialPaddleQty?: number;
+  initialBall?: boolean;
   onHoldSuccess?: (
     hold: HoldState,
     courtIds: string[],
     slotStarts: string[],
     date: string,
+    paddleQty: number,
+    ball: boolean,
   ) => void;
   onHoldExpired?: () => void;
   onCancel?: () => void;
+  /** Fires on every change so the parent can keep its summary data live */
+  onLiveUpdate?: (update: {
+    courtIds: string[];
+    selectedDate: string | null;
+    selectedSlots: string[];
+    paddleQty: number;
+    ball: boolean;
+  }) => void;
 }
 
 export default function Step1DateTime({
@@ -132,9 +144,12 @@ export default function Step1DateTime({
   initialSelectedDate = null,
   initialCourtIds,
   initialSelectedSlots,
+  initialPaddleQty = 0,
+  initialBall = false,
   onHoldSuccess,
   onHoldExpired,
   onCancel,
+  onLiveUpdate,
 }: Step1DateTimeProps) {
   const todayStr = useMemo(() => manilaTodayStr(), []);
   const tomorrowStr = useMemo(() => manilaTomorrowStr(), []);
@@ -160,15 +175,24 @@ export default function Step1DateTime({
   const [hold, setHold] = useState<HoldState | null>(existingHold ?? null);
   const [holding, setHolding] = useState(false);
 
-  // Carousel state: panel 0 = date, panel 1 = time.
-  // Court choice is deliberately first: availability is then calculated for
-  // exactly the courts the guest intends to reserve.
-  const [panel, setPanel] = useState<0 | 1 | 2>(initialSelectedDate ? 2 : 0);
+  // Equipment rental state — live-feeds summary panel
+  const [paddleQty, setPaddleQty] = useState<number>(initialPaddleQty);
+  const [ball, setBall] = useState<boolean>(initialBall);
+
+  // Carousel: 0=Courts 1=Date 2=Time 3=Equipment
+  const [panel, setPanel] = useState<0 | 1 | 2 | 3>(initialSelectedDate ? 2 : 0);
   const panelHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const selectedRef = useRef<string[]>([]);
   selectedRef.current = selected;
   const carryRef = useRef(false);
   const touchX = useRef<number | null>(null);
+
+  // Notify parent of any live state change so the summary panel stays in sync
+  // without waiting for hold/submit.
+  useEffect(() => {
+    onLiveUpdate?.({ courtIds, selectedDate, selectedSlots: selected, paddleQty, ball });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courtIds, selectedDate, selected, paddleQty, ball]);
 
   // Refresh the court list live (read-only); keep the server-rendered list as
   // fallback when the DB is unreachable.
@@ -386,10 +410,9 @@ export default function Step1DateTime({
         slotStarts: selectedSorted,
       };
       setHold(holdState);
-      toast.success("Slots held — continue to details before the timer ends.");
-      if (onHoldSuccess && selectedDate) {
-        onHoldSuccess(holdState, courtIds, selectedSorted, selectedDate);
-      }
+      toast.success("Slots held — add equipment or continue to details.");
+      // Advance to equipment panel so user can optionally add gear
+      setPanel(3);
     } catch {
       toast.error("Could not hold those slots. Check your connection and retry.");
     } finally {
@@ -407,7 +430,7 @@ export default function Step1DateTime({
 
   function handleContinueCta() {
     if (hold && onHoldSuccess && selectedDate) {
-      onHoldSuccess(hold, courtIds, selectedSorted, selectedDate);
+      onHoldSuccess(hold, courtIds, selectedSorted, selectedDate, paddleQty, ball);
       return;
     }
     void createHold();
@@ -419,11 +442,11 @@ export default function Step1DateTime({
   }
 
   function startOver() {
-    // Client state only: the server hold (if any) expires on its own clock.
-    // Clearing the date collapses the wizard back to the date panel alone.
     setHold(null);
     setSelected([]);
     setSelectedDate(null);
+    setPaddleQty(0);
+    setBall(false);
     setPanel(0);
   }
 
@@ -438,13 +461,17 @@ export default function Step1DateTime({
     panelHeadingRef.current?.focus({ preventScroll: true });
   }, [panel]);
 
-  function goPanel(p: 0 | 1 | 2) {
+  function goPanel(p: 0 | 1 | 2 | 3) {
     if (p === 1 && courtIds.length === 0) {
       toast.error("Choose at least one court first.");
       return;
     }
     if (p === 2 && !selectedDate) {
       toast.error("Pick a play date first.");
+      return;
+    }
+    if (p === 3 && selectedSorted.length === 0) {
+      toast.error("Pick at least 1 time slot first.");
       return;
     }
     setPanel(p);
@@ -623,16 +650,16 @@ export default function Step1DateTime({
           <div className="mb-6">
             <div className="flex items-center justify-between gap-3">
               <h1 id="wizard-heading" className="text-2xl font-extrabold tracking-tight text-ink sm:text-3xl">
-                {panel === 0 ? "Step 1 of 3 — Courts" : panel === 1 ? "Step 2 of 3 — Date" : "Step 3 of 3 — Time"}
+                {panel === 0 ? "Step 1 of 4 — Courts" : panel === 1 ? "Step 2 of 4 — Date" : panel === 2 ? "Step 3 of 4 — Time" : "Step 4 of 4 — Equipment"}
               </h1>
               <nav aria-label="Booking steps" className="flex shrink-0 items-center gap-1.5">
-                {([0, 1, 2] as const).map((i) => (
+                {([0, 1, 2, 3] as const).map((i) => (
                   <button
                     key={i}
                     type="button"
                     onClick={() => goPanel(i)}
                     aria-current={panel === i ? "step" : undefined}
-                    aria-label={i === 0 ? "Step 1: choose courts" : i === 1 ? "Step 2: pick a date" : "Step 3: pick a time"}
+                    aria-label={i === 0 ? "Step 1: choose courts" : i === 1 ? "Step 2: pick a date" : i === 2 ? "Step 3: pick a time" : "Step 4: equipment"}
                     className={cn(
                       "inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 rounded-full px-2.5 text-xs font-bold transition-all",
                       panel === i
@@ -648,7 +675,7 @@ export default function Step1DateTime({
                     >
                       {i + 1}
                     </span>
-                    <span className="hidden sm:inline">{i === 0 ? "Courts" : i === 1 ? "Date" : "Time"}</span>
+                    <span className="hidden sm:inline">{i === 0 ? "Courts" : i === 1 ? "Date" : i === 2 ? "Time" : "Gear"}</span>
                   </button>
                 ))}
               </nav>
@@ -657,18 +684,20 @@ export default function Step1DateTime({
               className="mt-3 h-1.5 overflow-hidden rounded-full bg-oat"
               role="progressbar"
               aria-valuemin={1}
-              aria-valuemax={3}
+              aria-valuemax={4}
               aria-valuenow={panel + 1}
               aria-label="Booking progress"
             >
-              <div className={cn("h-full rounded-full bg-flame transition-all", panel === 0 ? "w-1/3" : panel === 1 ? "w-2/3" : "w-full")} />
+              <div className={cn("h-full rounded-full bg-flame transition-all", panel === 0 ? "w-1/4" : panel === 1 ? "w-2/4" : panel === 2 ? "w-3/4" : "w-full")} />
             </div>
             <p className="mt-2 text-xs text-warm-muted sm:text-sm">
               {panel === 0
                 ? "Choose one or more courts. Times must be free on every court you select."
                 : panel === 1
                   ? "Select an active calendar date to view available hours."
-                  : `${dateLabel} · times shown are free on every selected court`}
+                  : panel === 2
+                    ? `${dateLabel} · times shown are free on every selected court`
+                    : "Optional: add paddles or a ball set to your booking."}
             </p>
           </div>
 
@@ -683,8 +712,8 @@ export default function Step1DateTime({
               const dx = (e.changedTouches[0]?.clientX ?? 0) - touchX.current;
               touchX.current = null;
               if (Math.abs(dx) < 60) return;
-              if (dx < 0) goPanel(panel === 0 ? 1 : 2);
-              else setPanel(panel === 2 ? 1 : 0);
+              if (dx < 0) goPanel(panel < 3 ? ((panel + 1) as 0 | 1 | 2 | 3) : 3);
+              else setPanel(panel > 0 ? ((panel - 1) as 0 | 1 | 2 | 3) : 0);
             }}
           >
           {panel === 0 ? (
@@ -888,11 +917,11 @@ export default function Step1DateTime({
           </div>
           <p className="sr-only" role="status">
             {selectedDate
-              ? `Step ${panel + 1} of 3. Active date ${dateLabel}. ${selectedSorted.length} hours selected.`
+              ? `Step ${panel + 1} of 4. Active date ${dateLabel}. ${selectedSorted.length} hours selected.`
               : "No date selected yet. Pick a play date to see time slots."}
           </p>
           </div>
-          ) : (
+          ) : panel === 2 ? (
           <div key="panel-time" className="animate-rise motion-reduce:animate-none">
           <div className="rounded-xl border border-line-warm/50 bg-white p-4 shadow-inner sm:p-5">
             {/* Court selection belongs to the first panel; this compact line
@@ -1053,6 +1082,110 @@ export default function Step1DateTime({
           </div>
           </div>
           </div>
+          ) : (
+          /* Panel 3 — Equipment rentals */
+          <div key="panel-equipment" className="animate-rise motion-reduce:animate-none">
+            <h2 ref={panelHeadingRef} tabIndex={-1} className="text-lg font-extrabold tracking-tight text-ink outline-none sm:text-xl">
+              Equipment Rentals <span className="text-base font-semibold text-warm-muted">(Optional)</span>
+            </h2>
+            <p className="mt-1 text-sm text-warm-muted">
+              Add paddles or a ball set — the booking summary updates instantly.
+            </p>
+
+            <div className="mt-5 space-y-4">
+              {/* Paddle Rentals */}
+              <div className="rounded-2xl border border-line-warm/60 bg-cream/40 p-4 sm:p-5">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-3.5">
+                    <div className="relative size-16 shrink-0 overflow-hidden rounded-xl border border-line-warm/60 bg-gradient-to-br from-oat via-cream to-flame-light sm:size-20">
+                      <Image
+                        src="/images/paddle.jpg"
+                        alt="Paddle rental"
+                        width={96}
+                        height={96}
+                        loading="lazy"
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                    <div>
+                      <span className="block text-sm font-bold text-ink">Paddle Rentals</span>
+                      <span className="block text-xs text-warm-muted">
+                        {peso(rates.paddle)} per paddle per hour · High-grade carbon fiber paddles
+                      </span>
+                      {paddleQty > 0 && selectedSorted.length > 0 && (
+                        <span className="mt-1 block text-xs font-bold text-flame">
+                          = {peso(paddleQty * selectedSorted.length * rates.paddle)} total
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setPaddleQty((q) => Math.max(0, q - 1))}
+                      disabled={paddleQty <= 0}
+                      className="flex size-10 items-center justify-center rounded-xl border border-line-warm bg-white text-base font-bold text-ink transition-all hover:bg-cream disabled:opacity-40"
+                      aria-label="Decrease paddles"
+                    >
+                      −
+                    </button>
+                    <span className="min-w-8 text-center text-base font-extrabold text-ink">
+                      {paddleQty}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setPaddleQty((q) => Math.min(50, q + 1))}
+                      disabled={paddleQty >= 50}
+                      className="flex size-10 items-center justify-center rounded-xl border border-line-warm bg-white text-base font-bold text-ink transition-all hover:bg-cream disabled:opacity-40"
+                      aria-label="Increase paddles"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Ball set toggle */}
+              <label
+                htmlFor="ball-toggle"
+                className={cn(
+                  "flex cursor-pointer items-center gap-3.5 rounded-2xl border p-4 sm:p-5 transition-all select-none",
+                  ball
+                    ? "border-flame bg-flame-light/30 shadow-xs"
+                    : "border-line-warm/60 bg-cream/40 hover:bg-cream/70",
+                )}
+              >
+                <div className="relative size-16 shrink-0 overflow-hidden rounded-xl border border-line-warm/60 bg-gradient-to-br from-oat via-cream to-flame-light sm:size-20">
+                  <Image
+                    src="/images/Pickleball.jpg"
+                    alt="Ball set"
+                    width={96}
+                    height={96}
+                    loading="lazy"
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-bold text-ink">Add Pickleball Ball Set</span>
+                    <span className="rounded-full bg-flame/10 px-2.5 py-0.5 text-xs font-extrabold text-flame">
+                      +{peso(rates.ball)} flat
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-warm-muted">
+                    One-time fee per booking. Official tournament-grade outdoor pickleball balls.
+                  </p>
+                </div>
+                <input
+                  id="ball-toggle"
+                  type="checkbox"
+                  checked={ball}
+                  onChange={(e) => setBall(e.target.checked)}
+                  className="ml-auto size-5 shrink-0 self-center rounded-md border-line-warm accent-flame"
+                />
+              </label>
+            </div>
+          </div>
           )}
           </div>
 
@@ -1061,7 +1194,7 @@ export default function Step1DateTime({
             {panel > 0 ? (
               <button
                 type="button"
-                onClick={() => setPanel(panel === 1 ? 0 : 1)}
+                onClick={() => setPanel((panel - 1) as 0 | 1 | 2 | 3)}
                 className="inline-flex min-h-[44px] items-center gap-1 rounded-xl border border-line-warm/60 bg-white px-5 text-sm font-bold text-pine transition-all hover:bg-oat"
               >
                 <ChevronLeft className="size-4" aria-hidden /> Back
@@ -1092,7 +1225,7 @@ export default function Step1DateTime({
               >
                 Continue to time <ArrowRight className="size-4" aria-hidden />
               </button>
-            ) : (
+            ) : panel === 2 ? (
               <button
                 type="button"
                 onClick={handleContinueCta}
@@ -1102,8 +1235,21 @@ export default function Step1DateTime({
                 {holding ? (
                   <><LoadingAnimation size="compact" label="Holding selected court times" /> Holding…</>
                 ) : (
-                  <>{hold ? "Continue to Details" : "Hold & Continue"}<ArrowRight className="size-4" aria-hidden /></>
+                  <>Hold &amp; Add Equipment <ArrowRight className="size-4" aria-hidden /></>
                 )}
+              </button>
+            ) : (
+              /* Panel 3 — confirm equipment and proceed */
+              <button
+                type="button"
+                onClick={() => {
+                  if (!hold || !selectedDate) return;
+                  onHoldSuccess?.(hold, courtIds, selectedSorted, selectedDate, paddleQty, ball);
+                }}
+                disabled={!hold || !selectedDate}
+                className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-flame px-5 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
+              >
+                Continue to Details <ArrowRight className="size-4" aria-hidden />
               </button>
             )}
           </div>

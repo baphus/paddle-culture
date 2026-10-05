@@ -24,7 +24,7 @@ import {
   type SummaryData,
 } from "./booking-summary-panel";
 
-type Step = "select" | "details" | "payment" | "done";
+type Step = "select" | "details" | "payment" | "confirmation";
 
 interface StepItem {
   id: Step;
@@ -34,30 +34,30 @@ interface StepItem {
   icon: typeof Calendar;
 }
 
-const STEPS: StepItem[] = [
+const STEPS_LOCAL: StepItem[] = [
   {
     id: "select",
     number: 1,
-    label: "Date & Time",
+    label: "Book",
     description: "Choose court & hours",
     icon: Calendar,
   },
   {
     id: "details",
     number: 2,
-    label: "Player Details",
-    description: "Contact & gear rental",
+    label: "Details",
+    description: "Contact info",
     icon: User,
   },
   {
     id: "payment",
     number: 3,
-    label: "Payment & Proof",
+    label: "Payment",
     description: "GCash / Bank transfer",
     icon: CreditCard,
   },
   {
-    id: "done",
+    id: "confirmation",
     number: 4,
     label: "Confirmed",
     description: "Tracking pass & code",
@@ -135,10 +135,15 @@ export default function BookingFlow({
     initialCourts.length > 0 ? [initialCourts[0].id] : [],
   );
   const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
+  // Equipment — live from step 1 panel 4, pre-fills DetailsForm
+  const [livePaddleQty, setLivePaddleQty] = useState(0);
+  const [liveBall, setLiveBall] = useState(false);
   const [details, setDetails] = useState<DetailsValues | null>(null);
   const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ trackingToken: string; total: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [paymentData, setPaymentData] = useState<{ trackingToken: string; total: string } | null>(null);
 
   // Refresh courts and pricing live
   useEffect(() => {
@@ -181,6 +186,7 @@ export default function BookingFlow({
 
   const handleHoldExpired = useCallback(() => {
     setHold(null);
+    setError("Your hold expired. Please select your slots and hold again.");
     setStep("select");
     toast.error("Your hold expired. Please select your slots and hold again.", {
       duration: 8000,
@@ -188,14 +194,29 @@ export default function BookingFlow({
   }, []);
 
   const handleHoldSuccess = useCallback(
-    (newHold: HoldState, newCourtIds: string[], newSlots: string[], date: string) => {
+    (newHold: HoldState, newCourtIds: string[], newSlots: string[], date: string, paddleQty = 0, ball = false) => {
+      setError(null);
       setHold(newHold);
       setCourtIds(newCourtIds);
       setSelectedSlots(newSlots);
       setSelectedDate(date);
+      setLivePaddleQty(paddleQty);
+      setLiveBall(ball);
       setIdempotencyKey(crypto.randomUUID());
       setStep("details");
       window.scrollTo({ top: 0, behavior: "smooth" });
+    },
+    [],
+  );
+
+  /** Called on every live change in step 1 — keeps summary in sync before hold */
+  const handleLiveUpdate = useCallback(
+    (update: { courtIds: string[]; selectedDate: string | null; selectedSlots: string[]; paddleQty: number; ball: boolean }) => {
+      setCourtIds(update.courtIds);
+      setSelectedDate(update.selectedDate);
+      setSelectedSlots(update.selectedSlots);
+      setLivePaddleQty(update.paddleQty);
+      setLiveBall(update.ball);
     },
     [],
   );
@@ -221,8 +242,12 @@ export default function BookingFlow({
     setHold(null);
     setSelectedSlots([]);
     setSelectedDate(null);
+    setLivePaddleQty(0);
+    setLiveBall(false);
     setDetails(null);
     setResult(null);
+    setError(null);
+    setPaymentData(null);
     setStep("select");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -232,38 +257,39 @@ export default function BookingFlow({
     [courtIds, courts],
   );
 
-  const currentStepIndex = STEPS.findIndex((s) => s.id === step);
+  const currentStepIndex = STEPS_LOCAL.findIndex((s) => s.id === step);
 
-  // Summary data fed to the floating panel (steps 1–3 only)
+  // Summary data — always live, no waiting for step transitions
   const summaryData: SummaryData = useMemo(
     () => ({
       selectedDate,
       selectedSlots,
       courtNames,
       rates,
-      details,
+      paddleQty: livePaddleQty,
+      ball: liveBall,
       isHeld: !!hold,
+      holdDeadlineMs: hold?.deadlineMs ?? null,
     }),
-    [selectedDate, selectedSlots, courtNames, rates, details, hold],
+    [selectedDate, selectedSlots, courtNames, rates, livePaddleQty, liveBall, hold],
   );
 
-  // Whether the floating summary panel should be shown
-  const showSummaryPanel = step !== "done";
+  const showSummaryPanel = step !== "confirmation";
 
   return (
     <div className="space-y-6">
       {/* Stepper Navigation Indicator */}
       <nav aria-label="Booking flow progress" className="px-4 py-5">
         <div className="flex items-start justify-between">
-          {STEPS.map((s, idx) => {
+          {STEPS_LOCAL.map((s, idx) => {
             const isCurrent = s.id === step;
-            const isCompleted = idx < currentStepIndex || step === "done";
+            const isCompleted = idx < currentStepIndex || step === "confirmation";
             const StepIcon = s.icon;
-            const isLast = idx === STEPS.length - 1;
+            const isLast = idx === STEPS_LOCAL.length - 1;
 
             return (
               <div key={s.id} className="relative flex flex-1 flex-col items-center">
-                {/* Connector line (right side, skip on last item) */}
+                {/* Connector line */}
                 {!isLast && (
                   <div
                     className={cn(
@@ -273,7 +299,6 @@ export default function BookingFlow({
                     aria-hidden="true"
                   />
                 )}
-
                 {/* Circle */}
                 <div
                   aria-current={isCurrent ? "step" : undefined}
@@ -292,16 +317,11 @@ export default function BookingFlow({
                     <StepIcon className="size-4" />
                   )}
                 </div>
-
                 {/* Label */}
                 <span
                   className={cn(
                     "mt-2 text-center text-[11px] font-bold leading-tight",
-                    isCurrent
-                      ? "text-flame"
-                      : isCompleted
-                        ? "text-pine"
-                        : "text-warm-muted",
+                    isCurrent ? "text-flame" : isCompleted ? "text-pine" : "text-warm-muted",
                   )}
                 >
                   {s.label}
@@ -317,12 +337,21 @@ export default function BookingFlow({
         <HoldTimerBar deadlineMs={hold.deadlineMs} onExpired={handleHoldExpired} />
       )}
 
-      {/* Two-column layout for steps 1–3: main content + sticky summary */}
+      {error && (
+        <p
+          role="alert"
+          className="rounded-2xl border border-error/40 bg-error/10 px-4 py-3 text-xs sm:text-sm font-semibold text-error"
+        >
+          {error}
+        </p>
+      )}
+
+      {/* Two-column layout for steps 1–3 */}
       {showSummaryPanel ? (
         <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-12 lg:gap-8">
           {/* Main content — 8 cols on desktop */}
           <div className="lg:col-span-8">
-            {/* Step 1: Select Date, Time & Court */}
+            {/* Step 1: Book (Courts → Date → Time → Equipment) */}
             {step === "select" && (
               <Step1DateTime
                 initialCourts={courts}
@@ -331,22 +360,37 @@ export default function BookingFlow({
                 initialSelectedDate={selectedDate}
                 initialCourtIds={courtIds}
                 initialSelectedSlots={selectedSlots}
+                initialPaddleQty={livePaddleQty}
+                initialBall={liveBall}
                 onHoldSuccess={handleHoldSuccess}
                 onHoldExpired={handleHoldExpired}
                 onCancel={startOver}
+                onLiveUpdate={handleLiveUpdate}
               />
             )}
 
-            {/* Step 2: Player Details & Equipment Rentals */}
+            {/* Step 2: Player Details (equipment pre-filled from step 1) */}
             {step === "details" && hold && (
               <div className="animate-rise">
                 <DetailsForm
                   maxHours={selectedSlots.length}
-                  defaultValues={details ?? undefined}
+                  defaultValues={
+                    details ?? {
+                      fullName: "",
+                      email: "",
+                      phone: "",
+                      paddleQty: livePaddleQty,
+                      paddleHours: null,
+                      ball: liveBall,
+                    }
+                  }
                   busy={false}
                   onBack={returnToTimeSlots}
                   onSubmit={(vals) => {
                     setDetails(vals);
+                    // Keep live equipment in sync with any edits made in step 2
+                    setLivePaddleQty(vals.paddleQty);
+                    setLiveBall(vals.ball);
                     setStep("payment");
                     window.scrollTo({ top: 0, behavior: "smooth" });
                   }}
@@ -374,8 +418,9 @@ export default function BookingFlow({
                   onHoldExpired={handleHoldExpired}
                   onSuccess={(res) => {
                     setResult(res);
+                    setPaymentData(res);
                     setHold(null);
-                    setStep("done");
+                    setStep("confirmation");
                     window.scrollTo({ top: 0, behavior: "smooth" });
                   }}
                 />
@@ -383,18 +428,18 @@ export default function BookingFlow({
             )}
           </div>
 
-          {/* Sticky summary panel — 4 cols on desktop, hidden on mobile */}
+          {/* Sticky summary panel — desktop only */}
           <div className="hidden lg:col-span-4 lg:block lg:sticky lg:top-24 lg:self-start">
             <BookingSummaryDesktop data={summaryData} />
           </div>
         </div>
       ) : null}
 
-      {/* Mobile floating summary — shown on steps 1–3 */}
+      {/* Mobile floating summary — steps 1–3 */}
       {showSummaryPanel && <BookingSummaryMobile data={summaryData} />}
 
-      {/* Step 4: Confirmation — full width, no sidebar */}
-      {step === "done" && result && details && (
+      {/* Step 4: Confirmation */}
+      {step === "confirmation" && result && details && (
         <ConfirmationStep
           trackingToken={result.trackingToken}
           total={result.total}

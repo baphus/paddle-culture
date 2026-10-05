@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Calendar,
   ChevronDown,
@@ -14,10 +14,10 @@ import {
   Timer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatManilaLong, formatSlotRange } from "@/lib/courts";
+import Image from "next/image";
+import { formatManilaLong, formatSlotRange, formatCountdown } from "@/lib/courts";
 import { peso, type DisplayRates } from "@/lib/pricing-display";
 import { timeBandFor } from "@/lib/booking/slots";
-import type { DetailsValues } from "./details-form";
 
 export interface SummaryData {
   /** ISO date string "YYYY-MM-DD", or null if not yet picked */
@@ -28,10 +28,42 @@ export interface SummaryData {
   courtNames: string[];
   /** Live display rates for estimate */
   rates: DisplayRates;
-  /** Null until step 2 is completed */
-  details: DetailsValues | null;
+  /** Live paddle quantity — updates immediately from step 1 panel 4 */
+  paddleQty: number;
+  /** Live ball toggle — updates immediately from step 1 panel 4 */
+  ball: boolean;
   /** Whether slots are currently held */
   isHeld: boolean;
+  /** Hold expiry deadline (ms since epoch), or null when no hold is active */
+  holdDeadlineMs: number | null;
+}
+
+// ---- hold countdown hook ----------------------------------------------------
+
+function useHoldCountdown(deadlineMs: number | null): {
+  remaining: number;
+  urgent: boolean;
+  label: string;
+} {
+  const [remaining, setRemaining] = useState(() =>
+    deadlineMs !== null ? Math.max(0, deadlineMs - Date.now()) : 0,
+  );
+
+  useEffect(() => {
+    if (deadlineMs === null) {
+      setRemaining(0);
+      return;
+    }
+    setRemaining(Math.max(0, deadlineMs - Date.now()));
+    const id = setInterval(() => {
+      setRemaining(Math.max(0, deadlineMs - Date.now()));
+    }, 500);
+    return () => clearInterval(id);
+  }, [deadlineMs]);
+
+  const urgent = deadlineMs !== null && remaining < 120_000;
+  const label = deadlineMs !== null ? formatCountdown(remaining) : "";
+  return { remaining, urgent, label };
 }
 
 // ---- helpers ----------------------------------------------------------------
@@ -40,7 +72,8 @@ function computeBreakdown(
   selectedSlots: string[],
   courtCount: number,
   rates: DisplayRates,
-  details: DetailsValues | null,
+  paddleQty: number,
+  ball: boolean,
 ): {
   dayCount: number;
   nightCount: number;
@@ -62,16 +95,9 @@ function computeBreakdown(
   const perCourt = dayCount * rates.morning + nightCount * rates.evening;
   const courtTotal = perCourt * Math.max(courtCount, 1);
 
-  let paddleTotal = 0;
-  let ballTotal = 0;
-  if (details) {
-    if (details.paddleQty > 0) {
-      const hours = details.paddleHours ?? sorted.length;
-      paddleTotal = details.paddleQty * hours * rates.paddle;
-    }
-    if (details.ball) ballTotal = rates.ball;
-  }
-
+  const paddleHours = sorted.length; // equals booked court hours
+  const paddleTotal = paddleQty > 0 ? paddleQty * paddleHours * rates.paddle : 0;
+  const ballTotal = ball ? rates.ball : 0;
   const total = courtTotal + paddleTotal + ballTotal;
 
   const breakdown =
@@ -104,14 +130,17 @@ function computeBreakdown(
 // ---- Desktop sticky panel ---------------------------------------------------
 
 export function BookingSummaryDesktop({ data }: { data: SummaryData }) {
-  const { selectedDate, selectedSlots, courtNames, rates, details, isHeld } = data;
+  const { selectedDate, selectedSlots, courtNames, rates, paddleQty, ball, isHeld, holdDeadlineMs } = data;
   const { courtTotal, paddleTotal, ballTotal, total, breakdown, rangeLabel, durationLabel } =
-    computeBreakdown(selectedSlots, courtNames.length, rates, details);
+    computeBreakdown(selectedSlots, courtNames.length, rates, paddleQty, ball);
+
+  const { urgent, label: countdownLabel } = useHoldCountdown(holdDeadlineMs);
 
   const hasSlots = selectedSlots.length > 0;
   const hasDate = !!selectedDate;
   const courtLabel = courtNames.length > 0 ? courtNames.join(", ") : "No court selected";
   const dateLabel = hasDate ? formatManilaLong(selectedDate!) : "No date selected";
+  const paddleHours = selectedSlots.length;
 
   return (
     <aside
@@ -126,8 +155,35 @@ export function BookingSummaryDesktop({ data }: { data: SummaryData }) {
         </div>
       </div>
 
-      {/* Hold badge */}
-      {isHeld && (
+      {/* Hold countdown timer */}
+      {isHeld && holdDeadlineMs !== null && (
+        <div
+          role="timer"
+          aria-live="polite"
+          className={cn(
+            "flex items-center gap-2.5 rounded-xl border px-3 py-2.5 text-xs font-semibold transition-all",
+            urgent
+              ? "border-error/40 bg-error/10 text-error animate-pulse"
+              : "border-amber-200 bg-amber-50 text-amber-800",
+          )}
+        >
+          <Timer className={cn("size-4 shrink-0", urgent ? "text-error" : "text-amber-600")} aria-hidden />
+          <div className="min-w-0">
+            <span className="block font-bold">
+              Hold expires in{" "}
+              <strong className={cn("font-extrabold", urgent ? "text-error" : "text-amber-700")}>
+                {countdownLabel}
+              </strong>
+            </span>
+            <span className="block text-[10px] font-normal opacity-75">
+              Complete your booking before time runs out
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Held badge (no deadline shown) */}
+      {isHeld && holdDeadlineMs === null && (
         <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
           <Sparkles className="size-3.5 shrink-0" />
           <span>Slots held — complete before timer expires</span>
@@ -180,9 +236,9 @@ export function BookingSummaryDesktop({ data }: { data: SummaryData }) {
           </div>
         </div>
 
-        {/* Equipment — only show once details collected */}
-        {details && (details.paddleQty > 0 || details.ball) && (
-          <div className="flex items-start gap-3 rounded-xl border border-line-warm/60 bg-white p-3 shadow-xs">
+        {/* Equipment — live from step 1 panel 4 */}
+        {(paddleQty > 0 || ball) && (
+          <div className="flex items-start gap-3 rounded-xl border border-flame/30 bg-flame-light/20 p-3 shadow-xs">
             <div className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg bg-flame-light text-flame">
               <Dumbbell className="size-3.5" aria-hidden />
             </div>
@@ -190,20 +246,42 @@ export function BookingSummaryDesktop({ data }: { data: SummaryData }) {
               <span className="block text-[10px] font-semibold uppercase tracking-wide text-warm-muted">
                 Equipment
               </span>
-              {details.paddleQty > 0 && (
-                <span className="block text-xs font-semibold text-ink">
-                  {details.paddleQty} × Paddle ({details.paddleHours ?? selectedSlots.length}h)
+              {paddleQty > 0 && (
+                <span className="mt-1 flex items-center gap-2 text-xs font-semibold text-ink">
+                  <span className="relative size-7 shrink-0 overflow-hidden rounded-lg border border-line-warm/60 bg-gradient-to-br from-oat via-cream to-flame-light">
+                    <Image
+                      src="/images/paddle.jpg"
+                      alt="Paddle rental"
+                      width={28}
+                      height={28}
+                      loading="lazy"
+                      className="h-full w-full object-cover"
+                    />
+                  </span>
+                  {paddleQty} × Paddle ({paddleHours}h)
                 </span>
               )}
-              {details.ball && (
-                <span className="block text-xs font-semibold text-ink">Ball set (flat)</span>
+              {ball && (
+                <span className="mt-1 flex items-center gap-2 text-xs font-semibold text-ink">
+                  <span className="relative size-7 shrink-0 overflow-hidden rounded-lg border border-line-warm/60 bg-gradient-to-br from-oat via-cream to-flame-light">
+                    <Image
+                      src="/images/Pickleball.jpg"
+                      alt="Ball set"
+                      width={28}
+                      height={28}
+                      loading="lazy"
+                      className="h-full w-full object-cover"
+                    />
+                  </span>
+                  Ball set (flat)
+                </span>
               )}
             </div>
           </div>
         )}
       </div>
 
-      {/* Cost breakdown */}
+      {/* Cost breakdown — always shown when slots selected */}
       {hasSlots && (
         <div className="rounded-xl border border-line-warm/70 bg-oat/60 p-3.5">
           <div className="space-y-1.5 text-xs">
@@ -211,31 +289,50 @@ export function BookingSummaryDesktop({ data }: { data: SummaryData }) {
               <span>{breakdown}</span>
               <span className="font-semibold text-ink">{peso(courtTotal)}</span>
             </div>
-            {details && details.paddleQty > 0 && (
-              <div className="flex justify-between text-warm-muted">
-                <span>
-                  {details.paddleQty} × Paddle × {details.paddleHours ?? selectedSlots.length}h
+            {paddleQty > 0 && (
+              <div className="flex items-center justify-between gap-2 text-warm-muted">
+                <span className="flex items-center gap-1.5">
+                  <span className="relative size-6 shrink-0 overflow-hidden rounded-md border border-line-warm/60 bg-gradient-to-br from-oat via-cream to-flame-light">
+                    <Image
+                      src="/images/paddle.jpg"
+                      alt="Paddle rental"
+                      width={24}
+                      height={24}
+                      loading="lazy"
+                      className="h-full w-full object-cover"
+                    />
+                  </span>
+                  {paddleQty} × Paddle × {paddleHours}h
                 </span>
                 <span className="font-semibold text-ink">{peso(paddleTotal)}</span>
               </div>
             )}
-            {details && details.ball && (
-              <div className="flex justify-between text-warm-muted">
-                <span>Ball set</span>
+            {ball && (
+              <div className="flex items-center justify-between gap-2 text-warm-muted">
+                <span className="flex items-center gap-1.5">
+                  <span className="relative size-6 shrink-0 overflow-hidden rounded-md border border-line-warm/60 bg-gradient-to-br from-oat via-cream to-flame-light">
+                    <Image
+                      src="/images/Pickleball.jpg"
+                      alt="Ball set"
+                      width={24}
+                      height={24}
+                      loading="lazy"
+                      className="h-full w-full object-cover"
+                    />
+                  </span>
+                  Ball set
+                </span>
                 <span className="font-semibold text-ink">{peso(ballTotal)}</span>
               </div>
             )}
             <div className="flex items-baseline justify-between border-t border-line-warm/50 pt-2">
-              <span className="text-xs font-bold text-ink">
-                {details ? "Total" : "Estimated Total"}
-              </span>
+              <span className="text-xs font-bold text-ink">Estimated Total</span>
               <span className="text-xl font-extrabold text-flame">{peso(total)}</span>
             </div>
           </div>
         </div>
       )}
-
-      {/* Hold reminder */}
+      {/* Empty state */}
       {!hasSlots && (
         <p className="text-center text-xs text-warm-muted">
           Select courts, date &amp; time to see your estimate
@@ -254,20 +351,22 @@ export function BookingSummaryDesktop({ data }: { data: SummaryData }) {
 
 export function BookingSummaryMobile({ data }: { data: SummaryData }) {
   const [open, setOpen] = useState(false);
-  const { selectedDate, selectedSlots, courtNames, rates, details, isHeld } = data;
+  const { selectedDate, selectedSlots, courtNames, rates, paddleQty, ball, isHeld, holdDeadlineMs } = data;
 
   const { courtTotal, paddleTotal, ballTotal, total, breakdown, rangeLabel, durationLabel } =
-    computeBreakdown(selectedSlots, courtNames.length, rates, details);
+    computeBreakdown(selectedSlots, courtNames.length, rates, paddleQty, ball);
+
+  const { urgent, label: countdownLabel } = useHoldCountdown(holdDeadlineMs);
 
   const hasSlots = selectedSlots.length > 0;
   const hasDate = !!selectedDate;
   const hasAny = hasDate || hasSlots || courtNames.length > 0;
 
-  // Nothing to show yet → render nothing (step 1 date+time fully controls its own empty state)
   if (!hasAny) return null;
 
   const courtLabel = courtNames.length > 0 ? courtNames.join(", ") : "—";
   const dateLabel = hasDate ? formatManilaLong(selectedDate!) : "—";
+  const paddleHours = selectedSlots.length;
 
   return (
     <>
@@ -287,8 +386,17 @@ export function BookingSummaryMobile({ data }: { data: SummaryData }) {
           open ? "translate-y-0" : "translate-y-[calc(100%-56px)]",
         )}
       >
-        <div className="mx-auto max-w-lg rounded-t-2xl border-t border-line-warm/60 bg-cream shadow-[0_-8px_32px_rgba(66,48,45,0.18)]">
-          {/* Drag handle / collapsed pill — always visible */}
+        <div
+          className={cn(
+            "mx-auto max-w-lg rounded-t-2xl border-t shadow-[0_-8px_32px_rgba(66,48,45,0.18)]",
+            isHeld && holdDeadlineMs !== null && urgent
+              ? "border-error/40 bg-error/10"
+              : isHeld && holdDeadlineMs !== null
+                ? "border-amber-200 bg-amber-50"
+                : "border-line-warm/60 bg-cream",
+          )}
+        >
+          {/* Collapsed pill — always visible */}
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}
@@ -297,10 +405,34 @@ export function BookingSummaryMobile({ data }: { data: SummaryData }) {
             className="flex w-full items-center justify-between gap-3 px-4 py-3"
           >
             <div className="flex min-w-0 flex-1 items-center gap-3">
-              <div className="grid size-7 shrink-0 place-items-center rounded-full bg-flame text-white">
-                <Receipt className="size-3.5" aria-hidden />
+              <div
+                className={cn(
+                  "grid size-7 shrink-0 place-items-center rounded-full text-white",
+                  isHeld && holdDeadlineMs !== null && urgent ? "bg-error" : "bg-flame",
+                )}
+              >
+                {isHeld && holdDeadlineMs !== null ? (
+                  <Timer className="size-3.5" aria-hidden />
+                ) : (
+                  <Receipt className="size-3.5" aria-hidden />
+                )}
               </div>
-              {hasSlots ? (
+              {/* Show countdown in pill when held */}
+              {isHeld && holdDeadlineMs !== null ? (
+                <div role="timer" aria-live="polite" className="min-w-0">
+                  <p className={cn("text-sm font-bold leading-tight", urgent ? "text-error" : "text-amber-800")}>
+                    Hold expires in{" "}
+                    <strong className={cn("font-extrabold", urgent ? "text-error" : "text-amber-700")}>
+                      {countdownLabel}
+                    </strong>
+                  </p>
+                  {hasSlots && (
+                    <p className="text-[11px] text-warm-muted">
+                      {durationLabel} · <span className="font-extrabold text-flame">{peso(total)}</span>
+                    </p>
+                  )}
+                </div>
+              ) : hasSlots ? (
                 <div className="min-w-0">
                   <p className="truncate text-sm font-bold text-ink leading-tight">{rangeLabel}</p>
                   <p className="text-[11px] text-warm-muted">
@@ -313,7 +445,7 @@ export function BookingSummaryMobile({ data }: { data: SummaryData }) {
               )}
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              {isHeld && (
+              {isHeld && holdDeadlineMs === null && (
                 <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
                   Held
                 </span>
@@ -332,6 +464,28 @@ export function BookingSummaryMobile({ data }: { data: SummaryData }) {
             hidden={!open}
             className="border-t border-line-warm/40 px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4"
           >
+            {/* Timer row */}
+            {isHeld && holdDeadlineMs !== null && (
+              <div
+                role="timer"
+                aria-live="polite"
+                className={cn(
+                  "mb-3 flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold",
+                  urgent
+                    ? "border-error/40 bg-error/10 text-error animate-pulse"
+                    : "border-amber-200 bg-amber-50 text-amber-800",
+                )}
+              >
+                <Timer className={cn("size-3.5 shrink-0", urgent ? "text-error" : "text-amber-600")} aria-hidden />
+                <span>
+                  Hold expires in{" "}
+                  <strong className={cn("font-extrabold", urgent ? "text-error" : "text-amber-700")}>
+                    {countdownLabel}
+                  </strong>
+                </span>
+              </div>
+            )}
+
             <div className="space-y-2.5">
               <div className="flex items-center gap-2 text-xs">
                 <MapPin className="size-3.5 shrink-0 text-flame" />
@@ -347,20 +501,17 @@ export function BookingSummaryMobile({ data }: { data: SummaryData }) {
                 <div className="flex items-center gap-2 text-xs">
                   <Clock className="size-3.5 shrink-0 text-flame" />
                   <span className="font-semibold text-warm-muted">Time:</span>
-                  <span className="font-bold text-ink">
-                    {rangeLabel} ({durationLabel})
-                  </span>
+                  <span className="font-bold text-ink">{rangeLabel} ({durationLabel})</span>
                 </div>
               )}
-              {details && (details.paddleQty > 0 || details.ball) && (
+              {(paddleQty > 0 || ball) && (
                 <div className="flex items-start gap-2 text-xs">
                   <Dumbbell className="mt-0.5 size-3.5 shrink-0 text-flame" />
                   <span className="font-semibold text-warm-muted">Gear:</span>
                   <span className="font-bold text-ink">
                     {[
-                      details.paddleQty > 0 &&
-                        `${details.paddleQty}× paddle (${details.paddleHours ?? selectedSlots.length}h)`,
-                      details.ball && "ball set",
+                      paddleQty > 0 && `${paddleQty}× paddle (${paddleHours}h)`,
+                      ball && "ball set",
                     ]
                       .filter(Boolean)
                       .join(", ")}
@@ -377,24 +528,44 @@ export function BookingSummaryMobile({ data }: { data: SummaryData }) {
                     <span>{breakdown}</span>
                     <span className="font-semibold text-ink">{peso(courtTotal)}</span>
                   </div>
-                  {details && details.paddleQty > 0 && (
-                    <div className="flex justify-between text-warm-muted">
-                      <span>
-                        {details.paddleQty} × Paddle × {details.paddleHours ?? selectedSlots.length}h
+                  {paddleQty > 0 && (
+                    <div className="flex items-center justify-between gap-2 text-warm-muted">
+                      <span className="flex items-center gap-1.5">
+                        <span className="relative size-6 shrink-0 overflow-hidden rounded-md border border-line-warm/60 bg-gradient-to-br from-oat via-cream to-flame-light">
+                          <Image
+                            src="/images/paddle.jpg"
+                            alt="Paddle rental"
+                            width={24}
+                            height={24}
+                            loading="lazy"
+                            className="h-full w-full object-cover"
+                          />
+                        </span>
+                        {paddleQty} × Paddle × {paddleHours}h
                       </span>
                       <span className="font-semibold text-ink">{peso(paddleTotal)}</span>
                     </div>
                   )}
-                  {details && details.ball && (
-                    <div className="flex justify-between text-warm-muted">
-                      <span>Ball set</span>
+                  {ball && (
+                    <div className="flex items-center justify-between gap-2 text-warm-muted">
+                      <span className="flex items-center gap-1.5">
+                        <span className="relative size-6 shrink-0 overflow-hidden rounded-md border border-line-warm/60 bg-gradient-to-br from-oat via-cream to-flame-light">
+                          <Image
+                            src="/images/Pickleball.jpg"
+                            alt="Ball set"
+                            width={24}
+                            height={24}
+                            loading="lazy"
+                            className="h-full w-full object-cover"
+                          />
+                        </span>
+                        Ball set
+                      </span>
                       <span className="font-semibold text-ink">{peso(ballTotal)}</span>
                     </div>
                   )}
                   <div className="flex items-baseline justify-between border-t border-line-warm/50 pt-2">
-                    <span className="font-bold text-ink">
-                      {details ? "Total" : "Estimated Total"}
-                    </span>
+                    <span className="font-bold text-ink">Estimated Total</span>
                     <span className="text-lg font-extrabold text-flame">{peso(total)}</span>
                   </div>
                 </div>
@@ -404,7 +575,7 @@ export function BookingSummaryMobile({ data }: { data: SummaryData }) {
         </div>
       </div>
 
-      {/* Spacer so the page content isn't hidden behind the collapsed bar */}
+      {/* Spacer */}
       <div className="h-14 lg:hidden" aria-hidden />
     </>
   );

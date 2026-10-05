@@ -8,6 +8,7 @@ import {
   bookingRentals,
   bookingSlots,
   bookings,
+  courts,
   emailOutbox,
   holds,
   idempotencyKeys,
@@ -84,6 +85,7 @@ export async function POST(request: Request) {
         const existing = await tx
           .select({
             trackingToken: bookings.trackingToken,
+            trackingCode: bookings.trackingCode,
             total: bookings.total,
             status: bookings.status,
           })
@@ -93,6 +95,7 @@ export async function POST(request: Request) {
         if (!row) throw new LaneError("INTERNAL", "Prior submission is unreadable.", 500);
         return {
           trackingToken: row.trackingToken,
+          trackingCode: row.trackingCode,
           total: row.total,
           status: row.status,
           deduped: true,
@@ -156,17 +159,36 @@ export async function POST(request: Request) {
       });
 
       const trackingToken = randomBytes(32).toString("hex");
-      const inserted = await tx
-        .insert(bookings)
-        .values({
-          trackingToken,
-          status: "Pending",
-          fullName: body.customer.fullName,
-          email,
-          phone: body.customer.phone,
-          total,
-        })
-        .returning({ id: bookings.id });
+      // 5-char uppercase alphanumeric tracking code (human-readable, shown at front desk).
+      // Charset: A-Z0-9 (36^5 = ~60 million combos). Retry up to 5× on the
+      // rare uniqueness collision before surfacing an error.
+      let trackingCode = generateTrackingCode();
+      let inserted: { id: string }[];
+      let codeAttempts = 0;
+      while (true) {
+        try {
+          inserted = await tx
+            .insert(bookings)
+            .values({
+              trackingToken,
+              trackingCode,
+              status: "Pending",
+              fullName: body.customer.fullName,
+              email,
+              phone: body.customer.phone,
+              total,
+            })
+            .returning({ id: bookings.id });
+          break;
+        } catch (insertErr) {
+          if (isTrackingCodeViolation(insertErr) && codeAttempts < 4) {
+            codeAttempts++;
+            trackingCode = generateTrackingCode();
+            continue;
+          }
+          throw insertErr;
+        }
+      }
       const bookingId = (inserted[0] as { id: string }).id;
 
       await tx.insert(bookingSlots).values(
@@ -212,8 +234,17 @@ export async function POST(request: Request) {
 
       await tx.delete(holds).where(inArray(holds.holdToken, body.holdTokens));
 
+      // Fetch court names for the outbox payload so emails show human-readable names.
+      const courtIds = [...new Set(slotPairs.map((p) => p.courtId))];
+      const courtRows = await tx
+        .select({ id: courts.id, name: courts.name })
+        .from(courts)
+        .where(inArray(courts.id, courtIds));
+      const courtNameById = new Map(courtRows.map((c) => [c.id, c.name]));
+
       const slotSummary = slotPairs.map((p) => ({
         courtId: p.courtId,
+        courtName: courtNameById.get(p.courtId) ?? p.courtId,
         slotStart: p.start.toISOString(),
       }));
       const now = new Date();
@@ -228,6 +259,8 @@ export async function POST(request: Request) {
           payload: {
             trackingToken,
             fullName: body.customer.fullName,
+            email,
+            phone: body.customer.phone,
             slots: slotSummary,
             total,
             lines,
@@ -260,7 +293,7 @@ export async function POST(request: Request) {
         action: "booking.submit",
         entity: "booking",
         entityId: bookingId,
-        after: { trackingToken, total, status: "Pending", slots: slotSummary },
+        after: { trackingToken, trackingCode, total, status: "Pending", slots: slotSummary },
       });
 
       await tx
@@ -268,7 +301,7 @@ export async function POST(request: Request) {
         .set({ bookingId })
         .where(eq(idempotencyKeys.key, body.idempotencyKey));
 
-      return { trackingToken, total, status: "Pending", deduped: false };
+      return { trackingToken, trackingCode, total, status: "Pending", deduped: false };
     });
 
     // Background send: schedule the drain with `after()` so the response
@@ -300,4 +333,27 @@ function isUniqueViolation(e: unknown): boolean {
     "code" in e &&
     (e as { code?: unknown }).code === "23505"
   );
+}
+
+/** Generates a 5-character uppercase alphanumeric tracking code (A-Z0-9). */
+function generateTrackingCode(): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  const bytes = randomBytes(5);
+  return Array.from(bytes, (b) => chars[b % chars.length]).join("");
+}
+
+/** True when a 23505 unique violation is on the tracking_code column specifically. */
+function isTrackingCodeViolation(e: unknown): boolean {
+  if (
+    typeof e !== "object" ||
+    e === null ||
+    !("code" in e) ||
+    (e as { code?: unknown }).code !== "23505"
+  )
+    return false;
+  const detail = (e as { detail?: unknown }).detail;
+  const constraint = (e as { constraint?: unknown }).constraint;
+  if (typeof constraint === "string" && constraint.includes("tracking_code")) return true;
+  if (typeof detail === "string" && detail.includes("tracking_code")) return true;
+  return false;
 }

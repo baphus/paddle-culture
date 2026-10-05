@@ -61,6 +61,7 @@ export default async function TrackPage({
       fullName: bookings.fullName,
       total: bookings.total,
       rejectReason: bookings.rejectReason,
+      trackingCode: bookings.trackingCode,
     })
     .from(bookings)
     .where(eq(bookings.trackingToken, token));
@@ -110,6 +111,7 @@ export default async function TrackPage({
             fullName={booking.fullName}
             total={booking.total}
             rejectReason={booking.rejectReason}
+            trackingCode={booking.trackingCode}
             slots={serializedSlots}
             rental={serializedRental}
           />

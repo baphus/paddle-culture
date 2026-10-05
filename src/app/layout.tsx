@@ -26,7 +26,7 @@ export default function RootLayout({
     <html lang="en" className={cn("scroll-smooth", jakarta.variable)}>
       <body className="bg-cream font-sans text-ink">
         {children}
-        <Toaster richColors position="top-center" />
+        <Toaster richColors position="bottom-right" />
       </body>
     </html>
   );

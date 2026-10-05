@@ -12,8 +12,9 @@
 //                      courts. If non-empty → touch nothing.
 //   3. pricing_rules:  SELECT count only (expect 6 live rows) — never touched.
 //
-// DB access: same pattern as the app (postgres-js, DATABASE_URL from .env,
-// prepare:false for the Supabase pooler). Writes a JSON summary to
+// DB access: same pattern as the app (postgres-js, DATABASE_POOLER_URL ??
+// DATABASE_URL from .env, prepare:false for the Supabase pooler on 6543;
+// direct (5432) is migrations-only). Writes a JSON summary to
 // scripts/seed-production.result.json on success.
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -34,12 +35,15 @@ function loadEnv(path) {
 }
 
 const env = loadEnv(join(root, ".env"));
-if (!env.DATABASE_URL) {
-  console.error("seed: DATABASE_URL missing from .env — aborting (no DB touched).");
+const poolerUrl = env.DATABASE_POOLER_URL ?? env.DATABASE_URL;
+if (!poolerUrl) {
+  console.error(
+    "seed: DATABASE_POOLER_URL (falling back to DATABASE_URL) missing from .env — aborting (no DB touched). Use the pooler :6543 connection; direct :5432 is migrations-only.",
+  );
   process.exit(1);
 }
 
-const sql = postgres(env.DATABASE_URL, { prepare: false, max: 1 });
+const sql = postgres(poolerUrl, { prepare: false, max: 1 });
 const summary = { courts: {}, operating_hours: {}, pricing_rules: {} };
 
 try {

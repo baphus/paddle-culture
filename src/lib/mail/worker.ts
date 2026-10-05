@@ -118,7 +118,7 @@ async function processRow(
 ): Promise<"sent" | "retried" | "failed"> {
   let rendered;
   try {
-    rendered = renderOutboxEmail(row.template, row.payload);
+    rendered = await renderOutboxEmail(row.template, row.payload);
   } catch {
     // Unknown template / unusable payload: data bug, dead-letter at once.
     await markFailed(db, row.id, null);

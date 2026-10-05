@@ -115,6 +115,7 @@ export const bookings = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     trackingToken: text("tracking_token").notNull().unique(),
+    trackingCode: text("tracking_code").notNull().unique(),
     status: text("status").notNull().default("Pending"),
     fullName: text("full_name").notNull(),
     email: text("email").notNull(),

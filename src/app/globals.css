@@ -176,3 +176,14 @@
     border-radius: 6px;
   }
 }
+
+/* Toast responsive positioning — bottom-right on desktop, top-center on mobile */
+@media (max-width: 639px) {
+  [data-sonner-toaster] {
+    top: 16px !important;
+    bottom: auto !important;
+    left: 50% !important;
+    right: auto !important;
+    transform: translateX(-50%) !important;
+  }
+}

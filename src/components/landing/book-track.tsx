@@ -53,15 +53,6 @@ export default function BookTrack({ rates = FALLBACK_RATES }: { rates?: DisplayR
               Scan your QR code or paste the booking link from your email to check status.
             </p>
             <TrackInput />
-            <div className="mt-5 flex items-center justify-between gap-3 border-t border-line pt-4 text-xs font-semibold">
-              <span className="inline-flex items-center gap-1.5 text-pine">
-                <BadgeCheck className="size-4 text-live-dot" aria-hidden />
-                Verified by Venue Staff
-              </span>
-              <a href="#faq" className="text-flame hover:text-flame-hover hover:underline">
-                Need Help?
-              </a>
-            </div>
           </div>
         </div>
       </div>

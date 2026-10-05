@@ -134,6 +134,8 @@ export async function applyDecision(
       payload: {
         trackingToken: booking.trackingToken,
         fullName: booking.fullName,
+        email: booking.email,
+        phone: booking.phone,
         slots,
         total: booking.total,
         ...(decision === "Rejected" ? { rejectReason: reason ?? null } : {}),

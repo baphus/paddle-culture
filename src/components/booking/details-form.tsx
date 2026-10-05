@@ -8,7 +8,6 @@ import {
   ArrowLeft,
   ArrowRight,
   CircleAlert,
-  Dumbbell,
   Mail,
   Phone,
   User,
@@ -25,19 +24,15 @@ export interface DetailsValues {
   ball: boolean;
 }
 
-function makeDetailsSchema(_maxHours: number) {
+function makeDetailsSchema(_maxHours?: number) {
   return z.object({
     fullName: z.string().trim().min(1, "Enter your full name.").max(100),
     email: z.string().trim().email("Enter a valid email address.").max(254),
     phone: z.string().trim().min(1, "Enter a contact number.").max(30),
-    paddleQty: z.coerce
-      .number()
-      .int("Paddle count must be whole.")
-      .min(0, "Paddle count can't be negative.")
-      .max(50, "Max 50 paddles per booking."),
-    ball: z.boolean(),
   });
 }
+
+type DetailsFormFields = Pick<DetailsValues, "fullName" | "email" | "phone">;
 
 export default function DetailsForm({
   maxHours,
@@ -46,7 +41,7 @@ export default function DetailsForm({
   onBack,
   onSubmit,
 }: {
-  maxHours: number;
+  maxHours?: number;
   defaultValues?: Partial<DetailsValues>;
   busy: boolean;
   onBack: () => void;
@@ -54,19 +49,14 @@ export default function DetailsForm({
 }) {
   const schema = useMemo(() => makeDetailsSchema(maxHours), [maxHours]);
 
-  const form = useForm<DetailsValues>({
-    resolver: zodResolver(schema) as unknown as Resolver<DetailsValues>,
+  const form = useForm<DetailsFormFields>({
+    resolver: zodResolver(schema) as unknown as Resolver<DetailsFormFields>,
     defaultValues: {
       fullName: defaultValues?.fullName ?? "",
       email: defaultValues?.email ?? "",
       phone: defaultValues?.phone ?? "",
-      paddleQty: defaultValues?.paddleQty ?? 0,
-      ball: defaultValues?.ball ?? false,
     },
   });
-
-  const paddleQty = form.watch("paddleQty") || 0;
-  const ball = form.watch("ball");
 
   return (
     <form
@@ -75,9 +65,9 @@ export default function DetailsForm({
           fullName: v.fullName,
           email: v.email,
           phone: v.phone,
-          paddleQty: v.paddleQty,
+          paddleQty: defaultValues?.paddleQty ?? 0,
           paddleHours: null, // duration equals booked court hours; set server-side
-          ball: v.ball,
+          ball: defaultValues?.ball ?? false,
         }),
       )}
       className="space-y-6"
@@ -184,91 +174,6 @@ export default function DetailsForm({
               </p>
             )}
           </div>
-        </div>
-      </div>
-
-      {/* Equipment Rentals Card */}
-      <div className="rounded-3xl border border-line-warm/70 bg-white p-6 shadow-sm sm:p-8">
-        <div className="mb-6 flex items-center justify-between border-b border-line-warm/40 pb-4">
-          <div>
-            <h2 className="text-xl font-extrabold tracking-tight text-ink sm:text-2xl">
-              Equipment Rentals (Optional)
-            </h2>
-            <p className="mt-1 text-xs text-warm-muted sm:text-sm">
-              Need paddles or extra balls? Add them to your reservation here.
-            </p>
-          </div>
-          <div className="hidden size-10 items-center justify-center rounded-2xl bg-oat text-pine sm:flex">
-            <Dumbbell className="size-5" />
-          </div>
-        </div>
-
-        <div className="space-y-6">
-          {/* Paddle Rentals */}
-          <div className="rounded-2xl border border-line-warm/60 bg-cream/40 p-4 sm:p-5">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <span className="block text-sm font-bold text-ink">Paddle Rentals</span>
-                <span className="block text-xs text-warm-muted">
-                  ₱25 per paddle per hour · High-grade carbon fiber paddles
-                </span>
-              </div>
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => form.setValue("paddleQty", Math.max(0, paddleQty - 1))}
-                  disabled={paddleQty <= 0}
-                  className="flex size-10 items-center justify-center rounded-xl border border-line-warm bg-white text-base font-bold text-ink transition-all hover:bg-cream disabled:opacity-40"
-                  aria-label="Decrease paddles"
-                >
-                  −
-                </button>
-                <span className="min-w-8 text-center text-base font-extrabold text-ink">
-                  {paddleQty}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => form.setValue("paddleQty", Math.min(50, paddleQty + 1))}
-                  disabled={paddleQty >= 50}
-                  className="flex size-10 items-center justify-center rounded-xl border border-line-warm bg-white text-base font-bold text-ink transition-all hover:bg-cream disabled:opacity-40"
-                  aria-label="Increase paddles"
-                >
-                  +
-                </button>
-              </div>
-            </div>
-
-
-          </div>
-
-          {/* Ball Rental Card */}
-          <label
-            htmlFor="ball"
-            className={cn(
-              "flex cursor-pointer items-start gap-3.5 rounded-2xl border p-4 sm:p-5 transition-all select-none",
-              ball
-                ? "border-flame bg-flame-light/30 shadow-xs"
-                : "border-line-warm/60 bg-cream/40 hover:bg-cream/70",
-            )}
-          >
-            <input
-              id="ball"
-              type="checkbox"
-              {...form.register("ball")}
-              className="mt-0.5 size-5 rounded-md border-line-warm accent-flame"
-            />
-            <div className="flex-1">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-bold text-ink">Add Pickleball Ball Set</span>
-                <span className="rounded-full bg-flame/10 px-2.5 py-0.5 text-xs font-extrabold text-flame">
-                  +₱15 flat
-                </span>
-              </div>
-              <p className="mt-1 text-xs text-warm-muted">
-                One-time fee per booking. Official tournament-grade outdoor pickleball balls.
-              </p>
-            </div>
-          </label>
         </div>
       </div>
 
