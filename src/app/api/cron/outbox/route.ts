@@ -4,15 +4,13 @@ import { processOutboxBatch } from "@/lib/mail/worker";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Vercel Hobby backstop for the email outbox (vercel.json: daily `0 2 * * *`).
+// Vercel primary backstop for the email outbox (vercel.json: daily `0 2 * * *`).
 // Schedule note: 02:00 UTC ~= 10:00 Asia/Manila — a quiet overnight-UTC hour
-// that lands mid-morning Manila time, after the Netlify */5-min worker window
-// and clear of peak booking traffic. Daily is the max frequency on Vercel
-// Hobby, so `*/5` is intentionally NOT used here (see vercel.json).
-//
-// Delivery order: submit/approve/reject routes call drainOutboxBestEffort()
-// immediately after commit (primary path); this Hobby-daily cron plus
-// POST /api/admin/outbox/process are backstops only.
+// that lands mid-morning Manila time, clear of peak booking traffic.
+// Primary delivery is inline drainOutboxBestEffort() in submit/approve/reject;
+// this cron plus POST /api/admin/outbox/process are backstops only. The
+// Netlify `*/5` worker is legacy. On a commercial-allowed Vercel plan, the
+// schedule can be raised to `*/5` if needed (see vercel.json).
 
 function isAuthorized(req: Request): boolean {
   const secret = process.env.CRON_SECRET;

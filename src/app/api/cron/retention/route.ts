@@ -6,10 +6,9 @@ import { holds } from "@/db/schema";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Vercel Hobby backstop for retention (vercel.json: Sundays 02:00 UTC
-// `0 2 * * 0`, ~= 10:00 Asia/Manila Sunday — quiet overnight-UTC hour,
-// mirrors netlify/functions/retention.mts weekly schedule). Weekly/daily
-// only: `*/5` is Hobby-incompatible and intentionally NOT used.
+// Vercel primary backstop for retention (vercel.json: Sundays 02:00 UTC
+// `0 2 * * 0`, ~= 10:00 Asia/Manila Sunday — quiet overnight-UTC hour;
+// legacy: netlify/functions/retention.mts weekly schedule).
 //
 // Deletes ONLY expired holds older than the grace window (same rule as
 // netlify/functions/retention.mts `RETENTION_HOLD_GRACE_HOURS = 24` —

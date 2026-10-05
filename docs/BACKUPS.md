@@ -68,8 +68,8 @@ pg_restore -d "postgresql://postgres:'[NEW-DB-PASSWORD]'@db.[NEW-REF].supabase.c
 #    (recreates the private bucket + policies).
 # C) Re-upload the Proofs folder into the new `proofs` bucket (same paths —
 #    payment_proofs.path values keep working).
-# D) Point the site at the new project: update Netlify env
-#    (DATABASE_URL, NEXT_PUBLIC_SUPABASE_*, SUPABASE_SERVICE_ROLE_KEY),
+# D) Point the site at the new project: update Vercel Production env
+#    (DATABASE_URL pooler, NEXT_PUBLIC_SUPABASE_*, SUPABASE_SERVICE_ROLE_KEY),
 #    redeploy, and run the Gmail smoke test (admin outbox trigger).
 ```
 
@@ -78,7 +78,7 @@ pg_restore -d "postgresql://postgres:'[NEW-DB-PASSWORD]'@db.[NEW-REF].supabase.c
 - [ ] `pg_dump` ran without errors, file size looks sane
 - [ ] Dump copied to Drive/external, 3-newest rotation kept
 - [ ] (Monthly) `proofs` bucket files downloaded
-- [ ] Any Netlify/Supabase warning emails acted on (pause-after-idle,
+- [ ] Any Vercel/Supabase warning emails acted on (pause-after-idle,
       password or App-Password changes → credentials + redeploy)
 
 ## 6. Acceptance transfer (developer → client)
@@ -91,7 +91,9 @@ pg_restore -d "postgresql://postgres:'[NEW-DB-PASSWORD]'@db.[NEW-REF].supabase.c
 ## 7. Retention purge (automatic, weekly)
 
 Holds are the only unbounded-growth table (one row per court-hour held, most
-abandoned). A Netlify scheduled function prunes them automatically:
+abandoned). A scheduled job prunes them automatically — Vercel primary:
+`src/app/api/cron/retention` (`vercel.json` `0 2 * * 0`); legacy:
+`netlify/functions/retention.mts`:
 
 - **What:** `netlify/functions/retention.mts`, schedule `0 2 * * 0`
   (every Sunday 02:00 UTC ≈ 10:00 Manila).
@@ -99,8 +101,8 @@ abandoned). A Netlify scheduled function prunes them automatically:
   `RETENTION_HOLD_GRACE_HOURS = 24` hours — i.e. holds that expired a full day
   ago. Every live read path already requires `expires_at > now()`, and the
   submit transaction lazy-deletes expired holds, so these rows can never be
-  referenced again. The function returns `{ ok, purgedHolds }` for the
-  Netlify function logs.
+   referenced again. The function returns `{ ok, purgedHolds }` for the
+   function logs.
 - **NEVER touched:** `bookings`, `booking_slots`, `payment_proofs`,
   `email_outbox`, `audit_log` — kept for the 3-year retention default
   (disputes, revenue history, append-only audit). No customer data is purged
