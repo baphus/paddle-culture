@@ -4,7 +4,7 @@ export default function Faq({ rates = FALLBACK_RATES }: { rates?: DisplayRates }
   const FAQS = [
     {
       q: "How do I book a court?",
-      a: `Pick your date, select 1 or 2 courts, and choose consecutive 1-hour slots. Tap "Hold these slots" to lock them for 10 minutes, fill in your contact details, pay via GCash, BDO, or BPI, then upload your payment screenshot. Once submitted, you'll get a tracking QR code by email while staff verifies your payment.`,
+      a: `Pick your date, select 1 or 2 courts, and choose any 1-hour slots. Tap "Hold these slots" to lock them for 10 minutes, fill in your contact details, pay via GCash, BDO, or BPI, then upload your payment screenshot. Once submitted, you'll get a tracking QR code by email while staff verifies your payment.`,
     },
     {
       q: "What are the court rates?",

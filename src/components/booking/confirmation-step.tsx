@@ -213,7 +213,7 @@ export default function ConfirmationStep({
                     {timeRangeLabel}
                   </span>
                   <span className="block text-xs text-warm-muted">
-                    {sortedSlots.length} hour{sortedSlots.length === 1 ? "" : "s"} consecutive
+                    {sortedSlots.length} hour{sortedSlots.length === 1 ? "" : "s"}
                   </span>
                 </div>
               </div>

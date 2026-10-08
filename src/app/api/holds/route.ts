@@ -80,14 +80,6 @@ export async function POST(request: Request) {
         400,
       );
     }
-    // Same slots across every court, so consecutiveness is checked once.
-    const ordered = [...starts].sort((a, b) => a.getTime() - b.getTime());
-    for (let i = 1; i < ordered.length; i++) {
-      if ((ordered[i] as Date).getTime() - (ordered[i - 1] as Date).getTime() !== 3_600_000) {
-        return err("NON_CONSECUTIVE_SLOTS", "Slots for a court must be consecutive hours.", 400);
-      }
-    }
-
     // All requested (court, slot) pairs must be free + bookable right now
     // (re-checked inside the submit transaction — this is a fast-fail only).
     // Grouped by Manila date so bookings crossing midnight check the right

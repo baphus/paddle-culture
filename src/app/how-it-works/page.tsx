@@ -85,7 +85,7 @@ export default async function HowItWorksPage() {
               </div>
               <h2 className="mt-5 text-xl font-bold text-pine">Select Court & Time</h2>
               <p className="mt-2 flex-1 text-sm leading-relaxed text-warm-muted">
-                Pick a date, a court, and consecutive hours on the live grid. Same-day booking
+                Pick a date, a court, and any hours on the live grid. Same-day booking
                 counts for any slot that hasn&apos;t started yet.
               </p>
               <p className="mt-5 flex items-center justify-between border-t border-line pt-4 text-[12px] font-bold text-flame">

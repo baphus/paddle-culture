@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 export const metadata = {
   title: "CK Grounds — Book a Court in Tabuelan, Cebu",
   description:
-    "Pick a date, court, and consecutive hours, hold your slots, and submit with payment proof. Day ₱150/hr · Night ₱200/hr. No account needed.",
+    "Pick a date, court, and any hours, hold your slots, and submit with payment proof. Day ₱150/hr · Night ₱200/hr. No account needed.",
 };
 
 // Public landing page (no auth). Booking lives on the dedicated /book route;

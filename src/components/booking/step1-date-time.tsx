@@ -60,7 +60,6 @@ type CellState = "open" | "held" | "booked" | "closed" | "past";
 
 const HOLD_ERROR_FRIENDLY: Record<string, string> = {
   OFF_GRID: "That time isn't on the hourly grid. Pick a listed slot.",
-  NON_CONSECUTIVE_SLOTS: "Pick consecutive hours with no gaps (e.g. 6–8 AM).",
   SLOT_PAST: "That slot already started. Pick a future time.",
   TOO_MANY_SLOTS: `Max ${MAX_SLOTS_PER_BOOKING} court-hours per booking — fewer hours or courts.`,
   SLOT_UNAVAILABLE: "Someone just took one of those slots. Refresh and pick again.",
@@ -104,7 +103,7 @@ const CARD = "bg-cream border border-line-warm/60 rounded-2xl p-6 sm:p-7 shadow-
 /**
  * Wizard step 1 — play date + time slots (+ live booking summary).
  *
- * Holds ALL active courts for the picked consecutive hours (court choice is
+ * Holds ALL active courts for the picked hours (court choice is
  * step 2, which consumes a subset of these hold tokens). Pairs are capped at
  * MAX_SLOTS_PER_BOOKING, enforced client-side with toast() before POST.
  */
@@ -359,13 +358,6 @@ export default function Step1DateTime({
         `Max ${MAX_SLOTS_PER_BOOKING} court-hours per booking — fewer hours or courts.`,
       );
       return;
-    }
-    const times = next.map((s) => new Date(s).getTime());
-    for (let i = 1; i < times.length; i++) {
-      if ((times[i] as number) - (times[i - 1] as number) !== 3_600_000) {
-        toast.error("Pick consecutive hours with no gaps (e.g. 6–8 AM).");
-        return;
-      }
     }
     setSelected(next);
   }
@@ -1060,7 +1052,7 @@ export default function Step1DateTime({
               <span>
                 Selected:{" "}
                 <strong className="font-bold text-pine">
-                  {selectedSorted.length} consecutive hour{selectedSorted.length === 1 ? "" : "s"}
+                  {selectedSorted.length} hour{selectedSorted.length === 1 ? "" : "s"}
                 </strong>{" "}
                 (Min 1 hr, max 12 hrs)
               </span>

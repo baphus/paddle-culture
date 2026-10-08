@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export const metadata = {
   title: "Book a Court — CK Grounds",
   description:
-    "Pick a date and consecutive hours, hold your slots, and submit with payment proof. Day ₱150/hr · Night ₱200/hr. No account needed.",
+    "Pick a date and any hours, hold your slots, and submit with payment proof. Day ₱150/hr · Night ₱200/hr. No account needed.",
 };
 
 // Same fail-soft SSR pattern as the landing page: courts → FALLBACK_COURTS,
