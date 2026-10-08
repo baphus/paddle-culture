@@ -227,13 +227,13 @@ function linesOf(
 }
 
 function bookingUrl(token: string): string | null {
-  const base = (process.env.APP_URL ?? "").replace(/\/$/, "");
+  const base = (process.env.APP_URL || "https://ckgrounds.vercel.app").replace(/\/$/, "");
   if (!base || !token) return null;
   return `${base}/track/${token}`;
 }
 
 function logoUrl(): string | null {
-  const base = (process.env.APP_URL ?? "").replace(/\/$/, "");
+  const base = (process.env.APP_URL || "https://ckgrounds.vercel.app").replace(/\/$/, "");
   if (!base) return null;
   return `${base}/logo.jpg`;
 }

@@ -283,11 +283,11 @@ export default function ConfirmationStep({
                 <QrCode className="size-4 text-flame" aria-hidden />
                 <span>Your Check-in QR Pass</span>
               </div>
-              <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-start">
-                <div className="shrink-0 rounded-2xl border-2 border-line-warm/80 bg-white p-3 shadow-xs">
+              <div className="flex flex-col gap-3">
+                <div className="shrink-0 self-center rounded-2xl border-2 border-line-warm/80 bg-white p-3 shadow-xs">
                   <QRCodeSVG ref={qrRef} value={bookingUrl} size={140} level="M" />
                 </div>
-                <div className="flex flex-1 flex-col gap-2 text-center sm:text-left">
+                <div className="flex flex-1 flex-col gap-2 text-center">
                   <p className="text-xs leading-relaxed text-warm-muted">
                     Show this at the front desk on your game day for instant check-in.
                   </p>
@@ -302,7 +302,7 @@ export default function ConfirmationStep({
                   <div className="flex gap-2">
                     <Link
                       href={`/track/${trackingToken}`}
-                      className="inline-flex min-h-[38px] flex-1 items-center justify-center gap-1 rounded-xl border border-line-warm/70 bg-white px-2 text-xs font-bold text-ink transition-colors hover:bg-cream"
+                      className="inline-flex min-h-[38px] min-w-0 flex-1 items-center justify-center gap-1 rounded-xl border border-line-warm/70 bg-white px-2 text-xs font-bold whitespace-nowrap text-ink transition-colors hover:bg-cream"
                     >
                       <span>View Status</span>
                       <ExternalLink className="size-3 text-warm-muted" aria-hidden />
@@ -310,7 +310,7 @@ export default function ConfirmationStep({
                     <button
                       type="button"
                       onClick={copyLink}
-                      className="inline-flex min-h-[38px] flex-1 items-center justify-center gap-1 rounded-xl border border-line-warm/70 bg-white px-2 text-xs font-bold text-pine transition-colors hover:bg-cream"
+                      className="inline-flex min-h-[38px] min-w-0 flex-1 items-center justify-center gap-1 rounded-xl border border-line-warm/70 bg-white px-2 text-xs font-bold whitespace-nowrap text-pine transition-colors hover:bg-cream"
                     >
                       {copiedLink ? (
                         <><Check className="size-3 text-live-dot" aria-hidden /><span>Copied!</span></>

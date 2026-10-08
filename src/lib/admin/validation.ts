@@ -12,7 +12,7 @@ export function hashInviteToken(token: string): string {
 }
 
 export function inviteLinkFor(token: string, origin: string): string {
-  const base = (process.env.APP_URL ?? origin).replace(/\/$/, "");
+  const base = (process.env.APP_URL || origin || "https://ckgrounds.vercel.app").replace(/\/$/, "");
   return `${base}/register?token=${token}`;
 }
 

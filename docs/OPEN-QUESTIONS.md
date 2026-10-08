@@ -8,7 +8,7 @@
 - R3-03 Gmail → developer holds password, generates App Password, transfers at acceptance.
 - R3-04 same-day → ALLOWED (PRD §9 + acceptance gate #2 inverted by owner). Rule: `slot_start > now()` in UI + server.
 - R3-05 blank Q7 → dropped (no content received).
-- Owner alert → new-booking email to paddleculture0@gmail.com on every submission (3–4 sends/booking).
+- Owner alert → new-booking email to ckgrounds1@gmail.com on every submission (3–4 sends/booking).
 
 ## Frontier: EMPTY. Shared understanding reached 2026-10-03 — build may start per DECISIONS.md build order.
 

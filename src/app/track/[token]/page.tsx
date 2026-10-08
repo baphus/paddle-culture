@@ -21,7 +21,7 @@ export const metadata = {
 };
 
 async function absoluteBookingUrl(token: string): Promise<string> {
-  const base = (process.env.APP_URL ?? "").replace(/\/$/, "");
+  const base = (process.env.APP_URL || "https://ckgrounds.vercel.app").replace(/\/$/, "");
   if (base) return `${base}/track/${token}`;
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
