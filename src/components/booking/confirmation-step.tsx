@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
-import { formatManilaLong, formatSlotRange } from "@/lib/courts";
+import { formatManilaLong, formatSlotRanges } from "@/lib/courts";
 import { timeBandFor } from "@/lib/booking/slots";
 import { FALLBACK_RATES, peso, type DisplayRates } from "@/lib/pricing-display";
 import type { DetailsValues } from "./details-form";
@@ -87,14 +87,8 @@ export default function ConfirmationStep({
     (a, b) => new Date(a).getTime() - new Date(b).getTime(),
   );
   const firstSlot = sortedSlots[0];
-  const lastSlot = sortedSlots[sortedSlots.length - 1];
 
-  const timeRangeLabel =
-    sortedSlots.length === 0
-      ? ""
-      : `${formatSlotRange(firstSlot as string).split("–")[0]?.trim()} – ${
-          formatSlotRange(lastSlot as string).split("–")[1]?.trim()
-        }`;
+  const timeRangeLabel = formatSlotRanges(sortedSlots);
 
   const formattedDate = dateStr
     ? formatManilaLong(dateStr)

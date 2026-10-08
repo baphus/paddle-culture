@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
-import { formatManilaLong, formatSlotRange } from "@/lib/courts";
+import { formatManilaLong, formatSlotRanges } from "@/lib/courts";
 import { peso } from "@/lib/pricing-display";
 
 interface SlotItem {
@@ -89,16 +89,12 @@ export default function TrackView({
   const courtNames = Array.from(new Set(slots.map((s) => s.courtName)));
 
   // Date and time range
-  const firstSlot = slots[0]?.slotStart;
-  const lastSlot = slots[slots.length - 1]?.slotStart;
-  const dateStr = firstSlot ? firstSlot.slice(0, 10) : null;
+  const sortedStarts = slots
+    .map((s) => s.slotStart)
+    .sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+  const dateStr = sortedStarts[0] ? sortedStarts[0].slice(0, 10) : null;
   const formattedDate = dateStr ? formatManilaLong(dateStr) : "Upcoming";
-  const timeRangeLabel =
-    slots.length === 0
-      ? "No slots"
-      : `${formatSlotRange(firstSlot as string).split("–")[0]?.trim()} – ${
-          formatSlotRange(lastSlot as string).split("–")[1]?.trim()
-        }`;
+  const timeRangeLabel = slots.length === 0 ? "No slots" : formatSlotRanges(sortedStarts);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 animate-rise">

@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
-import { formatManilaLong, formatSlotRange, formatCountdown } from "@/lib/courts";
+import { formatManilaLong, formatSlotRanges, formatCountdown } from "@/lib/courts";
 import { peso, type DisplayRates } from "@/lib/pricing-display";
 import { timeBandFor } from "@/lib/booking/slots";
 
@@ -115,9 +115,7 @@ function computeBreakdown(
           .join(" ");
 
   const rangeLabel =
-    sorted.length === 0
-      ? "No time selected"
-      : `${formatSlotRange(sorted[0]!).split("–")[0]?.trim()} – ${formatSlotRange(sorted[sorted.length - 1]!).split("–")[1]?.trim()}`;
+    sorted.length === 0 ? "No time selected" : formatSlotRanges(sorted);
 
   const durationLabel =
     sorted.length === 0

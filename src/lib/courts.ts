@@ -129,6 +129,28 @@ function splitMeridiem(s: string): [string, string] {
   return [s, ""];
 }
 
+/**
+ * "6:00 – 8:00 AM, 10:00 – 11:00 AM" for slot start ISOs (Manila wall time).
+ * Consecutive 1h runs collapse to one range; gaps start a new range.
+ * Empty → "".
+ */
+export function formatSlotRanges(startIsos: string[]): string {
+  if (startIsos.length === 0) return "";
+  const times = [...startIsos].sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+  const runs: string[][] = [[times[0] as string]];
+  for (let i = 1; i < times.length; i++) {
+    const gap = new Date(times[i] as string).getTime() - new Date(times[i - 1] as string).getTime();
+    if (gap === 3_600_000) (runs[runs.length - 1] as string[]).push(times[i] as string);
+    else runs.push([times[i] as string]);
+  }
+  return runs
+    .map((run) => {
+      if (run.length === 1) return formatSlotRange(run[0] as string);
+      return `${formatSlotRange(run[0] as string).split("–")[0]?.trim()} – ${formatSlotRange(run[run.length - 1] as string).split("–")[1]?.trim()}`;
+    })
+    .join(", ");
+}
+
 /** "mm:ss" countdown text for a millisecond remainder (clamped at 0). */
 export function formatCountdown(remainingMs: number): string {
   const totalSec = Math.max(0, Math.ceil(remainingMs / 1000));
