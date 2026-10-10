@@ -3,8 +3,10 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
-import { mergeVertices, toCreasedNormals } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import {
+  mergeVertices,
+  toCreasedNormals,
+} from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 const PADDLE_URL = "/3d%20models%20pickleball%20ref/pickleball_paddle.glb";
 const BALL_URL = "/3d%20models%20pickleball%20ref/pickleball_ball.glb";
@@ -21,14 +23,19 @@ const MAX_TILT = 0.7; // max face tilt from horizontal (rad)
 const SQUASH = 0.07; // ball impact squash amount (keep small)
 const SHADOW_OFFSET = new THREE.Vector3(0.16, 0, 0.1); // drop-shadow direction
 const CAM_TARGET = new THREE.Vector3(0, 2.05, 0);
-const BLEED = { x: 0.4, top: 0.5, bottom: 0.2 }; // canvas bleed past layout box
+const BLEED = { x: 0.3, top: 0.45, bottom: 0.1 }; // canvas bleed past layout box
 
 /* ---- Cartoon look ---- */
-const OUTLINES = true; // set false to test whether the outline layer is the problem
 const OUTLINE_COLOR = 0x12151d;
 const OUTLINE_PADDLE = 0.026; // outline thickness in scene units
-const OUTLINE_BALL = 0.008;
+const OUTLINE_BALL = 0.011;
 const TOON_STEPS = [0.6, 0.85, 1.0, 1.0]; // light bands (dark -> bright)
+
+/* ---- Performance ---- */
+const PIXEL_BUDGET = 2_600_000; // max canvas pixels (device px) on normal devices
+const PIXEL_BUDGET_LOW = 1_300_000; // ...on low-end devices
+const MIN_DPR = 1.0; // adaptive resolution floor (kept sharp)
+const SLOW_FRAME_MS = 30; // avg frame time (~33 fps) that triggers a quality step down
 
 type Kind = "dink" | "normal" | "lob" | "drive";
 const KIND_CFG: Record<Kind, { t: [number, number]; w: number }> = {
@@ -68,16 +75,20 @@ interface Hit {
   kind: Kind;
   psi: number; // paddle heading offset
   beta: number; // wind-back amount before the next swing
-  spin: THREE.Vector3; // spin axis * speed after this hit
+  spinAxis: THREE.Vector3; // unit spin axis after this hit
+  spinSpeed: number; // rad/s
   vin: THREE.Vector3; // ball velocity arriving at this hit
+  vel?: THREE.Vector3; // cached launch velocity toward the next hit
   pose?: { q: THREE.Quaternion; pos: THREE.Vector3 };
 }
 
 /**
- * Cartoon pickleball rally: toon-shaded models with inverted-hull outlines,
- * planned ball/paddle contacts, blob drop shadows, and a canvas that bleeds
- * past its layout box so nothing is clipped. Static frame on
- * prefers-reduced-motion; pauses offscreen/hidden.
+ * Cartoon pickleball rally. Toon shading + inverted-hull outlines, planned
+ * ball/paddle contacts, blob drop shadows, oversized transparent canvas.
+ *
+ * Performance: pixel-budgeted + adaptive resolution, low-end detection,
+ * automatic fallback (outlines off, then 30 fps cap) if frames run slow,
+ * no per-frame allocations, pauses offscreen/hidden/reduced-motion.
  */
 export default function Hero3D() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -89,20 +100,22 @@ export default function Hero3D() {
     if (!container || !canvas) return;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping; // tames IBL highlights
-    renderer.toneMappingExposure = 1.0;
+    // ---- Device tier ----
+    const nav = navigator as Navigator & { deviceMemory?: number };
+    const lowEnd = (nav.hardwareConcurrency ?? 8) <= 2 || (nav.deviceMemory ?? 8) <= 2;
+    const dprCap = Math.min(window.devicePixelRatio || 1, lowEnd ? 1.25 : 2);
+    const pixelBudget = lowEnd ? PIXEL_BUDGET_LOW : PIXEL_BUDGET;
+
+    const renderer = new THREE.WebGLRenderer({
+      canvas,
+      alpha: true,
+      antialias: !lowEnd,
+      powerPreference: "default",
+    });
+    renderer.toneMapping = THREE.NoToneMapping; // flat, vivid colors
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 50);
-
-    // Image-based lighting so PBR/metallic GLB surfaces never go black.
-    const pmrem = new THREE.PMREMGenerator(renderer);
-    const envRT = pmrem.fromScene(new RoomEnvironment(), 0.04);
-    scene.environment = envRT.texture;
-    pmrem.dispose();
 
     // ---- Camera director ----
     const cam = { ...CAM_PRESETS[0] };
@@ -122,9 +135,9 @@ export default function Hero3D() {
     };
     placeCamera(0);
 
-        // Lighting: env map does the heavy lifting; analytic lights add direction.
-    scene.add(new THREE.HemisphereLight(0xffffff, 0xc8d2e8, 0.9));
-    const key = new THREE.DirectionalLight(0xffffff, 1.5);
+    // Lighting: bright and simple; toon bands come from the gradient map
+    scene.add(new THREE.HemisphereLight(0xffffff, 0xc8d2e8, 1.2));
+    const key = new THREE.DirectionalLight(0xffffff, 1.6);
     key.position.set(3, 7, 4);
     scene.add(key);
 
@@ -140,6 +153,13 @@ export default function Hero3D() {
     gradientMap.magFilter = THREE.NearestFilter;
     gradientMap.generateMipmaps = false;
     gradientMap.needsUpdate = true;
+
+    const hulls: THREE.Mesh[] = [];
+    let outlinesOn = true;
+    const setOutlines = (on: boolean) => {
+      outlinesOn = on;
+      for (const h of hulls) h.visible = on;
+    };
 
     const signedVolume = (g: THREE.BufferGeometry) => {
       const p = g.attributes.position;
@@ -166,8 +186,8 @@ export default function Hero3D() {
         if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh);
       });
       for (const mesh of meshes) {
-        // The GLBs have no normals; give them creased ones (hard edges stay crisp,
-        // curved surfaces like the ball and grip stay smooth).
+        // The GLBs ship without normals; give them creased ones so hard edges
+        // stay crisp and curved surfaces (ball, grip) stay smooth.
         if (!mesh.geometry.attributes.normal) {
           mesh.geometry = toCreasedNormals(mesh.geometry, 0.6);
         }
@@ -177,8 +197,7 @@ export default function Hero3D() {
           map: old.map ?? null,
           gradientMap,
         });
-        if (old.map) old.map.anisotropy = 4;
-        if (!OUTLINES) continue;
+        if (old.map) old.map.anisotropy = 2;
 
         // Weld vertices so the hull has no cracks at hard edges.
         let g = mesh.geometry.clone();
@@ -223,24 +242,27 @@ export default function Hero3D() {
               void main() { gl_FragColor = vec4(uColor, 1.0); }`,
           }),
         );
+        hull.visible = outlinesOn;
+        hulls.push(hull);
         mesh.add(hull);
       }
     };
 
     // ---- Soft blob drop shadows ----
     const shadowCanvas = document.createElement("canvas");
-    shadowCanvas.width = shadowCanvas.height = 128;
+    shadowCanvas.width = shadowCanvas.height = 64;
     const sctx = shadowCanvas.getContext("2d")!;
-    const grad = sctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    const grad = sctx.createRadialGradient(32, 32, 0, 32, 32, 32);
     grad.addColorStop(0, "rgba(0,0,0,0.9)");
     grad.addColorStop(0.55, "rgba(0,0,0,0.35)");
     grad.addColorStop(1, "rgba(0,0,0,0)");
     sctx.fillStyle = grad;
-    sctx.fillRect(0, 0, 128, 128);
+    sctx.fillRect(0, 0, 64, 64);
     const shadowTex = new THREE.CanvasTexture(shadowCanvas);
+    const shadowGeo = new THREE.PlaneGeometry(1, 1);
     const makeShadow = () => {
       const m = new THREE.Mesh(
-        new THREE.PlaneGeometry(1, 1),
+        shadowGeo,
         new THREE.MeshBasicMaterial({
           map: shadowTex,
           transparent: true,
@@ -262,14 +284,14 @@ export default function Hero3D() {
 
     const paddleFallback = new THREE.Group();
     const fFace = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.46, 0.46, 0.06, 28),
-      new THREE.MeshToonMaterial({ color: 0x282b38, gradientMap }),
+      new THREE.CylinderGeometry(0.46, 0.46, 0.06, 20),
+      new THREE.MeshToonMaterial({ color: 0xee6a24, gradientMap }),
     );
     fFace.rotation.x = Math.PI / 2;
     fFace.position.y = HEAD_Y;
     const fHandle = new THREE.Mesh(
       new THREE.BoxGeometry(0.18, 1.0, 0.12),
-      new THREE.MeshToonMaterial({ color: 0x969aa8, gradientMap }),
+      new THREE.MeshToonMaterial({ color: 0x343a56, gradientMap }),
     );
     fHandle.position.y = 0.1;
     paddleFallback.add(fFace, fHandle);
@@ -282,27 +304,19 @@ export default function Hero3D() {
     const ballRig = new THREE.Group();
     const ballSpin = new THREE.Group();
     const ballFallback = new THREE.Mesh(
-      new THREE.SphereGeometry(BALL_R, 28, 28),
+      new THREE.SphereGeometry(BALL_R, 20, 20),
       new THREE.MeshToonMaterial({ color: 0xc6f24e, gradientMap }),
     );
     ballSpin.add(ballFallback);
     ballRig.add(ballSpin);
     scene.add(ballRig);
 
-    // Neutralize killer PBR values so authored colors survive: bare metalness
-    // with nothing to reflect reads black; linear-space albedo maps render
-    // dark. Both get carried into the toon materials, so fix the source.
-    const sanitizePBR = (root: THREE.Object3D) => {
-      root.traverse((o) => {
-        const raw = (o as THREE.Mesh).material as unknown;
-        if (!raw) return;
-        for (const mat of (Array.isArray(raw) ? raw : [raw]) as THREE.MeshStandardMaterial[]) {
-          if (typeof mat.metalness !== "number") continue;
-          if (mat.metalness > 0.5 && !mat.metalnessMap) mat.metalness = 0.25;
-          if (mat.roughness < 0.25 && !mat.roughnessMap) mat.roughness = 0.4;
-          if (mat.map) mat.map.colorSpace = THREE.SRGBColorSpace;
-        }
-      });
+    // Adaptive-quality timing starts once both models are in.
+    let loaded = 0;
+    let perfStart = Infinity;
+    const onLoaded = () => {
+      loaded++;
+      if (loaded >= 2) perfStart = performance.now() + 1500;
     };
 
     const fitPaddle = (model: THREE.Object3D) => {
@@ -333,8 +347,8 @@ export default function Hero3D() {
       PADDLE_URL,
       (gltf) => {
         if (!alive) return;
-        sanitizePBR(gltf.scene);
         paddle.add(fitPaddle(gltf.scene));
+        onLoaded();
         if (reduced) draw(1.2);
       },
       undefined,
@@ -344,8 +358,8 @@ export default function Hero3D() {
       BALL_URL,
       (gltf) => {
         if (!alive) return;
-        sanitizePBR(gltf.scene);
         ballSpin.add(fitBall(gltf.scene));
+        onLoaded();
         if (reduced) draw(1.2);
       },
       undefined,
@@ -397,9 +411,8 @@ export default function Hero3D() {
         kind,
         psi,
         beta: rand(0.35, 1.0) * (kind === "lob" ? 1.15 : kind === "dink" ? 0.7 : 1),
-        spin: new THREE.Vector3(rand(-1, 1), rand(-0.4, 0.4), rand(-1, 1))
-          .normalize()
-          .multiplyScalar(rand(3, 11)),
+        spinAxis: new THREE.Vector3(rand(-1, 1), rand(-0.4, 0.4), rand(-1, 1)).normalize(),
+        spinSpeed: rand(3, 11),
         vin: new THREE.Vector3(rand(-0.3, 0.3), -2.5, rand(-0.3, 0.3)),
       };
       if (prev) {
@@ -410,7 +423,7 @@ export default function Hero3D() {
     };
 
     const computePose = (h: Hit, next: Hit) => {
-      const vout = velocity(h, next);
+      const vout = h.vel ?? velocity(h, next);
       const n = h.vin
         .clone()
         .normalize()
@@ -434,18 +447,23 @@ export default function Hero3D() {
 
     const ensure = () => {
       while (hits.length < 3) hits.push(newHit(hits[hits.length - 1] ?? null));
-      for (let i = 0; i < 2; i++) if (!hits[i].pose) computePose(hits[i], hits[i + 1]);
+      for (let i = 0; i < 2; i++) {
+        if (!hits[i].vel) hits[i].vel = velocity(hits[i], hits[i + 1]);
+        if (!hits[i].pose) computePose(hits[i], hits[i + 1]);
+      }
     };
     ensure();
 
     // ================= Runtime state =================
     let tau = 0;
     let squash = 0;
-    const spinVel = hits[0].spin.clone();
+    const spinAxis = hits[0].spinAxis.clone();
+    let spinSpeed = hits[0].spinSpeed;
     const qTmp = new THREE.Quaternion();
     const qSwing = new THREE.Quaternion();
     const qInv = new THREE.Quaternion();
     const X_AXIS = new THREE.Vector3(1, 0, 0);
+    const Z_AXIS = new THREE.Vector3(0, 0, 1);
     const posTmp = new THREE.Vector3();
     const local = new THREE.Vector3();
     const nWorld = new THREE.Vector3();
@@ -456,7 +474,8 @@ export default function Hero3D() {
       hits.shift();
       ensure();
       squash = 1;
-      spinVel.copy(hits[0].spin);
+      spinAxis.copy(hits[0].spinAxis);
+      spinSpeed = hits[0].spinSpeed;
       if (--hitsUntilCam <= 0) {
         hitsUntilCam = 4 + Math.floor(Math.random() * 4);
         let idx = camPresetIdx;
@@ -466,19 +485,29 @@ export default function Hero3D() {
       }
     };
 
+    // ---- Sizing: pixel-budgeted + adaptive resolution ----
+    let cw = 300;
+    let ch = 300;
+    let quality = 1; // multiplier lowered by the adaptive step-down
+    const currentDpr = () =>
+      Math.max(MIN_DPR * 0.8, Math.min(dprCap, Math.sqrt(pixelBudget / (cw * ch))) * quality);
+    const applySize = () => {
+      renderer.setPixelRatio(currentDpr());
+      renderer.setSize(cw, ch, false);
+    };
     const resize = () => {
       const W = container.clientWidth || 300;
       const H = container.clientHeight || 300;
       const mx = W * BLEED.x;
       const mt = H * BLEED.top;
       const mb = H * BLEED.bottom;
-      const cw = W + mx * 2;
-      const ch = H + mt + mb;
+      cw = Math.round(W + mx * 2);
+      ch = Math.round(H + mt + mb);
       canvas.style.left = `${-mx}px`;
       canvas.style.top = `${-mt}px`;
       canvas.style.width = `${cw}px`;
       canvas.style.height = `${ch}px`;
-      renderer.setSize(cw, ch, false);
+      applySize();
       camera.aspect = W / H;
       camera.setViewOffset(W, H, -mx, -mt, cw, ch);
       camera.updateProjectionMatrix();
@@ -488,6 +517,22 @@ export default function Hero3D() {
     let raf = 0;
     let last = performance.now();
     let visible = true;
+    let throttled = false;
+
+    // Adaptive quality: step down resolution (to a sharp floor) -> 30 fps cap -> drop outlines.
+    let perfT = 0;
+    let perfN = 0;
+    const adapt = (avgMs: number) => {
+      if (avgMs < SLOW_FRAME_MS) return;
+      if (currentDpr() > MIN_DPR * 1.02) {
+        quality *= 0.85;
+        applySize();
+      } else if (!throttled) {
+        throttled = true; // keep the look, cap at 30 fps
+      } else if (outlinesOn) {
+        setOutlines(false); // last resort
+      }
+    };
 
     const draw = (t: number, dt = 0) => {
       const cur = hits[0];
@@ -495,13 +540,13 @@ export default function Hero3D() {
       const s = Math.min(tau / cur.T, 1);
 
       // Ball: exact arc P_k -> P_{k+1}
-      const v = velocity(cur, nxt);
+      const v = cur.vel!;
       ballRig.position.set(
         cur.P.x + v.x * tau,
         cur.P.y + v.y * tau + 0.5 * G * tau * tau,
         cur.P.z + v.z * tau,
       );
-      spinQ.setFromAxisAngle(spinVel.clone().normalize(), spinVel.length() * dt);
+      spinQ.setFromAxisAngle(spinAxis, spinSpeed * dt);
       ballSpin.quaternion.premultiply(spinQ);
       ballRig.scale.set(1 + squash * SQUASH, 1 - squash * SQUASH * 1.2, 1 + squash * SQUASH);
 
@@ -523,7 +568,7 @@ export default function Hero3D() {
         local.z < FACE_OFFSET &&
         local.z > -0.25
       ) {
-        nWorld.set(0, 0, 1).applyQuaternion(paddle.quaternion);
+        nWorld.copy(Z_AXIS).applyQuaternion(paddle.quaternion);
         paddle.position.addScaledVector(nWorld, -(FACE_OFFSET - local.z));
       }
 
@@ -559,8 +604,21 @@ export default function Hero3D() {
       if (!visible) return;
       raf = requestAnimationFrame(loop);
       const now = performance.now();
-      const dt = Math.min((now - last) / 1000, 0.05);
+      const rawDt = now - last;
+      // 30 fps cap when the device can't keep up: skip frames, keep sim time.
+      if (throttled && rawDt < 30) return;
       last = now;
+      const dt = Math.min(rawDt / 1000, 0.05);
+
+      if (now > perfStart) {
+        perfT += rawDt;
+        perfN++;
+        if (perfT >= 1200) {
+          adapt(perfT / perfN);
+          perfT = 0;
+          perfN = 0;
+        }
+      }
 
       tau += dt;
       squash = Math.max(0, squash - dt * 7);
@@ -575,16 +633,21 @@ export default function Hero3D() {
     const ro = new ResizeObserver(resize);
     ro.observe(container);
 
+    const resetTiming = () => {
+      last = performance.now();
+      perfT = 0;
+      perfN = 0;
+    };
     const onVis = () => {
       visible = !document.hidden;
-      last = performance.now();
+      resetTiming();
       if (visible && !reduced) loop();
     };
     document.addEventListener("visibilitychange", onVis);
     const io = new IntersectionObserver(([e]) => {
       const was = visible;
       visible = e.isIntersecting && !document.hidden;
-      last = performance.now();
+      resetTiming();
       if (visible && !was && !reduced) loop();
     });
     io.observe(container);
@@ -604,7 +667,6 @@ export default function Hero3D() {
       document.removeEventListener("visibilitychange", onVis);
       shadowTex.dispose();
       gradientMap.dispose();
-      envRT.dispose();
       scene.traverse((o) => {
         const m = o as THREE.Mesh;
         if (m.geometry) m.geometry.dispose();

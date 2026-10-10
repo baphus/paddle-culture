@@ -5,6 +5,7 @@ import Hero from "@/components/landing/hero";
 import Courts from "@/components/landing/courts";
 import Rentals from "@/components/landing/rentals";
 import HowItWorks from "@/components/landing/how-it-works";
+import VenueGallery from "@/components/landing/venue-gallery";
 import BookTrack from "@/components/landing/book-track";
 import Location from "@/components/landing/location";
 import Faq from "@/components/landing/faq";
@@ -41,6 +42,7 @@ export default async function Home() {
         <Courts rates={initialRates} />
         <Rentals rates={initialRates} />
         <HowItWorks rates={initialRates} />
+        <VenueGallery />
         <BookTrack rates={initialRates} />
 
         <Location rates={initialRates} />
