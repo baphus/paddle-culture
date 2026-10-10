@@ -28,7 +28,7 @@ export function isAdmin(user: User): boolean {
   return metaOf(user).role === "admin";
 }
 
-function nameOf(user: User): string | null {
+export function nameOf(user: User): string | null {
   const raw = (user.user_metadata ?? {}) as { full_name?: unknown };
   return typeof raw.full_name === "string" && raw.full_name.length > 0
     ? raw.full_name

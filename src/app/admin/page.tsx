@@ -27,7 +27,6 @@ import { formatPesosFromCents, revenueByDay, revenueByMonth } from "@/lib/admin/
 import PageHeader from "@/components/admin/page-header";
 import CalendarView from "@/components/admin/calendar-view";
 import RevenueChartLoader from "@/components/admin/revenue-chart-loader";
-import InviteManager from "./invite-manager";
 
 export const dynamic = "force-dynamic";
 
@@ -234,12 +233,6 @@ export default async function AdminPage() {
           <QuickLink href="/admin/pricing" icon={DollarSign} label="Pricing" desc="Update rates" />
           <QuickLink href="/admin/hours" icon={Clock} label="Hours & Closures" desc="Operating hours and closures" />
         </div>
-      </section>
-
-      {/* Invite manager */}
-      <section className="rounded-xl border border-line bg-white p-5">
-        <h2 className="mb-4 text-sm font-bold text-ink">Admin access</h2>
-        <InviteManager email={session.email} name={session.name} />
       </section>
     </div>
   );

@@ -13,6 +13,7 @@ import {
   LogOut,
   ScrollText,
   Settings,
+  Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +23,7 @@ const NAV_ITEMS = [
   { href: "/admin/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/admin/revenue", label: "Revenue", icon: BarChart2 },
   { href: "/admin/audit", label: "Audit Log", icon: ScrollText },
+  { href: "/admin/users", label: "Users", icon: Users },
 ] as const;
 
 const CONFIG_ITEMS = [
