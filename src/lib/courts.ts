@@ -11,6 +11,8 @@
 //
 // Client-safe: no server imports — importable from client components.
 
+import { manilaDateStr, maxBookableDateStr as maxBookableDateStrImpl } from "@/lib/booking/slots";
+
 export interface CourtOption {
   id: string;
   name: string;
@@ -35,14 +37,12 @@ const manilaHourFmt = new Intl.DateTimeFormat("en-PH", {
 
 /** Today's date in Asia/Manila as YYYY-MM-DD (same-day booking allowed). */
 export function manilaTodayStr(now: Date = new Date()): string {
-  return manilaDayFmt.format(now);
+  return manilaDateStr(now);
 }
 
 /** Max selectable date: 12-month rolling window (matches operating scale). */
 export function maxBookableDateStr(now: Date = new Date()): string {
-  const d = new Date(now.getTime());
-  d.setFullYear(d.getFullYear() + 1);
-  return manilaDayFmt.format(d);
+  return maxBookableDateStrImpl(now);
 }
 
 const manilaMonthFmt = new Intl.DateTimeFormat("en-US", {

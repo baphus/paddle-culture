@@ -106,7 +106,19 @@ export const holds = pgTable(
     slotStart: timestamp("slot_start", { withTimezone: true }).notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },
-  (t) => [index("holds_court_slot_idx").on(t.courtId, t.slotStart)],
+  (t) => [
+    // One hold per (court, slot). Deliberately NOT partial: the natural rule
+    // is "live holds only" (WHERE expires_at > now()), but index predicates
+    // must be IMMUTABLE and now() is not — and a partial predicate is tested
+    // on write only, so an expired row would keep blocking anyway.
+    // Created and kept in sync by supabase/rpc-functions.sql, applied by hand;
+    // this declaration exists so drizzle-kit does not regenerate the old
+    // non-unique holds_court_slot_idx. Runtime rule: expiry stops blocking a
+    // slot because a DELETE reaches the row — rpc_submit_booking purges all
+    // expired holds, the retention cron purges weekly, and POST /api/holds
+    // deletes the expired rows for the pairs it is about to insert.
+    uniqueIndex("holds_court_slot_unique_idx").on(t.courtId, t.slotStart),
+  ],
 );
 
 // --------------------------------------------------------------- bookings ---

@@ -109,11 +109,40 @@ export async function POST(request: Request) {
         expires_at: expiresAt.toISOString(),
       }));
 
+    // Expired holds live until a DELETE reaches them, and a lingering row
+    // would block this (court, slot) forever — even though availability.ts
+    // ignores expired holds and would offer the slot. Delete the expired rows
+    // for exactly the pairs we are about to insert (courtIds × slotStarts is
+    // the full cross product, so these two .in() filters are the pair set).
+    // Deleting an expired row costs its owner nothing: submit already requires
+    // expires_at > now(), so that row was dead on arrival.
+    await db
+      .from("holds")
+      .delete()
+      .in("court_id", courtIds)
+      .in(
+        "slot_start",
+        starts.map((s) => s.toISOString()),
+      )
+      .lte("expires_at", new Date().toISOString());
+
     let rows = buildRows();
     let insertError;
     ({ error: insertError } = await db.from("holds").insert(rows));
     if (insertError) {
       if (isUniqueViolation(insertError)) {
+        // Two possible causes now that holds_court_slot_unique_idx exists:
+        //   1. someone else already holds this (court, slot) — a real clash
+        //   2. the random 128-bit hold_token collided — essentially never
+        // Distinguish by constraint name and only retry on (2), so a genuine
+        // clash surfaces as 409 instead of a confusing 500 after a retry.
+        if (isSlotHoldViolation(insertError)) {
+          throw new LaneError(
+            "SLOT_TAKEN",
+            "That slot was just taken by another session. Pick a different time.",
+            409,
+          );
+        }
         // Token collision: single retry with fresh tokens
         rows = buildRows();
         const retryResult = await db.from("holds").insert(rows);
@@ -173,4 +202,23 @@ function isUniqueViolation(e: unknown): boolean {
     "code" in e &&
     (e as { code?: unknown }).code === "23505"
   );
+}
+
+/**
+ * True when a 23505 came from holds_court_slot_unique_idx — i.e. another
+ * session already holds this (court, slot). PostgREST reports the index name
+ * in `constraint` and the detail text; check both so a trust-boundary
+ * mismatch in either field cannot turn a clash into a silent retry.
+ */
+function isSlotHoldViolation(e: unknown): boolean {
+  if (typeof e !== "object" || e === null) return false;
+  const constraint = (e as { constraint?: unknown }).constraint;
+  const detail = (e as { detail?: unknown }).detail;
+  const message = (e as { message?: unknown }).message;
+  for (const field of [constraint, detail, message]) {
+    if (typeof field === "string" && field.includes("holds_court_slot_unique_idx")) {
+      return true;
+    }
+  }
+  return false;
 }

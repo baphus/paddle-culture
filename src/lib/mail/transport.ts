@@ -3,9 +3,8 @@ import type { Transporter } from "nodemailer";
 
 // Gmail transport (ADR-05). App Password from env — never logged, never
 // printed. No `server-only` import here so the Netlify scheduled function can
-// bundle this module with esbuild (`src/lib/mailer.ts` keeps the guard for
-// Next.js importers). No top-level transport creation: safe at build time
-// with missing env.
+// bundle this module with esbuild. No top-level transport creation: safe at
+// build time with missing env.
 
 // Port 587/STARTTLS per ADR-05 (465/OAuth2 is the documented alternative,
 // not implemented — App Password path only).

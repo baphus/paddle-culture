@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomInt } from "node:crypto";
 import * as Sentry from "@sentry/nextjs";
 import { NextResponse, after } from "next/server";
 import { getDb } from "@/db/client";
@@ -225,11 +225,14 @@ export async function POST(request: Request) {
   }
 }
 
-/** Generates a 5-character uppercase alphanumeric tracking code (A-Z0-9). */
+/** Generates a 5-character uppercase alphanumeric tracking code (A-Z0-9).
+ * randomInt is uniform — `byte % 36` would bias toward the first 16 of the
+ * 36 symbols, so codes would be guessable 1.4× more often than they look. */
 function generateTrackingCode(): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  const bytes = randomBytes(5);
-  return Array.from(bytes, (b) => chars[b % chars.length]).join("");
+  return Array.from({ length: 5 }, () =>
+    chars[randomInt(0, chars.length - 1)],
+  ).join("");
 }
 
 /** True when the error is a 23505 unique violation on the tracking_code column. */

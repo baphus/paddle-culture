@@ -91,10 +91,13 @@ async function markFailed(
     .eq("id", id);
 }
 
+type AlertFn = (subject: string, body: string) => Promise<void>;
+
 async function processRow(
   db: Db,
   transport: Transporter,
   from: string,
+  alert: AlertFn,
   row: ClaimedRow,
 ): Promise<"sent" | "retried" | "failed"> {
   let rendered;
@@ -102,9 +105,7 @@ async function processRow(
     rendered = await renderOutboxEmail(row.template, row.payload);
   } catch {
     await markFailed(db, row.id, null);
-    await alertOwner(
-      transport,
-      from,
+    await alert(
       "dead-lettered email",
       `Outbox row ${row.id} (template ${row.template}) could not be rendered and was marked failed.`,
     );
@@ -130,9 +131,7 @@ async function processRow(
     const verdict = classifyFailure(e);
     if (verdict === "dead") {
       await markFailed(db, row.id, null);
-      await alertOwner(
-        transport,
-        from,
+      await alert(
         "dead-lettered email",
         `Outbox row ${row.id} to ${row.to_addr} (template ${row.template}) dead-lettered. Error: ${String(e)}`,
       );
@@ -151,9 +150,7 @@ async function processRow(
     }
     if (row.attempts >= OUTBOX_MAX_ATTEMPTS) {
       await markFailed(db, row.id, null);
-      await alertOwner(
-        transport,
-        from,
+      await alert(
         "dead-lettered email",
         `Outbox row ${row.id} to ${row.to_addr} (template ${row.template}) failed after ${row.attempts} attempts. Last error: ${String(e)}`,
       );
@@ -178,9 +175,20 @@ export async function processOutboxBatch(db?: Db): Promise<BatchResult> {
   const from = fromAddress();
   const rows = await claimBatch(database);
   const result: BatchResult = { claimed: rows.length, sent: 0, retried: 0, failed: 0 };
+
+  // One owner alert per batch: if Gmail auth dies, every row in the batch
+  // dead-letters at once and one email naming the first failure beats 50
+  // identical ones. The dump of which rows failed goes to the log below.
+  let alerted = false;
+  const alert: AlertFn = async (subject, body) => {
+    if (alerted) return;
+    alerted = true;
+    await alertOwner(transport, from, subject, body);
+  };
+
   for (const row of rows) {
     try {
-      const outcome = await processRow(database, transport, from, row);
+      const outcome = await processRow(database, transport, from, alert, row);
       result[outcome] += 1;
     } catch (e) {
       console.error(`outbox row ${row.id} crashed the worker loop`, e);

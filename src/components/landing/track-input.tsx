@@ -11,10 +11,12 @@ const TRACKING_CODE_RE = /^[A-Z0-9]{5}$/;
 export default function TrackInput() {
   const router = useRouter();
   const [value, setValue] = useState("");
+  const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
 
-  async function go(raw: string) {
+  async function go(raw: string, rawEmail: string) {
     const code = raw.trim().toUpperCase().replace(/\s+/g, "");
+    const cleanEmail = rawEmail.trim();
     if (!code) {
       toast.error("Enter your tracking code from the confirmation email.");
       return;
@@ -23,13 +25,19 @@ export default function TrackInput() {
       toast.error("Tracking codes are 5 characters — like AB3K7. Check your email.");
       return;
     }
+    if (!cleanEmail) {
+      toast.error("Enter the email address you used to book.");
+      return;
+    }
 
     setBusy(true);
     try {
-      const res = await fetch(`/api/booking/track?code=${encodeURIComponent(code)}`);
+      const res = await fetch(
+        `/api/booking/track?code=${encodeURIComponent(code)}&email=${encodeURIComponent(cleanEmail)}`,
+      );
       const data = await res.json();
       if (!res.ok) {
-        toast.error(data?.error ?? "No booking found. Double-check the code and try again.");
+        toast.error(data?.error ?? "No booking found. Double-check the code and email and try again.");
         return;
       }
       router.push(`/track/${encodeURIComponent(data.token)}`);
@@ -45,7 +53,7 @@ export default function TrackInput() {
       className="w-full"
       onSubmit={(e) => {
         e.preventDefault();
-        go(value);
+        go(value, email);
       }}
     >
       <label htmlFor="track-code" className="sr-only">
@@ -82,8 +90,24 @@ export default function TrackInput() {
           )}
         </button>
       </div>
+      <div className="mt-2">
+        <label htmlFor="track-email" className="sr-only">
+          Email address used to book
+        </label>
+        <input
+          id="track-email"
+          name="email"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="Email address you booked with"
+          autoComplete="email"
+          spellCheck={false}
+          className="h-12 w-full rounded-xl border border-line bg-oat/60 px-4 text-sm font-medium text-ink placeholder:text-warm-muted/60 focus:border-flame focus:outline-none"
+        />
+      </div>
       <p className="mt-1.5 text-[11px] text-warm-muted/80">
-        5-character code from your confirmation email
+        5-character code and the email from your confirmation email
       </p>
     </form>
   );

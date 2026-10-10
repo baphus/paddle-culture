@@ -103,7 +103,10 @@ export function isSlotOpen(
   };
   const todayRows = forDay(day);
   const prevRows = forDay(prevDay);
-  if (todayRows.length === 0 && prevRows.length === 0) return true;
+  // Fail closed: no hours row for this court (scoped or global) on this day or
+  // the previous one means "not configured", which is NOT the same as open.
+  // A mis-seeded hours table used to make every slot bookable.
+  if (todayRows.length === 0 && prevRows.length === 0) return false;
   for (const r of todayRows) {
     const o = minutesOfWall(r.openTime);
     let c = minutesOfWall(r.closeTime);

@@ -101,6 +101,29 @@ export function isFutureSlot(start: Date, now: Date = new Date()): boolean {
   return start.getTime() > now.getTime();
 }
 
+// 12-month rolling booking window (ADR-03). The client calendar enforces the
+// same window, but a client-side max date is a hint, not a rule — the server
+// must reject far-future slot starts itself, otherwise a hand-crafted
+// POST /api/holds books 2035.
+export const BOOKING_HORIZON_MONTHS = 12;
+
+/** Last instant a customer may still book. */
+export function maxBookableInstant(now: Date = new Date()): Date {
+  const d = new Date(now.getTime());
+  d.setMonth(d.getMonth() + BOOKING_HORIZON_MONTHS);
+  return d;
+}
+
+/** Max selectable date (YYYY-MM-DD, Manila) — the client calendar's ceiling. */
+export function maxBookableDateStr(now: Date = new Date()): string {
+  return manilaDateStr(maxBookableInstant(now));
+}
+
+/** True when a slot start sits inside the 12-month bookable window. */
+export function isWithinBookingHorizon(start: Date, now: Date = new Date()): boolean {
+  return start.getTime() <= maxBookableInstant(now).getTime();
+}
+
 // --- Pricing vocabulary derivation (documented assumptions) ---
 // pricing_rules rows are matched on (day_type, time_band, item_type) with a
 // court-specific → global fallback chain (see pricing.ts). The admin

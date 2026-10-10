@@ -75,6 +75,13 @@ export async function verifyProofFile(args: {
   const slash = args.path.lastIndexOf("/");
   const folder = slash < 0 ? "" : args.path.slice(0, slash);
   const name = slash < 0 ? args.path : args.path.slice(slash + 1);
+  // ponytail: listing the folder finds the object's real size/mime, but
+  // `limit: 100` + search on a name prefix. incoming/<32hex> is a unique
+  // per-upload name so the only files matching `search` are the one being
+  // verified and any other upload that happens to share its prefix — the
+  // exact `f.name === name` check below keeps that safe. If this ever moves
+  // to a shared folder with more than ~100 same-prefix objects, switch to
+  // storage.info(path), which reads metadata directly with no listing.
   const { data, error } = await supabase.storage
     .from(PROOF_BUCKET)
     .list(folder, { limit: 100, search: name });

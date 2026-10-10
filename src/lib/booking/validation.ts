@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { MAX_SLOTS_PER_BOOKING, PROOF_ALLOWED_MIME, PROOF_MAX_BYTES } from "./constants";
+import {
+  BOOKING_HORIZON_MONTHS,
+  isWithinBookingHorizon,
+} from "./slots";
 
 const dateStr = z
   .string()
@@ -30,7 +34,15 @@ export const holdsBodySchema = z
   })
   .refine((d) => (d.courtId ? 1 : 0) + (d.courtIds ? 1 : 0) === 1, {
     message: "Provide either courtId or courtIds (exactly one).",
-  });
+  })
+  // Server-side copy of the client calendar's 12-month max date. The client
+  // value is a hint; this is the rule.
+  .refine(
+    (d) => d.slotStarts.every((s) => isWithinBookingHorizon(new Date(s))),
+    {
+      message: `Bookings open up to ${BOOKING_HORIZON_MONTHS} months ahead.`,
+    },
+  );
 
 export type HoldsBody = z.infer<typeof holdsBodySchema>;
 

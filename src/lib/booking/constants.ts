@@ -31,5 +31,12 @@ export const OUTBOX_TEMPLATE_CUSTOMER_SUBMITTED = "booking_customer_submitted";
 export const OUTBOX_TEMPLATE_OWNER_ALERT = "booking_owner_alert";
 export const OWNER_ALERT_EMAIL = "ckgrounds1@gmail.com";
 
-// Booking slot states considered "live" for overlap + availability.
-export const LIVE_SLOT_STATES = ["held", "pending", "approved"] as const;
+// Booking slot states considered "live" for overlap + availability. No writer
+// produces "held" (rpc_submit_booking writes "pending"; rpc_apply_decision
+// flips it to approved/rejected), so it is not listed here.
+// The DB side is deliberately wider: the booking_slots_no_overlap_idx partial
+// unique index in src/db/schema.ts:159 and rpc_submit_booking
+// (supabase/rpc-functions.sql:299) still include 'held' so any legacy row
+// cannot be overlapped. If you ever drop 'held' from the DB, keep them in
+// lockstep.
+export const LIVE_SLOT_STATES = ["pending", "approved"] as const;

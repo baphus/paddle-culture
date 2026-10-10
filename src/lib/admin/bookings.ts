@@ -56,6 +56,8 @@ export interface BookingListParams {
   from: string;
   to: string;
   page: number;
+  /** Max rows to return (dashboard uses 8; the bookings page uses the default). */
+  limit?: number;
 }
 
 export interface BookingListResult {
@@ -69,36 +71,62 @@ function escapeIlike(s: string): string {
   return s.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
 
+// PostgREST caps every response at 1000 rows (server default) unless the
+// request is page-walked with .range(), so all unbounded reads here go
+// through fetchPaged. It also puts every `.in()` value in the URL, which is
+// why the date filters use the embedded booking_slots join instead of an
+// id list — one month at this venue exceeds a comfortable URL.
+const PAGE_SIZE = 500;
+
+/** Walk an unbounded PostgREST read in PAGE_SIZE pages until a short page. */
+async function fetchPaged<T>(
+  run: (from: number, to: number) => PromiseLike<{
+    data: T[] | null;
+    error: { message?: string } | null;
+  }>,
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await run(from, from + PAGE_SIZE - 1);
+    if (error) throw new Error(error.message ?? "db error");
+    const rows = (data ?? []) as T[];
+    out.push(...rows);
+    if (rows.length < PAGE_SIZE) break;
+  }
+  return out;
+}
+
 /** Newest-first bookings + filters (read-only). */
 export async function listBookings(
   db: Db,
   params: BookingListParams,
 ): Promise<BookingListResult> {
-  // ── Date-range pre-filter via booking_slots ───────────────────────────────
-  let idListFromDate: string[] | null = null;
-  if (params.from || params.to) {
-    const lo = params.from ? manilaDayStart(params.from).toISOString() : new Date(0).toISOString();
-    const hi = params.to
-      ? addDays(manilaDayStart(params.to), 1).toISOString()
-      : new Date(8640000000000000).toISOString();
-
-    const { data: slotIdRows } = await db
-      .from("booking_slots")
-      .select("booking_id")
-      .gte("slot_start", lo)
-      .lt("slot_start", hi);
-
-    idListFromDate = [...new Set((slotIdRows ?? []).map((r: { booking_id: string }) => r.booking_id))];
-    if (idListFromDate.length === 0) {
-      return { rows: [], page: 1, totalPages: 0, total: 0 };
-    }
-  }
+  // ── Date-range filter via the booking_slots join ───────────────────────────
+  // !inner keeps only bookings that have a slot in the range, so the filter
+  // runs in Postgres instead of shipping a few hundred UUIDs back out in an
+  // `.in(id, …)` URL.
+  const lo = params.from
+    ? manilaDayStart(params.from).toISOString()
+    : new Date(0).toISOString();
+  const hi = params.to
+    ? addDays(manilaDayStart(params.to), 1).toISOString()
+    : new Date(8640000000000000).toISOString();
+  const isDateFiltered = Boolean(params.from || params.to);
 
   // ── Build the bookings query ──────────────────────────────────────────────
-  let countQuery = db.from("bookings").select("id", { count: "exact", head: true });
+  // Count via range(0,0) + count:"exact" (one row, no body walk) so the
+  // embedded filter applies to the count too.
+  let countQuery = db
+    .from("bookings")
+    .select("id", { count: "exact" })
+    .range(0, 0)
+    .gte("booking_slots.slot_start", lo)
+    .lt("booking_slots.slot_start", hi);
   let dataQuery = db
     .from("bookings")
-    .select("id,tracking_token,tracking_code,status,full_name,email,phone,total,reject_reason,created_at")
+    .select(
+      "id,tracking_token,tracking_code,status,full_name,email,phone,total,reject_reason,created_at,booking_slots!inner(slot_start)",
+    )
     .order("created_at", { ascending: false });
 
   if (params.q) {
@@ -110,22 +138,24 @@ export async function listBookings(
     countQuery = countQuery.eq("status", params.status);
     dataQuery = dataQuery.eq("status", params.status);
   }
-  if (idListFromDate !== null) {
-    countQuery = countQuery.in("id", idListFromDate);
-    dataQuery = dataQuery.in("id", idListFromDate);
+  if (isDateFiltered) {
+    dataQuery = dataQuery
+      .gte("booking_slots.slot_start", lo)
+      .lt("booking_slots.slot_start", hi);
   }
 
   const { count, error: countError } = await countQuery;
   if (countError) throw new Error(countError.message);
   const total = count ?? 0;
-  const totalPages = Math.ceil(total / BOOKINGS_PAGE_SIZE);
+  const pageSize = params.limit ?? BOOKINGS_PAGE_SIZE;
+  const totalPages = Math.ceil(total / pageSize);
   if (total === 0) return { rows: [], page: 1, totalPages: 0, total: 0 };
 
   const page = Math.min(Math.max(1, params.page), totalPages);
-  const offset = (page - 1) * BOOKINGS_PAGE_SIZE;
+  const offset = (page - 1) * pageSize;
 
   const { data: bookingRows, error: dataError } = await dataQuery
-    .range(offset, offset + BOOKINGS_PAGE_SIZE - 1);
+    .range(offset, offset + pageSize - 1);
   if (dataError) throw new Error(dataError.message);
 
   const ids = (bookingRows ?? []).map((b: { id: string }) => b.id);
@@ -232,56 +262,41 @@ export function formatPesosFromCents(cents: number): string {
 
 /**
  * Revenue from Approved bookings only.
+ *
+ * The date filter runs in Postgres (booking_slots!inner join) and the page
+ * walk (fetchPaged) keeps the row count off the URL, so a busy month costs a
+ * couple of requests instead of one oversized `.in(id, …)`.
  */
 export async function revenueByDay(
   db: Db,
   args: { from: Date; to: Date },
 ): Promise<RevenueResult> {
-  const { data: inRangeData } = await db
-    .from("booking_slots")
-    .select("booking_id")
-    .gte("slot_start", args.from.toISOString())
-    .lt("slot_start", args.to.toISOString());
-
-  const candidateIds = [...new Set((inRangeData ?? []).map((r: { booking_id: string }) => r.booking_id))];
-  if (candidateIds.length === 0) {
-    return { days: [], totalBookings: 0, totalCents: 0 };
-  }
-
-  const { data: approvedData } = await db
-    .from("bookings")
-    .select("id,total")
-    .eq("status", "Approved")
-    .in("id", candidateIds);
-
-  const approved = new Map(
-    ((approvedData ?? []) as { id: string; total: string }[]).map((b) => [b.id, b.total]),
+  const rows = await fetchPaged<{
+    id: string;
+    total: string;
+    booking_slots: Array<{ slot_start: string }>;
+  }>((from, to) =>
+    db
+      .from("bookings")
+      .select("id,total,booking_slots!inner(slot_start)")
+      .eq("status", "Approved")
+      .gte("booking_slots.slot_start", args.from.toISOString())
+      .lt("booking_slots.slot_start", args.to.toISOString())
+      .order("id", { ascending: true })
+      .range(from, to),
   );
-  if (approved.size === 0) return { days: [], totalBookings: 0, totalCents: 0 };
-
-  const { data: allSlotsData } = await db
-    .from("booking_slots")
-    .select("booking_id,slot_start")
-    .in("booking_id", [...approved.keys()]);
-
-  const minByBooking = new Map<string, number>();
-  for (const s of (allSlotsData ?? []) as { booking_id: string; slot_start: string }[]) {
-    const t = new Date(s.slot_start).getTime();
-    const prev = minByBooking.get(s.booking_id);
-    if (prev === undefined || t < prev) minByBooking.set(s.booking_id, t);
-  }
 
   const days = new Map<string, { bookings: number; revenueCents: number }>();
   let totalBookings = 0;
   let totalCents = 0;
 
-  for (const [id, total] of approved) {
-    const min = minByBooking.get(id);
-    if (min === undefined) continue;
-    const day = manilaDateStr(new Date(min));
+  for (const b of rows) {
+    const firstSlot = b.booking_slots?.[0];
+    if (!firstSlot) continue;
+    const day = manilaDateStr(new Date(firstSlot.slot_start));
     const dayStart = manilaDayStart(day).getTime();
     if (dayStart < args.from.getTime() || dayStart >= args.to.getTime()) continue;
-    const cents = pesosToCents(total);
+    const cents = pesosToCents(b.total);
     const entry = days.get(day);
     if (entry) {
       entry.bookings += 1;
@@ -314,42 +329,41 @@ export interface RevenueMonthResult {
   totalCents: number;
 }
 
+/**
+ * Revenue by month, all Approved bookings.
+ *
+ * Each booking is grouped by its FIRST slot (the Manila day it starts on),
+ * which is what the revenue pages label as "the" date. Paged walk, no id
+ * list, so this stays bounded as the table grows.
+ */
 export async function revenueByMonth(db: Db): Promise<RevenueMonthResult> {
-  const { data: approvedData } = await db
-    .from("bookings")
-    .select("id,total")
-    .eq("status", "Approved");
-
-  if (!approvedData || approvedData.length === 0) {
-    return { months: [], totalBookings: 0, totalCents: 0 };
-  }
-
-  const approved = new Map(
-    (approvedData as { id: string; total: string }[]).map((b) => [b.id, b.total]),
+  const rows = await fetchPaged<{
+    id: string;
+    total: string;
+    booking_slots: Array<{ slot_start: string }>;
+  }>((from, to) =>
+    db
+      .from("bookings")
+      .select("id,total,booking_slots(slot_start)")
+      .eq("status", "Approved")
+      .order("id", { ascending: true })
+      .range(from, to),
   );
-
-  const { data: allSlotsData } = await db
-    .from("booking_slots")
-    .select("booking_id,slot_start")
-    .in("booking_id", [...approved.keys()]);
-
-  const minByBooking = new Map<string, number>();
-  for (const s of (allSlotsData ?? []) as { booking_id: string; slot_start: string }[]) {
-    const t = new Date(s.slot_start).getTime();
-    const prev = minByBooking.get(s.booking_id);
-    if (prev === undefined || t < prev) minByBooking.set(s.booking_id, t);
-  }
 
   const monthMap = new Map<string, { bookings: number; revenueCents: number }>();
   let totalBookings = 0;
   let totalCents = 0;
 
-  for (const [id, total] of approved) {
-    const min = minByBooking.get(id);
-    if (min === undefined) continue;
-    const day = manilaDateStr(new Date(min));
-    const monthKey = day.slice(0, 7);
-    const cents = Math.round(Number(total) * 100);
+  for (const b of rows) {
+    // Earliest slot of this booking = its Manila start day → month key.
+    let min = Number.POSITIVE_INFINITY;
+    for (const s of b.booking_slots ?? []) {
+      const t = new Date(s.slot_start).getTime();
+      if (t < min) min = t;
+    }
+    if (!Number.isFinite(min)) continue;
+    const monthKey = manilaDateStr(new Date(min)).slice(0, 7);
+    const cents = pesosToCents(b.total);
     const entry = monthMap.get(monthKey);
     if (entry) {
       entry.bookings += 1;

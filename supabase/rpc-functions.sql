@@ -8,6 +8,10 @@
 --   2. rpc_apply_decision       — approve/reject with outbox + audit
 --   3. rpc_claim_outbox_batch   — FOR UPDATE SKIP LOCKED email outbox claim
 --   4. rpc_delete_expired_holds — soft retention purge (used by retention cron)
+--
+-- The index at the bottom of this file (holds_live_unique_idx) is the one
+-- other piece of schema this app depends on: without it two customers can
+-- hold the same (court, slot) and only discover the clash at submit time.
 -- ---------------------------------------------------------------------------
 
 -- ===========================================================================
@@ -375,3 +379,49 @@ BEGIN
   );
 END;
 $$;
+
+
+-- ===========================================================================
+-- 5. holds_court_slot_unique_idx — one hold per (court, slot)
+--
+-- The problem:  holds is a soft reservation table. Two customers holding the
+-- same (court_id, slot_start) both pass the availability check and only one
+-- wins the booking_slots_no_overlap_idx insert at submit time; the loser gets
+-- SLOT_TAKEN after typing all their details and uploading a proof.
+--
+-- A unique index moves the clash to hold time, which is where the UI can say
+-- "that slot just went". POST /api/holds maps this violation to 409.
+--
+-- Why it is NOT partial:  the tempting rule is "only live holds clash",
+-- WHERE expires_at > now(). Postgres rejects it outright (index predicates
+-- must be IMMUTABLE, now() is STABLE), and wrapping now() in a function
+-- marked IMMUTABLE would be a lie the planner is allowed to act on. More
+-- importantly it would not have worked: a partial predicate is tested when a
+-- row is written and never re-tested, so an expired row keeps its index entry
+-- and keeps blocking. Expiry only stops blocking because the row is deleted.
+-- Plain UNIQUE is therefore the same rule, minus the lie.
+--
+-- So an expired hold still blocks its slot until a DELETE reaches it. Three
+-- things do that: rpc_submit_booking purges every expired row (see the
+-- "lazy hold expiry" step), rpc_delete_expired_holds runs weekly, and
+-- POST /api/holds deletes the expired rows for the pairs it is about to
+-- insert. Without that last step an abandoned hold could pin a slot for a
+-- week. Keep them in sync.
+-- ===========================================================================
+CREATE UNIQUE INDEX IF NOT EXISTS holds_court_slot_unique_idx
+  ON holds (court_id, slot_start);
+
+-- The Drizzle migration created a non-unique index on the same two columns
+-- (holds_court_slot_idx). The unique one answers every query it did — court_id
+-- is its leftmost prefix — so drop the duplicate instead of paying for it on
+-- every hold insert/delete. If the statement above failed with 23505 on an
+-- older install, run the dedupe DELETE below first, then re-run this file.
+DROP INDEX IF EXISTS holds_court_slot_idx;
+
+-- Pre-existing installs may already hold duplicates; the statement below
+-- clears them so the index can be created. Re-run once after deploying if
+-- creation fails with 23505 (it is idempotent afterwards).
+--   DELETE FROM holds a USING holds b
+--   WHERE a.ctid < b.ctid
+--     AND a.court_id = b.court_id
+--     AND a.slot_start = b.slot_start;

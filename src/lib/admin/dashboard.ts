@@ -78,6 +78,7 @@ export async function getDashboardStats(db: Db): Promise<DashboardStats> {
     from: "",
     to: "",
     page: 1,
+    limit: 8,
   });
 
   return {
@@ -85,6 +86,6 @@ export async function getDashboardStats(db: Db): Promise<DashboardStats> {
     approvedToday,
     revenueToday,
     totalApproved,
-    recentBookings: recentBookings.slice(0, 8),
+    recentBookings,
   };
 }
