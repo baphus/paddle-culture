@@ -643,11 +643,7 @@ export default function Step1DateTime({
 
         {/* Scrollable grid */}
         <div className="overflow-x-auto overflow-y-auto flex-1" style={{ maxHeight: "calc(100vh - 220px)", minHeight: 400 }}>
-          {loadingAvail && !avail ? (
-            <div className="flex min-h-64 items-center justify-center py-16">
-              <LoadingAnimation label="Loading court availability" />
-            </div>
-          ) : availFailed ? (
+          {availFailed ? (
             <div className="p-6 text-center">
               <p className="text-sm text-warm-muted">Could not load availability for this date.</p>
               <button
@@ -657,6 +653,10 @@ export default function Step1DateTime({
               >
                 Retry
               </button>
+            </div>
+          ) : !avail ? (
+            <div className="flex min-h-64 items-center justify-center py-16">
+              <LoadingAnimation label="Loading court availability" />
             </div>
           ) : (
             <table className="w-full min-w-[320px] border-collapse text-sm">
