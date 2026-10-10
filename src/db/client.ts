@@ -1,29 +1,38 @@
-import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
-import * as schema from "./schema";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-export type Db = PostgresJsDatabase<typeof schema>;
+// ---------------------------------------------------------------------------
+// Supabase service-role client — replaces the Drizzle/postgres.js TCP pool.
+//
+// Previously this module held a postgres.js connection pool (prepare:false,
+// max:1, connect_timeout:10) wrapped in Drizzle ORM. That persistent TCP
+// socket caused Vercel 504s during serverless freeze/thaw cycles because the
+// pooler connection was held open across invocations.
+//
+// The replacement is the @supabase/supabase-js HTTP client using the service
+// role key. Every call is a stateless HTTPS request to the Supabase Data API,
+// so there are no open sockets between requests. Row-Level Security is
+// bypassed by the service role key; access control is enforced at the
+// application layer (requireAdmin, CRON_SECRET, etc.) exactly as before.
+//
+// Transactional paths (submit, approve/reject, outbox claim) are implemented
+// as Postgres functions called via supabase.rpc() — they run atomically
+// server-side with the same isolation and locking semantics as before.
+// ---------------------------------------------------------------------------
 
-// postgres.js client is created lazily so `npm run build` succeeds with
-// missing env. Runtime uses the pooler (6543, Supabase Session/Transaction
-// pooling); DIRECT_DATABASE_URL is for migrations only. `prepare: false`
-// is required for the pooler (pooling does not support prepared statements).
-let db: Db | null = null;
+export type Db = SupabaseClient;
 
-export function getDb(): Db {
-  if (db) return db;
-  const poolerUrl = process.env.DATABASE_POOLER_URL ?? process.env.DATABASE_URL;
-  if (!poolerUrl) throw new Error("NOT_CONFIGURED");
-  if (poolerUrl.includes(":5432")) {
-    console.warn(
-      "[db] runtime using :5432 direct connection — switch DATABASE_URL/DATABASE_POOLER_URL to pooler :6543; direct is migrations-only",
-    );
-  }
-  const client = postgres(poolerUrl, {
-    prepare: false,
-    max: 1,
-    connect_timeout: 10, // fail fast if DB is unreachable (seconds)
+let _client: SupabaseClient | null = null;
+
+export function getDb(): SupabaseClient {
+  if (_client) return _client;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceKey) throw new Error("NOT_CONFIGURED");
+  _client = createClient(url, serviceKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
   });
-  db = drizzle(client, { schema });
-  return db;
+  return _client;
 }

@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/db/client";
-import { adminInvites, auditLog } from "@/db/schema";
 import { LaneError, err } from "@/lib/booking/errors";
 import {
   adminExists,
@@ -18,8 +17,7 @@ function originOf(request: Request): string {
   return new URL(request.url).origin;
 }
 
-// GET /api/auth/invites — list invite rows (admin only). Token hashes are
-// internal IDs here; the raw token exists only inside the one-time link.
+// GET /api/auth/invites — list invite rows (admin only).
 export async function GET() {
   try {
     await requireAdmin();
@@ -29,21 +27,21 @@ export async function GET() {
     } catch {
       return err("NOT_CONFIGURED", "Database is not configured.", 500);
     }
-    const rows = await db
-      .select({
-        tokenHash: adminInvites.tokenHash,
-        createdByAdmin: adminInvites.createdByAdmin,
-        createdAt: adminInvites.createdAt,
-        usedAt: adminInvites.usedAt,
-      })
-      .from(adminInvites)
-      .orderBy(adminInvites.createdAt);
+    const { data, error } = await db
+      .from("admin_invites")
+      .select("token_hash,created_by_admin,created_at,used_at")
+      .order("created_at", { ascending: true });
+    if (error) throw error;
     return NextResponse.json({
-      invites: rows.map((r) => ({
-        ...r,
-        createdAt: r.createdAt.toISOString(),
-        usedAt: r.usedAt ? r.usedAt.toISOString() : null,
-        status: r.usedAt ? "used" : "pending",
+      invites: (data ?? []).map((r: {
+        token_hash: string; created_by_admin: string | null;
+        created_at: string; used_at: string | null;
+      }) => ({
+        tokenHash: r.token_hash,
+        createdByAdmin: r.created_by_admin,
+        createdAt: r.created_at,
+        usedAt: r.used_at ?? null,
+        status: r.used_at ? "used" : "pending",
       })),
     });
   } catch (e) {
@@ -53,9 +51,7 @@ export async function GET() {
   }
 }
 
-// POST /api/auth/invites — mint one single-use invite link (admin only).
-// Bootstrap exception: when ZERO admins exist yet, anyone may mint the first
-// invite (actor "system"); afterwards this endpoint requires an admin session.
+// POST /api/auth/invites — mint one single-use invite link.
 export async function POST(request: Request) {
   try {
     let db;
@@ -74,19 +70,24 @@ export async function POST(request: Request) {
       if (await adminExists()) {
         return err("UNAUTHENTICATED", "Admin sign-in required.", 401);
       }
-      // else: first-invite bootstrap, actor stays "system".
     }
 
     const token = generateInviteToken();
     const tokenHash = hashInviteToken(token);
-    await db.insert(adminInvites).values({ tokenHash, createdByAdmin });
-    await db.insert(auditLog).values({
+
+    const { error: inviteError } = await db
+      .from("admin_invites")
+      .insert({ token_hash: tokenHash, created_by_admin: createdByAdmin });
+    if (inviteError) throw inviteError;
+
+    await db.from("audit_log").insert({
       actor: actorEmail,
       action: "admin_invite.generate",
       entity: "admin_invites",
-      entityId: tokenHash,
+      entity_id: tokenHash,
       after: { createdByAdmin },
     });
+
     return NextResponse.json(
       {
         inviteLink: inviteLinkFor(token, originOf(request)),

@@ -1,16 +1,13 @@
-import { eq, sql } from "drizzle-orm";
 import type { Transporter } from "nodemailer";
 import { getDb, type Db } from "../../db/client";
-import { emailOutbox } from "../../db/schema";
 import { OWNER_ALERT_EMAIL } from "../booking/constants";
 import { renderOutboxEmail } from "./templates";
 import { fromAddress, getSharedTransport } from "./transport";
 
-// Outbox worker (ADR-05). Reads-only except outbox status updates: claims up
-// to 50 due rows with FOR UPDATE SKIP LOCKED (single atomic UPDATE), sends
-// them over ONE shared Nodemailer transport, persists message_id, and applies
-// the Gmail retry taxonomy. Relative imports only — Netlify bundles this for
-// the */5 scheduled function with esbuild.
+// Outbox worker (ADR-05). Replaces the Drizzle FOR UPDATE SKIP LOCKED raw
+// SQL path with a Postgres RPC (rpc_claim_outbox_batch) that runs the same
+// atomic claim server-side. Status updates use plain supabase-js .update()
+// calls. Relative imports only — Netlify bundles this for esbuild.
 
 export const OUTBOX_CLAIM_LIMIT = 50;
 export const OUTBOX_MAX_ATTEMPTS = 8;
@@ -32,20 +29,11 @@ export interface BatchResult {
 }
 
 async function claimBatch(db: Db): Promise<ClaimedRow[]> {
-  const rows = (await db.execute(sql`
-    UPDATE email_outbox AS o
-    SET status = 'sending', attempts = o.attempts + 1
-    WHERE o.id IN (
-      SELECT id FROM email_outbox
-      WHERE status IN ('pending', 'retry')
-        AND (next_attempt_at IS NULL OR next_attempt_at <= now())
-      ORDER BY next_attempt_at NULLS FIRST
-      LIMIT 50
-      FOR UPDATE SKIP LOCKED
-    )
-    RETURNING o.id, o.template, o.to_addr, o.payload, o.attempts, o.booking_id
-  `)) as unknown as ClaimedRow[];
-  return rows;
+  const { data, error } = await db.rpc("rpc_claim_outbox_batch", {
+    p_limit: OUTBOX_CLAIM_LIMIT,
+  });
+  if (error) throw new Error(`claimBatch RPC failed: ${error.message}`);
+  return (data ?? []) as ClaimedRow[];
 }
 
 type Verdict = "transient" | "rate_limit" | "dead";
@@ -56,12 +44,7 @@ interface SmtpFailure {
   code?: unknown;
 }
 
-// ADR-05 Gmail taxonomy:
-//   4xx transient → exponential backoff min(6h, 60s·2^(n-1)) + jitter,
-//     8 attempts then failed;
-//   550 5.4.5 daily limit → retry in 1h WITHOUT burning an attempt;
-//   535/534 auth, 550 5.7.x policy, 553 bad address → dead-letter + alert.
-// Anything unrecognized is treated as transient (safe default: retry).
+// ADR-05 Gmail taxonomy (unchanged from Drizzle version).
 function classifyFailure(err: unknown): Verdict {
   const e = (err ?? {}) as SmtpFailure;
   const response = typeof e.response === "string" ? e.response : "";
@@ -79,8 +62,6 @@ function backoffSeconds(attempts: number): number {
   return base + Math.floor(Math.random() * 60);
 }
 
-// Direct dead-letter alert to the owner (NOT via outbox — that could loop).
-// Best-effort: alert failures never fail the batch.
 async function alertOwner(
   transport: Transporter,
   from: string,
@@ -105,9 +86,9 @@ async function markFailed(
   messageId: string | null,
 ): Promise<void> {
   await db
-    .update(emailOutbox)
-    .set({ status: "failed", messageId, nextAttemptAt: null })
-    .where(eq(emailOutbox.id, id));
+    .from("email_outbox")
+    .update({ status: "failed", message_id: messageId, next_attempt_at: null })
+    .eq("id", id);
 }
 
 async function processRow(
@@ -120,7 +101,6 @@ async function processRow(
   try {
     rendered = await renderOutboxEmail(row.template, row.payload);
   } catch {
-    // Unknown template / unusable payload: data bug, dead-letter at once.
     await markFailed(db, row.id, null);
     await alertOwner(
       transport,
@@ -142,9 +122,9 @@ async function processRow(
     const messageId =
       typeof info?.messageId === "string" ? info.messageId : null;
     await db
-      .update(emailOutbox)
-      .set({ status: "sent", messageId, nextAttemptAt: null })
-      .where(eq(emailOutbox.id, row.id));
+      .from("email_outbox")
+      .update({ status: "sent", message_id: messageId, next_attempt_at: null })
+      .eq("id", row.id);
     return "sent";
   } catch (e) {
     const verdict = classifyFailure(e);
@@ -159,15 +139,14 @@ async function processRow(
       return "failed";
     }
     if (verdict === "rate_limit") {
-      // Gmail daily limit: retry in 1h, attempt NOT burned (claim +1 undone).
       await db
-        .update(emailOutbox)
-        .set({
+        .from("email_outbox")
+        .update({
           status: "retry",
           attempts: Math.max(0, row.attempts - 1),
-          nextAttemptAt: new Date(Date.now() + 3600_000),
+          next_attempt_at: new Date(Date.now() + 3600_000).toISOString(),
         })
-        .where(eq(emailOutbox.id, row.id));
+        .eq("id", row.id);
       return "retried";
     }
     if (row.attempts >= OUTBOX_MAX_ATTEMPTS) {
@@ -181,27 +160,24 @@ async function processRow(
       return "failed";
     }
     await db
-      .update(emailOutbox)
-      .set({
+      .from("email_outbox")
+      .update({
         status: "retry",
-        nextAttemptAt: new Date(
+        next_attempt_at: new Date(
           Date.now() + backoffSeconds(row.attempts) * 1000,
-        ),
+        ).toISOString(),
       })
-      .where(eq(emailOutbox.id, row.id));
+      .eq("id", row.id);
     return "retried";
   }
 }
 
-/** Claim one batch and send it. Throws only when infra (DB/transport) is down. */
 export async function processOutboxBatch(db?: Db): Promise<BatchResult> {
   const database = db ?? getDb();
   const transport = getSharedTransport();
   const from = fromAddress();
   const rows = await claimBatch(database);
   const result: BatchResult = { claimed: rows.length, sent: 0, retried: 0, failed: 0 };
-  // Sequential sends over the single shared transport (this scale needs no
-  // concurrency, and serial sends stay under Gmail's rate radar).
   for (const row of rows) {
     try {
       const outcome = await processRow(database, transport, from, row);
@@ -214,13 +190,6 @@ export async function processOutboxBatch(db?: Db): Promise<BatchResult> {
   return result;
 }
 
-/**
- * Best-effort immediate drain for request handlers (submit, approve/reject):
- * sends whatever is due right now instead of waiting for the 5-minute cron.
- * Never throws — booking/decision commits must never fail because mail is
- * down. The cron + admin trigger remain as backstops (claiming is atomic via
- * FOR UPDATE SKIP LOCKED, so a concurrent cron run can't double-send).
- */
 export async function drainOutboxBestEffort(): Promise<void> {
   try {
     await processOutboxBatch();

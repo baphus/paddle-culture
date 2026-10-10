@@ -1,4 +1,3 @@
-import { and, count, desc, eq, like, or } from "drizzle-orm";
 import {
   Table,
   TableBody,
@@ -8,7 +7,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { getDb } from "@/db/client";
-import { auditLog } from "@/db/schema";
 import PageHeader from "@/components/admin/page-header";
 import AdminPagination from "@/components/admin/admin-pagination";
 import {
@@ -23,8 +21,6 @@ export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 25;
 
-// Known action types — shown as filter chips.
-// Kept as a runtime constant (not imported from DB) so the page stays static-friendly.
 const KNOWN_ACTIONS = [
   "approve",
   "reject",
@@ -44,8 +40,8 @@ function summarize(value: unknown): string {
   return s.length > 100 ? `${s.slice(0, 100)}…` : s;
 }
 
-function formatAt(date: Date): string {
-  return date.toLocaleString("en-PH", {
+function formatAt(dateStr: string): string {
+  return new Date(dateStr).toLocaleString("en-PH", {
     timeZone: "Asia/Manila",
     year: "numeric",
     month: "short",
@@ -108,48 +104,47 @@ export default async function AuditPage({
     );
   }
 
-  // Build WHERE clause
-  const searchClause =
-    q
-      ? or(
-          like(auditLog.actor, `%${q}%`),
-          like(auditLog.entity, `%${q}%`),
-          like(auditLog.entityId, `%${q}%`),
-        )
-      : undefined;
-  const actionClause =
-    action !== "all" ? eq(auditLog.action, action) : undefined;
+  // ── Build query ────────────────────────────────────────────────────────────
+  // Count query
+  let countQuery = db
+    .from("audit_log")
+    .select("id", { count: "exact", head: true });
 
-  const whereClause =
-    searchClause && actionClause
-      ? and(searchClause, actionClause)
-      : searchClause ?? actionClause;
+  // Data query — use all columns
+  let dataQuery = db
+    .from("audit_log")
+    .select("id,actor,action,entity,entity_id,before,after,at")
+    .order("at", { ascending: false });
 
-  const baseQuery = whereClause
-    ? db.select({ n: count() }).from(auditLog).where(whereClause)
-    : db.select({ n: count() }).from(auditLog);
+  if (q) {
+    // Supabase OR filter for text search across multiple columns
+    const orFilter = `actor.ilike.%${q}%,entity.ilike.%${q}%,entity_id.ilike.%${q}%`;
+    countQuery = countQuery.or(orFilter);
+    dataQuery = dataQuery.or(orFilter);
+  }
+  if (action !== "all") {
+    countQuery = countQuery.eq("action", action);
+    dataQuery = dataQuery.eq("action", action);
+  }
 
-  const totalRows = await baseQuery;
-  const total = totalRows[0]?.n ?? 0;
+  const { count } = await countQuery;
+  const total = count ?? 0;
   const totalPages = Math.ceil(total / PAGE_SIZE);
   const safePage = total === 0 ? 1 : Math.min(page, Math.max(1, totalPages));
 
-  const rowQuery = whereClause
-    ? db
-        .select()
-        .from(auditLog)
-        .where(whereClause)
-        .orderBy(desc(auditLog.at))
-        .limit(PAGE_SIZE)
-        .offset((safePage - 1) * PAGE_SIZE)
-    : db
-        .select()
-        .from(auditLog)
-        .orderBy(desc(auditLog.at))
-        .limit(PAGE_SIZE)
-        .offset((safePage - 1) * PAGE_SIZE);
+  const offset = (safePage - 1) * PAGE_SIZE;
+  const { data: rows } = await dataQuery.range(offset, offset + PAGE_SIZE - 1);
 
-  const rows = await rowQuery;
+  type AuditRow = {
+    id: string;
+    actor: string;
+    action: string;
+    entity: string;
+    entity_id: string;
+    before: unknown;
+    after: unknown;
+    at: string;
+  };
 
   return (
     <div className="space-y-5">
@@ -179,7 +174,6 @@ export default async function AuditPage({
 
       {/* ── Table ─────────────────────────────────────────────────────── */}
       <div className="overflow-hidden rounded-xl border border-line bg-white">
-        {/* Header bar */}
         <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
           <p className="text-xs font-semibold text-ink/50">
             {total > 0
@@ -193,7 +187,7 @@ export default async function AuditPage({
           )}
         </div>
 
-        {rows.length > 0 ? (
+        {(rows ?? []).length > 0 ? (
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
@@ -222,7 +216,7 @@ export default async function AuditPage({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((r) => (
+                {(rows as AuditRow[]).map((r) => (
                   <TableRow
                     key={r.id}
                     className="border-b border-line/60 align-top transition-colors hover:bg-oat/20"
@@ -244,7 +238,7 @@ export default async function AuditPage({
                       {r.entity}
                     </TableCell>
                     <TableCell className="px-4 py-3 max-w-[80px] truncate font-mono text-xs text-warm-muted">
-                      {r.entityId}
+                      {r.entity_id}
                     </TableCell>
                     <TableCell className="px-4 py-3 max-w-[200px] text-xs text-warm-muted">
                       <span className="block whitespace-pre-wrap break-words">

@@ -1,9 +1,7 @@
 import { randomBytes } from "node:crypto";
 import * as Sentry from "@sentry/nextjs";
-import { and, gt, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db/client";
-import { courts, holds } from "@/db/schema";
 import { getAvailability } from "@/lib/booking/availability";
 import { HOLD_TTL_MINUTES, MAX_SLOTS_PER_BOOKING } from "@/lib/booking/constants";
 import { LaneError, err } from "@/lib/booking/errors";
@@ -12,20 +10,7 @@ import { holdsBodySchema, releaseHoldsBodySchema } from "@/lib/booking/validatio
 
 export const runtime = "nodejs";
 
-// POST /api/holds — creates one hold row per (court, slot) pair.
-// holds.hold_token is the PK, so a booking is an array of single-slot tokens
-// that share one deadline (min expires_at). Returns deadlineMs for the
-// hand-written client countdown (cosmetic only — server enforces
-// expires_at > now()).
-//
-// Contract:
-//   request:  { courtId, slotStarts[] }            (single-court, legacy)  OR
-//             { courtIds[], slotStarts[] }         (multi-court: SAME slots
-//              reserved on EVERY listed court)
-//   response: { holds: [{ holdToken, courtId, slotStart }]  (one row per
-//              (court, slot) pair), expiresAt, deadlineMs }
-// Total pairs (courts × slots) are capped at MAX_SLOTS_PER_BOOKING so the
-// token set always fits the submit/upload-url 12-token limit.
+// POST /api/holds
 export async function POST(request: Request) {
   try {
     const parsed = holdsBodySchema.safeParse(await request.json());
@@ -45,14 +30,17 @@ export async function POST(request: Request) {
       return err("DUPLICATE_COURT", "Duplicate courts in request.", 400);
     }
 
-    const courtRows = await db
-      .select({ id: courts.id, status: courts.status })
-      .from(courts)
-      .where(inArray(courts.id, courtIds));
-    if (courtRows.length !== courtIds.length) {
+    const { data: courtRows, error: courtError } = await db
+      .from("courts")
+      .select("id,status")
+      .in("id", courtIds);
+    if (courtError) return err("INTERNAL", "Could not verify courts.", 500);
+    if ((courtRows ?? []).length !== courtIds.length) {
       return err("UNKNOWN_COURT", "One or more courts do not exist.", 404);
     }
-    const inactive = courtRows.find((c) => c.status !== "active");
+    const inactive = (courtRows as { id: string; status: string }[]).find(
+      (c) => c.status !== "active",
+    );
     if (inactive) {
       return err("COURT_UNAVAILABLE", "A selected court is not bookable.", 409);
     }
@@ -80,10 +68,7 @@ export async function POST(request: Request) {
         400,
       );
     }
-    // All requested (court, slot) pairs must be free + bookable right now
-    // (re-checked inside the submit transaction — this is a fast-fail only).
-    // Grouped by Manila date so bookings crossing midnight check the right
-    // day grids.
+
     const byDate = new Map<string, Date[]>();
     for (const s of starts) {
       const d = selectionDateStr(s);
@@ -118,28 +103,31 @@ export async function POST(request: Request) {
     );
     const buildRows = () =>
       pairs.map((p) => ({
-        holdToken: randomBytes(16).toString("hex"),
-        courtId: p.courtId,
-        slotStart: p.start,
-        expiresAt,
+        hold_token: randomBytes(16).toString("hex"),
+        court_id: p.courtId,
+        slot_start: p.start.toISOString(),
+        expires_at: expiresAt.toISOString(),
       }));
+
     let rows = buildRows();
-    try {
-      await db.insert(holds).values(rows);
-    } catch (e) {
-      if (isUniqueViolation(e)) {
-        // Token collision (negligible odds): single retry with fresh tokens.
+    let insertError;
+    ({ error: insertError } = await db.from("holds").insert(rows));
+    if (insertError) {
+      if (isUniqueViolation(insertError)) {
+        // Token collision: single retry with fresh tokens
         rows = buildRows();
-        await db.insert(holds).values(rows);
+        const retryResult = await db.from("holds").insert(rows);
+        if (retryResult.error) throw retryResult.error;
       } else {
-        throw e;
+        throw insertError;
       }
     }
+
     return NextResponse.json({
       holds: rows.map((r) => ({
-        holdToken: r.holdToken,
-        courtId: r.courtId,
-        slotStart: r.slotStart.toISOString(),
+        holdToken: r.hold_token,
+        courtId: r.court_id,
+        slotStart: r.slot_start,
       })),
       expiresAt: expiresAt.toISOString(),
       deadlineMs: expiresAt.getTime(),
@@ -152,8 +140,7 @@ export async function POST(request: Request) {
   }
 }
 
-// DELETE /api/holds — release an unfinished selection immediately. Tokens are
-// random capability values and only live, unexpired rows are eligible.
+// DELETE /api/holds
 export async function DELETE(request: Request) {
   try {
     const parsed = releaseHoldsBodySchema.safeParse(await request.json());
@@ -167,8 +154,10 @@ export async function DELETE(request: Request) {
       return err("NOT_CONFIGURED", "Database is not configured.", 500);
     }
     await db
-      .delete(holds)
-      .where(and(inArray(holds.holdToken, parsed.data.holdTokens), gt(holds.expiresAt, new Date())));
+      .from("holds")
+      .delete()
+      .in("hold_token", parsed.data.holdTokens)
+      .gt("expires_at", new Date().toISOString());
     return new NextResponse(null, { status: 204 });
   } catch (e) {
     console.error("hold release failed", e);

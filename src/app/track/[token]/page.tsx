@@ -1,13 +1,6 @@
-import { eq } from "drizzle-orm";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { getDb } from "@/db/client";
-import {
-  bookingRentals,
-  bookingSlots,
-  bookings,
-  courts,
-} from "@/db/schema";
 import { FALLBACK_RATES, getDisplayRates, type DisplayRates } from "@/lib/pricing-display";
 import Header from "@/components/landing/header";
 import Footer from "@/components/landing/footer";
@@ -37,10 +30,6 @@ async function loadRates(): Promise<DisplayRates> {
   }
 }
 
-// Public tracking page (no auth — the 256-bit token IS the capability).
-// Shows only what the customer submitted plus decision state: status, name,
-// slots/courts, rentals, total, QR. Never email/phone, never proof internals,
-// never other bookings.
 export default async function TrackPage({
   params,
 }: {
@@ -54,48 +43,59 @@ export default async function TrackPage({
     notFound();
   }
 
-  const bookingRows = await db
-    .select({
-      id: bookings.id,
-      status: bookings.status,
-      fullName: bookings.fullName,
-      total: bookings.total,
-      rejectReason: bookings.rejectReason,
-      trackingCode: bookings.trackingCode,
-    })
-    .from(bookings)
-    .where(eq(bookings.trackingToken, token));
-  const booking = bookingRows[0];
-  if (!booking) notFound();
+  const { data: bookingData, error: bookingError } = await db
+    .from("bookings")
+    .select("id,status,full_name,total,reject_reason,tracking_code")
+    .eq("tracking_token", token)
+    .single();
 
-  const slotRows = await db
-    .select({ courtName: courts.name, slotStart: bookingSlots.slotStart })
-    .from(bookingSlots)
-    .innerJoin(courts, eq(bookingSlots.courtId, courts.id))
-    .where(eq(bookingSlots.bookingId, booking.id))
-    .orderBy(bookingSlots.slotStart);
+  if (bookingError || !bookingData) notFound();
 
-  const rentalRows = await db
-    .select()
-    .from(bookingRentals)
-    .where(eq(bookingRentals.bookingId, booking.id));
-  const rental = rentalRows[0] ?? null;
+  const booking = bookingData as {
+    id: string;
+    status: string;
+    full_name: string;
+    total: string;
+    reject_reason: string | null;
+    tracking_code: string;
+  };
+
+  const { data: slotData } = await db
+    .from("booking_slots")
+    .select("slot_start,courts(name)")
+    .eq("booking_id", booking.id)
+    .order("slot_start", { ascending: true });
+
+  const { data: rentalData } = await db
+    .from("booking_rentals")
+    .select("paddle_qty,paddle_hours,ball_fee")
+    .eq("booking_id", booking.id)
+    .single();
 
   const [url, rates] = await Promise.all([
     absoluteBookingUrl(token),
     loadRates(),
   ]);
 
-  const serializedSlots = slotRows.map((s) => ({
-    courtName: s.courtName,
-    slotStart: s.slotStart.toISOString(),
+  type SlotRow = { slot_start: string; courts: unknown };
+  function getCourtName(s: SlotRow): string {
+    const c = s.courts;
+    if (!c) return "";
+    if (Array.isArray(c)) return (c[0] as { name?: string })?.name ?? "";
+    return (c as { name?: string })?.name ?? "";
+  }
+  const serializedSlots = ((slotData ?? []) as SlotRow[]).map((s) => ({
+    courtName: getCourtName(s),
+    slotStart: s.slot_start,
   }));
 
+  type RentalRow = { paddle_qty: number; paddle_hours: string | null; ball_fee: string | null };
+  const rental = rentalData as RentalRow | null;
   const serializedRental = rental
     ? {
-        paddleQty: rental.paddleQty,
-        paddleHours: rental.paddleHours,
-        ballFee: rental.ballFee,
+        paddleQty: rental.paddle_qty,
+        paddleHours: rental.paddle_hours,
+        ballFee: rental.ball_fee,
       }
     : null;
 
@@ -108,10 +108,10 @@ export default async function TrackPage({
             token={token}
             url={url}
             status={booking.status}
-            fullName={booking.fullName}
+            fullName={booking.full_name}
             total={booking.total}
-            rejectReason={booking.rejectReason}
-            trackingCode={booking.trackingCode}
+            rejectReason={booking.reject_reason}
+            trackingCode={booking.tracking_code}
             slots={serializedSlots}
             rental={serializedRental}
           />

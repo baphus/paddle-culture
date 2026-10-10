@@ -1,7 +1,5 @@
-import { and, gt, inArray, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db/client";
-import { holds } from "@/db/schema";
 import { LaneError, err } from "@/lib/booking/errors";
 import {
   getStorageAdmin,
@@ -12,18 +10,7 @@ import { proofUploadUrlBodySchema } from "@/lib/booking/validation";
 
 export const runtime = "nodejs";
 
-// POST /api/proofs/upload-url — CUSTOMER-facing, unauthenticated (customers
-// must upload). Abuse controls:
-//   - bound to live hold tokens: all tokens must exist AND be unexpired
-//     (server clock); no holds = no URL, so URLs cannot be farmed;
-//   - scoped path: server-minted `incoming/<random>.<ext>` only; no
-//     client-chosen paths, and upsert:false so uploads are immutable
-//     (no replace possible);
-//   - mime/bytes pre-validated here AND re-verified from Storage metadata at
-//     submit (the hard gate); the bucket itself enforces 5MB + allowlist.
-// Client then PUTs raw file bytes DIRECTLY to `signedUrl` (browser → Supabase,
-// never through a route handler — Netlify buffers 6MB), and submits with
-// { path, mime, bytes }.
+// POST /api/proofs/upload-url
 export async function POST(request: Request) {
   try {
     const parsed = proofUploadUrlBodySchema.safeParse(await request.json());
@@ -40,16 +27,14 @@ export async function POST(request: Request) {
       return err("DUPLICATE_HOLD_TOKEN", "Duplicate hold tokens in request.", 400);
     }
     // All tokens must map to holds that are still unexpired on the DB clock.
-    const rows = await db
-      .select({ expiresAt: holds.expiresAt })
-      .from(holds)
-      .where(
-        and(
-          inArray(holds.holdToken, parsed.data.holdTokens),
-          gt(holds.expiresAt, sql`now()`),
-        ),
-      );
-    if (rows.length !== parsed.data.holdTokens.length) {
+    const { data: rows, error: holdError } = await db
+      .from("holds")
+      .select("expires_at")
+      .in("hold_token", parsed.data.holdTokens)
+      .gt("expires_at", new Date().toISOString());
+
+    if (holdError) return err("INTERNAL", "Could not verify holds.", 500);
+    if ((rows ?? []).length !== parsed.data.holdTokens.length) {
       return err(
         "HOLD_INVALID",
         "Upload requires live holds. Re-select your slots first.",
@@ -65,7 +50,9 @@ export async function POST(request: Request) {
     if (error || !data?.signedUrl) {
       return err("UPLOAD_URL_FAILED", "Could not prepare upload. Retry shortly.", 500);
     }
-    const deadlineMs = Math.min(...rows.map((h) => h.expiresAt.getTime()));
+    const deadlineMs = Math.min(
+      ...(rows as { expires_at: string }[]).map((h) => new Date(h.expires_at).getTime()),
+    );
     return NextResponse.json(
       { path, signedUrl: data.signedUrl, token: data.token, deadlineMs },
       { status: 201 },

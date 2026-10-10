@@ -1,12 +1,11 @@
-import { and, count, desc, eq, gte, lt } from "drizzle-orm";
 import { TZDate } from "@date-fns/tz";
 import { addDays } from "date-fns";
 import type { Db } from "@/db/client";
-import { bookingSlots, bookings } from "@/db/schema";
 import { MANILA_TZ } from "@/lib/booking/constants";
-import { manilaDateStr } from "@/lib/booking/slots";
 import type { BookingDetail } from "./bookings";
 import { listBookings } from "./bookings";
+
+// All Drizzle ORM imports replaced with @supabase/supabase-js HTTP client.
 
 function manilaToday(): string {
   const z = new TZDate(Date.now(), MANILA_TZ);
@@ -21,7 +20,7 @@ function manilaDayStart(dateStr: string): Date {
 export interface DashboardStats {
   pending: number;
   approvedToday: number;
-  revenueToday: number; // cents
+  revenueToday: number;
   totalApproved: number;
   recentBookings: BookingDetail[];
 }
@@ -31,55 +30,48 @@ export async function getDashboardStats(db: Db): Promise<DashboardStats> {
   const todayStart = manilaDayStart(today);
   const tomorrowStart = addDays(todayStart, 1);
 
-  // Count pending bookings (need admin attention)
-  const pendingRows = await db
-    .select({ n: count() })
-    .from(bookings)
-    .where(eq(bookings.status, "Pending"));
-  const pending = pendingRows[0]?.n ?? 0;
+  // Run these reads in parallel
+  const [pendingResult, approvedResult, todaySlotsResult] = await Promise.all([
+    db
+      .from("bookings")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "Pending"),
+    db
+      .from("bookings")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "Approved"),
+    db
+      .from("booking_slots")
+      .select("booking_id")
+      .gte("slot_start", todayStart.toISOString())
+      .lt("slot_start", tomorrowStart.toISOString()),
+  ]);
 
-  // Count all-time approved bookings
-  const approvedRows = await db
-    .select({ n: count() })
-    .from(bookings)
-    .where(eq(bookings.status, "Approved"));
-  const totalApproved = approvedRows[0]?.n ?? 0;
-
-  // Today's approved bookings by service date (earliest slot Manila date)
-  const todaySlotsRows = await db
-    .selectDistinct({ bookingId: bookingSlots.bookingId })
-    .from(bookingSlots)
-    .where(
-      and(
-        gte(bookingSlots.slotStart, todayStart),
-        lt(bookingSlots.slotStart, tomorrowStart),
-      ),
-    );
-  const candidateIds = todaySlotsRows.map((r) => r.bookingId);
+  const pending = pendingResult.count ?? 0;
+  const totalApproved = approvedResult.count ?? 0;
+  const candidateIds = [
+    ...new Set(
+      ((todaySlotsResult.data ?? []) as { booking_id: string }[]).map((r) => r.booking_id),
+    ),
+  ];
 
   let approvedToday = 0;
   let revenueToday = 0;
 
   if (candidateIds.length > 0) {
-    // Re-use inArray import via drizzle (already imported above)
-    const { inArray } = await import("drizzle-orm");
-    const approvedTodayRows = await db
-      .select({ total: bookings.total })
-      .from(bookings)
-      .where(
-        and(
-          eq(bookings.status, "Approved"),
-          inArray(bookings.id, candidateIds),
-        ),
-      );
-    approvedToday = approvedTodayRows.length;
-    revenueToday = approvedTodayRows.reduce(
+    const { data: approvedTodayData } = await db
+      .from("bookings")
+      .select("total")
+      .eq("status", "Approved")
+      .in("id", candidateIds);
+
+    approvedToday = (approvedTodayData ?? []).length;
+    revenueToday = ((approvedTodayData ?? []) as { total: string }[]).reduce(
       (sum, r) => sum + Math.round(Number(r.total) * 100),
       0,
     );
   }
 
-  // 8 most recent bookings (any status), newest first
   const { rows: recentBookings } = await listBookings(db, {
     q: "",
     status: "all",

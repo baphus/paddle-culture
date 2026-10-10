@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/db/client";
-import { auditLog } from "@/db/schema";
 import { LaneError, err } from "@/lib/booking/errors";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/session";
@@ -19,8 +18,7 @@ export async function GET() {
   }
 }
 
-// PATCH /api/auth/profile — name is mutable; email is IMMUTABLE: any payload
-// containing `email` is rejected outright (there is no email-change path).
+// PATCH /api/auth/profile — name is mutable; email is IMMUTABLE.
 export async function PATCH(request: Request) {
   try {
     const session = await requireAdmin();
@@ -39,15 +37,15 @@ export async function PATCH(request: Request) {
     if (error) return err("PROFILE_UPDATE_FAILED", "Could not update name.", 500);
     try {
       const db = getDb();
-      await db.insert(auditLog).values({
+      await db.from("audit_log").insert({
         actor: session.email,
         action: "admin_profile.update",
         entity: "auth_user",
-        entityId: session.userId,
+        entity_id: session.userId,
         after: { full_name: parsed.data.name },
       });
     } catch {
-      // Audit is best-effort here; the profile update already succeeded.
+      // Audit is best-effort; profile update already succeeded.
     }
     return NextResponse.json({ ok: true, name: parsed.data.name });
   } catch (e) {

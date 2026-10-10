@@ -1,7 +1,8 @@
 import type { Db } from "@/db/client";
-import { pricingRules, type PricingRule } from "@/db/schema";
 import { LaneError } from "./errors";
 import { dayTypeFor, timeBandFor } from "./slots";
+
+// All Drizzle ORM imports replaced with @supabase/supabase-js HTTP client.
 
 export interface PricedSlot {
   courtId: string;
@@ -24,6 +25,16 @@ export interface TotalLine {
   amount: string;
 }
 
+interface PricingRule {
+  id: string;
+  courtId: string | null;
+  dayType: string;
+  timeBand: string;
+  itemType: string;
+  unit: string;
+  amount: string;
+}
+
 function toCentavos(amount: string): number {
   const n = Number(amount);
   if (!Number.isFinite(n) || n < 0) throw new Error(`bad amount ${amount}`);
@@ -36,10 +47,6 @@ function fromCentavos(cents: number): string {
 
 /**
  * Pick the best pricing_rules row for (court, dayType, timeBand, itemType).
- * Chain (each tried court-specific first, then global court_id NULL):
- *   exact → (day,'all') → ('all',band) → ('all','all').
- * Throws PRICING_NOT_CONFIGURED when nothing matches — fail closed, never
- * trust a client total (ADR-03).
  */
 function pickRule(
   rules: PricingRule[],
@@ -76,9 +83,7 @@ function pickRule(
 }
 
 /**
- * Server-side total recalculation (ADR-03). Court rate is per slot-hour;
- * paddle rate is per paddle per hour (hours default to slot count); ball
- * fee is one-time. All money math in integer centavos.
+ * Server-side total recalculation (ADR-03).
  */
 export async function recalculateTotal(
   db: Db,
@@ -87,7 +92,23 @@ export async function recalculateTotal(
   if (input.slots.length === 0) {
     throw new LaneError("NO_SLOTS", "No slots to price.", 422);
   }
-  const rules = await db.select().from(pricingRules);
+
+  const { data, error } = await db
+    .from("pricing_rules")
+    .select("id,court_id,day_type,time_band,item_type,unit,amount");
+
+  if (error) throw new LaneError("DB_ERROR", error.message, 500);
+
+  const rules: PricingRule[] = (data ?? []).map((r) => ({
+    id: r.id,
+    courtId: r.court_id,
+    dayType: r.day_type,
+    timeBand: r.time_band,
+    itemType: r.item_type,
+    unit: r.unit,
+    amount: r.amount,
+  }));
+
   const lines: TotalLine[] = [];
   let cents = 0;
 
@@ -115,9 +136,6 @@ export async function recalculateTotal(
   }
 
   if (input.paddleQty > 0) {
-    // Cross-check (closes the "24 paddle-hours on a 1-slot booking" gap):
-    // paddle hours can never exceed the booked slot count. Fail closed —
-    // never silently clamp a client claim (ADR-03).
     if (input.paddleHours != null && input.paddleHours > input.slots.length) {
       throw new LaneError(
         "INVALID_PADDLE_HOURS",

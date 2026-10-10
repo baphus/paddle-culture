@@ -17,3 +17,5 @@ tsconfig.tsbuildinfo
 .DS_Store
 Thumbs.db
 next-env.d.ts
+.kiro
+.agents

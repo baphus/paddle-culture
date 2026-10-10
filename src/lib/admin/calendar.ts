@@ -1,23 +1,21 @@
-import { and, eq, gte, lt } from "drizzle-orm";
 import { TZDate } from "@date-fns/tz";
-import { addDays, addMonths, startOfMonth } from "date-fns";
+import { addMonths } from "date-fns";
 import type { Db } from "@/db/client";
-import { bookingSlots, bookings, courts } from "@/db/schema";
 import { MANILA_TZ } from "@/lib/booking/constants";
 import { manilaDateStr } from "@/lib/booking/slots";
+
+// All Drizzle ORM imports replaced with @supabase/supabase-js HTTP client.
 
 export interface CalendarEvent {
   id: string;
   fullName: string;
   courts: string;
   status: string;
-  date: string; // "YYYY-MM-DD" Manila
-  slotLabels: string[]; // ["6AM–7AM", ...]
-  slotStarts: string[]; // ISO strings, sorted asc — used for consecutive formatting
+  date: string;
+  slotLabels: string[];
+  slotStarts: string[];
   total: string;
 }
-
-// ─── slot label helpers ───────────────────────────────────────────────────────
 
 function h12(n: number): string {
   const v = n % 12 === 0 ? 12 : n % 12;
@@ -30,11 +28,6 @@ function hourLabel(start: Date): string {
   return `${h12(h)}–${h12((h + 1) % 24)}`;
 }
 
-/**
- * Collapse sorted slot-start ISO strings into a human label.
- * Consecutive 1-hour runs merge: ["6AM–7AM","7AM–8AM"] → "6AM–8AM"
- * Non-consecutive runs are comma-joined: "6AM–8AM, 10AM–11AM"
- */
 export function formatConsecutiveSlots(slotStarts: string[]): string {
   if (slotStarts.length === 0) return "—";
   const sorted = [...slotStarts].sort(
@@ -57,50 +50,47 @@ export function formatConsecutiveSlots(slotStarts: string[]): string {
       const startZ = new TZDate(run[0]!, MANILA_TZ);
       const endZ = new TZDate(run[run.length - 1]!, MANILA_TZ);
       const startH = startZ.getHours();
-      const endHours = endZ.getHours() + 1; // end is exclusive
+      const endHours = endZ.getHours() + 1;
       return `${h12(startH)}–${h12(endHours % 24)}`;
     })
     .join(", ");
 }
-
-// ─── shared query core ────────────────────────────────────────────────────────
 
 async function buildEvents(
   db: Db,
   rangeStart: Date,
   rangeEnd: Date,
 ): Promise<CalendarEvent[]> {
-  const slotRows = await db
-    .select({
-      bookingId: bookingSlots.bookingId,
-      courtName: courts.name,
-      slotStart: bookingSlots.slotStart,
-    })
-    .from(bookingSlots)
-    .innerJoin(courts, eq(bookingSlots.courtId, courts.id))
-    .where(
-      and(
-        gte(bookingSlots.slotStart, rangeStart as unknown as Date),
-        lt(bookingSlots.slotStart, rangeEnd as unknown as Date),
-      ),
-    );
+  type SlotRow = { booking_id: string; court_id: string; slot_start: string; courts: unknown };
+  function getCourtName(s: SlotRow): string {
+    const c = s.courts;
+    if (!c) return s.court_id;
+    if (Array.isArray(c)) return (c[0] as { name?: string })?.name ?? s.court_id;
+    return (c as { name?: string })?.name ?? s.court_id;
+  }
 
-  if (slotRows.length === 0) return [];
+  const { data: slotData, error: slotError } = await db
+    .from("booking_slots")
+    .select("booking_id,court_id,slot_start,courts(name)")
+    .gte("slot_start", rangeStart.toISOString())
+    .lt("slot_start", rangeEnd.toISOString());
 
-  const bookingIds = [...new Set(slotRows.map((s) => s.bookingId))];
-  const { inArray } = await import("drizzle-orm");
+  if (slotError) throw new Error(slotError.message);
+  if (!slotData || slotData.length === 0) return [];
 
-  const bookingRows = await db
-    .select({
-      id: bookings.id,
-      fullName: bookings.fullName,
-      status: bookings.status,
-      total: bookings.total,
-    })
-    .from(bookings)
-    .where(inArray(bookings.id, bookingIds));
+  const bookingIds = [...new Set((slotData as SlotRow[]).map((s) => s.booking_id))];
 
-  const bookingMap = new Map(bookingRows.map((b) => [b.id, b]));
+  const { data: bookingData, error: bookingError } = await db
+    .from("bookings")
+    .select("id,full_name,status,total")
+    .in("id", bookingIds);
+
+  if (bookingError) throw new Error(bookingError.message);
+
+  type BookingRow = { id: string; full_name: string; status: string; total: string };
+  const bookingMap = new Map(
+    ((bookingData ?? []) as BookingRow[]).map((b) => [b.id, b]),
+  );
 
   type SlotAcc = {
     courtNames: Set<string>;
@@ -108,17 +98,19 @@ async function buildEvents(
   };
   const acc = new Map<string, SlotAcc>();
 
-  for (const s of slotRows) {
-    const entry = acc.get(s.bookingId) ?? { courtNames: new Set(), slots: [] };
-    entry.courtNames.add(s.courtName);
-    const tz = new TZDate(s.slotStart, MANILA_TZ);
+  for (const s of slotData as SlotRow[]) {
+    const entry = acc.get(s.booking_id) ?? { courtNames: new Set(), slots: [] };
+    const courtNameVal = getCourtName(s);
+    entry.courtNames.add(courtNameVal);
+    const start = new Date(s.slot_start);
+    const tz = new TZDate(start, MANILA_TZ);
     const h = tz.getHours();
     entry.slots.push({
-      t: s.slotStart.getTime(),
+      t: start.getTime(),
       label: `${h12(h)}–${h12((h + 1) % 24)}`,
-      iso: s.slotStart.toISOString(),
+      iso: s.slot_start,
     });
-    acc.set(s.bookingId, entry);
+    acc.set(s.booking_id, entry);
   }
 
   const events: CalendarEvent[] = [];
@@ -130,7 +122,7 @@ async function buildEvents(
     const earliest = new Date(sorted[0]!.t);
     events.push({
       id,
-      fullName: booking.fullName,
+      fullName: booking.full_name,
       courts: [...data.courtNames].join(", "),
       status: booking.status,
       date: manilaDateStr(earliest),
@@ -144,16 +136,10 @@ async function buildEvents(
   return events;
 }
 
-// ─── public API ───────────────────────────────────────────────────────────────
-
-/**
- * Returns all bookings (any status) whose earliest slot falls within the
- * requested calendar month (Manila time). One entry per booking.
- */
 export async function getCalendarBookings(
   db: Db,
   year: number,
-  month: number, // 1-based
+  month: number,
 ): Promise<CalendarEvent[]> {
   const monthStart = new TZDate(
     `${year}-${String(month).padStart(2, "0")}-01T00:00:00`,
@@ -163,14 +149,10 @@ export async function getCalendarBookings(
   return buildEvents(db, monthStart as unknown as Date, monthEnd as unknown as Date);
 }
 
-/**
- * Returns all bookings whose earliest slot falls within a specific date range
- * [start, end) in Manila time. Used for weekly and daily views.
- */
 export async function getCalendarBookingsRange(
   db: Db,
-  start: string, // "YYYY-MM-DD"
-  end: string, // "YYYY-MM-DD" exclusive
+  start: string,
+  end: string,
 ): Promise<CalendarEvent[]> {
   const rangeStart = new TZDate(`${start}T00:00:00`, MANILA_TZ);
   const rangeEnd = new TZDate(`${end}T00:00:00`, MANILA_TZ);
@@ -192,11 +174,10 @@ export function manilaDateToday(): string {
   return `${z.getFullYear()}-${pad(z.getMonth() + 1)}-${pad(z.getDate())}`;
 }
 
-/** ISO weekday start (Monday) of the week containing dateStr */
 export function weekStartManila(dateStr: string): string {
   const [y, m, d] = dateStr.split("-").map(Number);
   const utcNoon = Date.UTC(y as number, (m as number) - 1, d as number, 12);
-  const dow = new Date(utcNoon).getUTCDay(); // 0=Sun
+  const dow = new Date(utcNoon).getUTCDay();
   const daysToMon = dow === 0 ? -6 : 1 - dow;
   const monMs = utcNoon + daysToMon * 86_400_000;
   const dt = new Date(monMs);
@@ -204,7 +185,6 @@ export function weekStartManila(dateStr: string): string {
   return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())}`;
 }
 
-/** Add n days to a YYYY-MM-DD string (UTC noon anchor) */
 export function addDaysStr(dateStr: string, n: number): string {
   const [y, m, d] = dateStr.split("-").map(Number);
   const utcNoon = Date.UTC(y as number, (m as number) - 1, d as number, 12);

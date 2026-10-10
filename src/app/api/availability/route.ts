@@ -1,7 +1,5 @@
-import { inArray } from "drizzle-orm";
 import { NextResponse, type NextRequest } from "next/server";
 import { getDb } from "@/db/client";
-import { courts } from "@/db/schema";
 import { getAvailability } from "@/lib/booking/availability";
 import { LaneError, err } from "@/lib/booking/errors";
 import { availabilityQuerySchema } from "@/lib/booking/validation";
@@ -25,11 +23,13 @@ export async function GET(request: NextRequest) {
     } catch {
       return err("NOT_CONFIGURED", "Database is not configured.", 500);
     }
-    const rows = await db
-      .select({ id: courts.id })
-      .from(courts)
-      .where(inArray(courts.id, parsed.data.courtIds));
-    if (rows.length !== parsed.data.courtIds.length) {
+    // Verify all requested courts exist
+    const { data: courtRows, error: courtError } = await db
+      .from("courts")
+      .select("id")
+      .in("id", parsed.data.courtIds);
+    if (courtError) return err("INTERNAL", "Could not verify courts.", 500);
+    if ((courtRows ?? []).length !== parsed.data.courtIds.length) {
       return err("UNKNOWN_COURT", "One or more courts do not exist.", 404);
     }
     const courtsAvail = await getAvailability(db, parsed.data);

@@ -1,6 +1,4 @@
-import { asc, eq } from "drizzle-orm";
 import { getDb } from "@/db/client";
-import { courts } from "@/db/schema";
 import { FALLBACK_COURTS, type CourtOption } from "@/lib/courts";
 import { FALLBACK_RATES, getDisplayRates, type DisplayRates } from "@/lib/pricing-display";
 import Header from "@/components/landing/header";
@@ -21,12 +19,13 @@ export const metadata = {
 async function loadCourts(): Promise<CourtOption[]> {
   try {
     const db = getDb();
-    const rows = await db
-      .select({ id: courts.id, name: courts.name })
-      .from(courts)
-      .where(eq(courts.status, "active"))
-      .orderBy(asc(courts.name));
-    return rows;
+    const { data, error } = await db
+      .from("courts")
+      .select("id,name")
+      .eq("status", "active")
+      .order("name", { ascending: true });
+    if (error || !data) return FALLBACK_COURTS;
+    return data as CourtOption[];
   } catch {
     return FALLBACK_COURTS;
   }

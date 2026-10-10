@@ -1,7 +1,5 @@
-import { and, eq, isNull } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db/client";
-import { adminInvites, auditLog } from "@/db/schema";
 import { LaneError, err } from "@/lib/booking/errors";
 import { createClient } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/admin/session";
@@ -12,12 +10,7 @@ import {
 
 export const runtime = "nodejs";
 
-// POST /api/auth/register — invitee redeems a single-use link with
-// name/email/password. Use is stamped atomically (used_at, single-use
-// enforced); a lost claim race rolls back the just-created auth user.
-// Sets app_metadata.role=admin (admin-ness lives there — no schema change)
-// and user_metadata.full_name. Email is immutable afterwards: no endpoint
-// accepts an email change; only the name is mutable (PATCH /api/auth/profile).
+// POST /api/auth/register — invitee redeems a single-use invite link.
 export async function POST(request: Request) {
   try {
     const parsed = registerBodySchema.safeParse(await request.json());
@@ -34,12 +27,13 @@ export async function POST(request: Request) {
     const email = parsed.data.email.toLowerCase();
     const tokenHash = hashInviteToken(token);
 
-    const existing = await db
-      .select({ usedAt: adminInvites.usedAt })
-      .from(adminInvites)
-      .where(eq(adminInvites.tokenHash, tokenHash));
-    const invite = existing[0];
-    if (!invite || invite.usedAt !== null) {
+    const { data: existingRow, error: fetchError } = await db
+      .from("admin_invites")
+      .select("used_at")
+      .eq("token_hash", tokenHash)
+      .single();
+
+    if (fetchError || !existingRow || (existingRow as { used_at: string | null }).used_at !== null) {
       return err("INVITE_INVALID", "This invite link is invalid or already used.", 404);
     }
 
@@ -69,22 +63,24 @@ export async function POST(request: Request) {
       return err("REGISTER_FAILED", "Registration failed.", 500);
     }
 
-    // Atomic single-use claim; on a lost race, roll back the auth user.
-    const claimed = await db
-      .update(adminInvites)
-      .set({ usedAt: new Date() })
-      .where(and(eq(adminInvites.tokenHash, tokenHash), isNull(adminInvites.usedAt)))
-      .returning({ tokenHash: adminInvites.tokenHash });
-    if (claimed.length === 0) {
+    // Atomic single-use claim; on lost race, roll back auth user
+    const { data: claimed, error: claimError } = await db
+      .from("admin_invites")
+      .update({ used_at: new Date().toISOString() })
+      .eq("token_hash", tokenHash)
+      .is("used_at", null)
+      .select("token_hash");
+
+    if (claimError || !claimed || (claimed as { token_hash: string }[]).length === 0) {
       await admin.auth.admin.deleteUser(userId);
       return err("INVITE_ALREADY_USED", "This invite link was just used.", 409);
     }
 
-    await db.insert(auditLog).values({
+    await db.from("audit_log").insert({
       actor: "system",
       action: "admin_invite.use",
       entity: "admin_invites",
-      entityId: tokenHash,
+      entity_id: tokenHash,
       after: { email, userId },
     });
 

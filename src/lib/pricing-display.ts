@@ -6,14 +6,8 @@
 // server recalculation (recalculateTotal in lib/booking/pricing.ts), which
 // this file must never duplicate or replace.
 //
-// Client-safe: this module has NO runtime server imports. The `Db` type is
-// imported type-only (erased at build) and the `pricingRules` table object
-// comes from drizzle-orm/pg-core (pure JS, browser-safe) — so client
-// components (booking-flow estimate) can import FALLBACK_RATES / peso
-// without pulling postgres-js (node-only) into the browser bundle. Server
-// callers pass the lazy getDb() database into getDisplayRates(db).
+// Updated: Drizzle ORM replaced with @supabase/supabase-js HTTP client.
 
-import { pricingRules, type PricingRule } from "@/db/schema";
 import type { Db } from "@/db/client";
 
 export interface DisplayRates {
@@ -24,10 +18,7 @@ export interface DisplayRates {
   currency: "PHP";
 }
 
-/** Frozen fallback — used ONLY when the DB is unreachable/empty (build time,
- *  outage, or PRICING_NOT_CONFIGURED). Matches the seeded rate card:
- *  morning ₱150 (06:00–18:00), evening ₱200 (18:00–03:00),
- *  paddle ₱25/paddle/hour, ball ₱15 flat per booking. */
+/** Frozen fallback — used ONLY when the DB is unreachable/empty. */
 export const FALLBACK_RATES: DisplayRates = {
   morning: 150,
   evening: 200,
@@ -43,12 +34,20 @@ export function formatAmount(n: number): string {
   return fixed.includes(".") ? fixed.replace(/\.?0+$/, "") : fixed;
 }
 
-/** "₱150" — landing display formatting (not the booking total format). */
+/** "₱150" — landing display formatting. */
 export function peso(n: number): string {
   return `₱${formatAmount(n)}`;
 }
 
-function minAmount(rows: PricingRule[]): number | null {
+// Internal shape used inside this module (camelCase, normalised from API response)
+interface PricingRuleInternal {
+  courtId: string | null;
+  timeBand: string;
+  itemType: string;
+  amount: string;
+}
+
+function minAmount(rows: PricingRuleInternal[]): number | null {
   let best: number | null = null;
   for (const r of rows) {
     const n = Number(r.amount);
@@ -58,23 +57,30 @@ function minAmount(rows: PricingRule[]): number | null {
   return best;
 }
 
-/** Exact time_band first, then the 'all' band; min() wins on multiples
- *  (e.g. weekday + weekend duplicates — rates are uniform across days). */
-function pickBand(rows: PricingRule[], band: string): number | null {
+function pickBand(rows: PricingRuleInternal[], band: string): number | null {
   const exact = minAmount(rows.filter((r) => r.timeBand === band));
   if (exact !== null) return exact;
   return minAmount(rows.filter((r) => r.timeBand === "all"));
 }
 
 /**
- * Derive landing display rates from pricing_rules rows. Global
- * (court_id NULL) rows only; court-specific rows are ignored here on
- * purpose — they still apply at submit via recalculateTotal.
- * Returns null when any of the four display rates is missing (fail-soft
- * callers fall back to FALLBACK_RATES; submit stays fail-closed).
+ * Derive landing display rates from pricing_rules rows.
+ * Accepts either camelCase (internal) or snake_case (raw Supabase API) rows.
  */
-export function deriveDisplayRates(rules: PricingRule[]): DisplayRates | null {
-  const global = rules.filter((r) => r.courtId === null);
+export function deriveDisplayRates(
+  rules: Array<
+    | PricingRuleInternal
+    | { court_id: string | null; time_band: string; item_type: string; amount: string }
+  >,
+): DisplayRates | null {
+  // Normalise to camelCase
+  const normalised: PricingRuleInternal[] = rules.map((r) => {
+    if ("courtId" in r) return r as PricingRuleInternal;
+    const s = r as { court_id: string | null; time_band: string; item_type: string; amount: string };
+    return { courtId: s.court_id, timeBand: s.time_band, itemType: s.item_type, amount: s.amount };
+  });
+
+  const global = normalised.filter((r) => r.courtId === null);
   if (global.length === 0) return null;
   const courtRows = global.filter((r) => r.itemType === "court");
   const morning = pickBand(courtRows, "morning");
@@ -87,13 +93,14 @@ export function deriveDisplayRates(rules: PricingRule[]): DisplayRates | null {
   return { morning, evening, paddle, ball, currency: "PHP" };
 }
 
-/** Server helper for RSCs / API routes (landing page). Fail-soft: never throws.
- *  Takes the lazy getDb() database as a param so this module stays
- *  client-safe (see note at top). */
+/** Server helper for RSCs / API routes (landing page). Fail-soft: never throws. */
 export async function getDisplayRates(db: Db): Promise<DisplayRates> {
   try {
-    const rows = await db.select().from(pricingRules);
-    return deriveDisplayRates(rows) ?? FALLBACK_RATES;
+    const { data, error } = await db
+      .from("pricing_rules")
+      .select("court_id,time_band,item_type,amount");
+    if (error || !data) return FALLBACK_RATES;
+    return deriveDisplayRates(data) ?? FALLBACK_RATES;
   } catch {
     return FALLBACK_RATES;
   }

@@ -1,13 +1,10 @@
-import { and, eq, gt, inArray, isNull, lt, or } from "drizzle-orm";
 import { TZDate } from "@date-fns/tz";
 import type { Db } from "@/db/client";
-import { closures, operatingHours } from "@/db/schema";
 import { MANILA_TZ } from "./constants";
 import { LaneError } from "./errors";
 
-// Operating-hours + closures enforcement (deferred follow-up lane).
-// Surgical by design: read-only rule loading + a pure per-slot predicate.
-// Pricing and holds logic are untouched; availability/holds/submit call in.
+// Operating-hours + closures enforcement.
+// All Drizzle ORM imports replaced with @supabase/supabase-js HTTP client.
 
 interface HoursRow {
   courtId: string | null;
@@ -33,42 +30,44 @@ export async function loadOpenRules(
   db: Db,
   args: { courtIds: string[]; from: Date; to: Date },
 ): Promise<OpenRules> {
-  const hours = await db
-    .select({
-      courtId: operatingHours.courtId,
-      dayOfWeek: operatingHours.dayOfWeek,
-      openTime: operatingHours.openTime,
-      closeTime: operatingHours.closeTime,
-    })
-    .from(operatingHours)
-    .where(
-      or(
-        inArray(operatingHours.courtId, args.courtIds),
-        isNull(operatingHours.courtId),
-      ),
-    );
-  const ruleClosures = await db
-    .select({
-      scope: closures.scope,
-      courtId: closures.courtId,
-      startAt: closures.startAt,
-      endAt: closures.endAt,
-    })
-    .from(closures)
-    .where(
-      and(
-        gt(closures.endAt, args.from),
-        lt(closures.startAt, args.to),
-        or(
-          eq(closures.scope, "global"),
-          and(
-            eq(closures.scope, "court"),
-            inArray(closures.courtId, args.courtIds),
-          ),
-        ),
-      ),
-    );
-  return { hours, closures: ruleClosures };
+  // operating_hours: rows for any of the specified courts OR global (court_id IS NULL)
+  const { data: hoursData, error: hoursError } = await db
+    .from("operating_hours")
+    .select("court_id,day_of_week,open_time,close_time")
+    .or(`court_id.in.(${args.courtIds.join(",")}),court_id.is.null`);
+
+  if (hoursError) throw new LaneError("DB_ERROR", hoursError.message, 500);
+
+  // closures: overlapping the [from, to) range, global or for these courts
+  const courtFilter = args.courtIds.map((id) => `court_id.eq.${id}`).join(",");
+  const scopeFilter = courtFilter
+    ? `scope.eq.global,and(scope.eq.court,or(${courtFilter}))`
+    : "scope.eq.global";
+
+  const { data: closureData, error: closureError } = await db
+    .from("closures")
+    .select("scope,court_id,start_at,end_at")
+    .gt("end_at", args.from.toISOString())
+    .lt("start_at", args.to.toISOString())
+    .or(scopeFilter);
+
+  if (closureError) throw new LaneError("DB_ERROR", closureError.message, 500);
+
+  const hours: HoursRow[] = (hoursData ?? []).map((r) => ({
+    courtId: r.court_id,
+    dayOfWeek: r.day_of_week,
+    openTime: r.open_time,
+    closeTime: r.close_time,
+  }));
+
+  const closures: ClosureRow[] = (closureData ?? []).map((r) => ({
+    scope: r.scope,
+    courtId: r.court_id,
+    startAt: new Date(r.start_at),
+    endAt: new Date(r.end_at),
+  }));
+
+  return { hours, closures };
 }
 
 function minutesOfWall(time: string): number {
@@ -78,10 +77,6 @@ function minutesOfWall(time: string): number {
 
 /**
  * True when a slot start is inside operating hours and not closed.
- * Precedence: court-specific day rows beat global day rows; overnight
- * close<=open spills into the next Manila day; a day with NO configured
- * rows (court or global, today or spilling from yesterday) defaults to OPEN
- * for the full operating day — preserves booking until hours are configured.
  */
 export function isSlotOpen(
   rules: OpenRules,
