@@ -132,7 +132,7 @@ export async function listPricingRules(db: Db): Promise<PricingRuleRow[]> {
   const names = new Map((courtRows ?? []).map((c: { id: string; name: string }) => [c.id, c.name]));
   return (rules ?? []).map((r: {
     id: string; court_id: string | null; day_type: string;
-    time_band: string; item_type: string; unit: string; amount: string;
+    time_band: string; item_type: string; unit: string; amount: string | number;
   }) => ({
     id: r.id,
     courtId: r.court_id,
@@ -141,7 +141,7 @@ export async function listPricingRules(db: Db): Promise<PricingRuleRow[]> {
     timeBand: r.time_band,
     itemType: r.item_type,
     unit: r.unit,
-    amount: r.amount,
+    amount: String(r.amount),
   }));
 }
 

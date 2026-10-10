@@ -32,10 +32,10 @@ BEGIN
     SET    status   = 'sending',
            attempts = o.attempts + 1
     WHERE  o.id IN (
-      SELECT id FROM email_outbox
-      WHERE  status IN ('pending', 'retry')
-        AND  (next_attempt_at IS NULL OR next_attempt_at <= now())
-      ORDER BY next_attempt_at NULLS FIRST
+      SELECT inner_o.id FROM email_outbox AS inner_o
+      WHERE  inner_o.status IN ('pending', 'retry')
+        AND  (inner_o.next_attempt_at IS NULL OR inner_o.next_attempt_at <= now())
+      ORDER BY inner_o.next_attempt_at NULLS FIRST
       LIMIT p_limit
       FOR UPDATE SKIP LOCKED
     )
@@ -81,8 +81,10 @@ DECLARE
   v_template       text;
   v_now            timestamptz := now();
 BEGIN
-  -- SERIALIZABLE for the whole function body
-  SET LOCAL transaction_isolation TO 'serializable';
+  -- Note: SET LOCAL transaction_isolation removed — PostgREST already has a
+  -- query running before the function body, so SET TRANSACTION fails with
+  -- 25001. The partial unique index on booking_slots enforces overlap
+  -- safety; FOR UPDATE below handles the double-decision race.
 
   -- Lock the booking row
   SELECT * INTO v_booking
@@ -235,7 +237,7 @@ DECLARE
   v_prior_bk_id    uuid;
   v_prior_row      bookings%ROWTYPE;
 BEGIN
-  SET LOCAL transaction_isolation TO 'serializable';
+  -- Note: SET LOCAL transaction_isolation removed — see rpc_apply_decision.
 
   -- ── Idempotency: first writer wins ──────────────────────────────────────
   INSERT INTO idempotency_keys (key) VALUES (p_idempotency_key)

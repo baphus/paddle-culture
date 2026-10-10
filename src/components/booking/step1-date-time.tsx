@@ -69,10 +69,9 @@ function friendlyHoldError(code: string | undefined, fallback: string): string {
   return (code && HOLD_ERROR_FRIENDLY[code]) || fallback;
 }
 
-function cellState(slot: AvailabilitySlot, now: number): CellState {
+function cellState(slot: AvailabilitySlot): CellState {
   if (slot.state === "held") return "held";
   if (slot.state === "pending" || slot.state === "approved") return "booked";
-  if (new Date(slot.start).getTime() <= now) return "past";
   if (!slot.bookable) return "closed";
   return "open";
 }
@@ -151,7 +150,13 @@ export default function Step1DateTime({
   const [loadingAvail, setLoadingAvail] = useState(false);
   const [availFailed, setAvailFailed] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
-  const [selected, setSelected] = useState<string[]>(initialSelectedSlots ?? []);
+  // selected: Set of "courtId|slotIso" pairs — each cell is independent
+  const [selected, setSelected] = useState<string[]>(() =>
+    (initialSelectedSlots ?? []).flatMap((iso) =>
+      (initialCourtIds && initialCourtIds.length > 0 ? initialCourtIds : initialCourts.map((c) => c.id))
+        .map((cId) => `${cId}|${iso}`),
+    ),
+  );
   const [hold, setHold] = useState<HoldState | null>(existingHold ?? null);
   const [holding, setHolding] = useState(false);
 
@@ -169,11 +174,17 @@ export default function Step1DateTime({
   selectedRef.current = selected;
   const carryRef = useRef(false);
 
-  // Notify parent of live state changes
+  // Unique slot ISOs across all selected (court, slot) pairs
+  const selectedSlotIsos = useMemo(() => {
+    const isos = new Set(selected.map((pair) => pair.split("|")[1] as string));
+    return [...isos].sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+  }, [selected]);
+
+  // Notify parent of live state changes — passes unique slot ISOs for summary
   useEffect(() => {
-    onLiveUpdate?.({ courtIds, selectedDate, selectedSlots: selected, paddleQty, ball });
+    onLiveUpdate?.({ courtIds, selectedDate, selectedSlots: selectedSlotIsos, paddleQty, ball });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [courtIds, selectedDate, selected, paddleQty, ball]);
+  }, [courtIds, selectedDate, selectedSlotIsos, paddleQty, ball]);
 
   // Refresh court list live
   useEffect(() => {
@@ -243,14 +254,12 @@ export default function Step1DateTime({
           const fresh = new Map(
             b.courts.map((c) => [c.courtId, new Map(c.slots.map((s) => [s.start, s]))]),
           );
-          const now = Date.now();
           const prev = selectedRef.current;
-          const kept = prev.filter((iso) =>
-            ids.every((courtId) => {
-              const s = fresh.get(courtId)?.get(iso);
-              return !!s && cellState(s, now) === "open";
-            }),
-          );
+          const kept = prev.filter((pair) => {
+            const [courtId, iso] = pair.split("|") as [string, string];
+            const s = fresh.get(courtId)?.get(iso);
+            return !!s && cellState(s) === "open";
+          });
           if (kept.length !== prev.length) {
             setSelected(kept);
             toast(
@@ -285,10 +294,7 @@ export default function Step1DateTime({
     [selectedDate],
   );
 
-  const selectedSorted = useMemo(
-    () => [...selected].sort((a, b) => new Date(a).getTime() - new Date(b).getTime()),
-    [selected],
-  );
+  const selectedSorted = selectedSlotIsos;
 
   // Keep focus on panel change
   const panelMounted = useRef(false);
@@ -301,52 +307,50 @@ export default function Step1DateTime({
     if (p === 1 && !selectedDate) { toast.error("Pick a play date first."); return; }
     if (p === 2 && !selectedDate) { toast.error("Pick a play date first."); return; }
     if (p === 2 && courtIds.length === 0) { toast.error("Choose at least one court first."); return; }
-    if (p === 3 && selectedSorted.length === 0) { toast.error("Pick at least 1 time slot first."); return; }
+    if (p === 3 && selected.length === 0) { toast.error("Pick at least 1 time slot first."); return; }
     setPanel(p);
   }
 
   // Slot state for a given court+slot combination
   function slotStateForCourt(iso: string, courtId: string): CellState {
-    if (!avail) return new Date(iso).getTime() <= Date.now() ? "past" : "open";
+    if (!avail) {
+      // While loading: past slots grey out, future ones show as open
+      return new Date(iso).getTime() <= Date.now() ? "past" : "open";
+    }
     const slot = slotByCourt.get(courtId)?.get(iso);
     if (!slot) return "closed";
-    return cellState(slot, Date.now());
+    return cellState(slot);
   }
 
-  // Whether a slot is selected (selected = chosen on ALL courts, intersection)
-  function isSlotSelected(iso: string): boolean {
-    return selected.includes(iso);
+  // Whether a specific (court, slot) cell is selected
+  function isCellSelected(iso: string, courtId: string): boolean {
+    return selected.includes(`${courtId}|${iso}`);
   }
 
-  // Toggle slot — must be open on every selected court
-  function toggleSlot(startIso: string) {
+  // Toggle a specific (court, slot) cell
+  function toggleCell(iso: string, courtId: string) {
     if (hold) return;
     if (!avail) { toast.error("Loading fresh slots — try again in a moment."); return; }
-    if (courtIds.length === 0) { toast.error("No courts listed right now."); return; }
-    const now = Date.now();
-    if (selected.includes(startIso)) {
-      setSelected(selected.filter((s) => s !== startIso));
+    const key = `${courtId}|${iso}`;
+    if (selected.includes(key)) {
+      setSelected(selected.filter((s) => s !== key));
       return;
     }
-    for (const id of courtIds) {
-      const slot = slotByCourt.get(id)?.get(startIso);
-      const name = courts.find((c) => c.id === id)?.name ?? "Court";
-      if (!slot || cellState(slot, now) !== "open") {
-        const cs = slot ? cellState(slot, now) : "closed";
-        const reason =
-          cs === "booked" || cs === "held"
-            ? "is already taken"
-            : cs === "past"
-              ? "already started (future slots only)"
-              : "is closed";
-        toast.error(`${name} ${formatSlotRange(startIso)} ${reason}.`);
-        return;
-      }
+    // Check this specific cell is open
+    const cs = slotStateForCourt(iso, courtId);
+    if (cs !== "open") {
+      const name = courts.find((c) => c.id === courtId)?.name ?? "Court";
+      const reason =
+        cs === "booked" || cs === "held"
+          ? "is already taken"
+          : cs === "past"
+            ? "already started (future slots only)"
+            : "is closed";
+      toast.error(`${name} ${formatSlotRange(iso)} ${reason}.`);
+      return;
     }
-    const next = [...selected, startIso].sort(
-      (a, b) => new Date(a).getTime() - new Date(b).getTime(),
-    );
-    if (next.length * courtIds.length > MAX_SLOTS_PER_BOOKING) {
+    const next = [...selected, key];
+    if (next.length > MAX_SLOTS_PER_BOOKING) {
       toast.error(`Max ${MAX_SLOTS_PER_BOOKING} court-hours per booking.`);
       return;
     }
@@ -354,37 +358,71 @@ export default function Step1DateTime({
   }
 
   async function createHold() {
-    if (selectedSorted.length === 0) { toast.error("Pick at least 1 hour first."); return; }
+    if (selected.length === 0) { toast.error("Pick at least 1 hour first."); return; }
     if (courtIds.length === 0) { toast.error("No courts listed right now."); return; }
     setHolding(true);
     try {
-      const res = await fetch("/api/holds", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ courtIds: [...courtIds].sort(), slotStarts: selectedSorted }),
-      });
-      if (!res.ok) {
-        let code: string | undefined;
-        let msg = "Could not hold those slots.";
-        try {
-          const b = (await res.json()) as { error?: { code?: string; message?: string } };
-          code = b.error?.code;
-          if (b.error?.message) msg = b.error.message;
-        } catch {}
-        toast.error(friendlyHoldError(code, msg));
-        return;
+      // Group selected pairs by court
+      const byCourtMap = new Map<string, string[]>();
+      for (const pair of selected) {
+        const [cId, iso] = pair.split("|") as [string, string];
+        const existing = byCourtMap.get(cId);
+        if (existing) existing.push(iso);
+        else byCourtMap.set(cId, [iso]);
       }
-      const body = (await res.json()) as {
-        holds: Array<{ holdToken: string }>;
-        expiresAt: string;
-        deadlineMs: number;
-      };
+
+      // Find groups with the same slot set so we can batch them into one call
+      // (slots sorted for stable comparison key)
+      const grouped = new Map<string, string[]>(); // slotsKey → courtIds
+      for (const [cId, slots] of byCourtMap) {
+        const key = [...slots].sort().join(",");
+        const existing = grouped.get(key);
+        if (existing) existing.push(cId);
+        else grouped.set(key, [cId]);
+      }
+
+      const allTokens: string[] = [];
+      let sharedDeadlineMs = 0;
+      let sharedExpiresAt = "";
+      const allCourtIds: string[] = [];
+      const allSlotStarts: string[] = [];
+
+      for (const [slotsKey, groupCourts] of grouped) {
+        const slotStarts = slotsKey.split(",").sort();
+        const res = await fetch("/api/holds", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ courtIds: groupCourts.sort(), slotStarts }),
+        });
+        if (!res.ok) {
+          let code: string | undefined;
+          let msg = "Could not hold those slots.";
+          try {
+            const b = (await res.json()) as { error?: { code?: string; message?: string } };
+            code = b.error?.code;
+            if (b.error?.message) msg = b.error.message;
+          } catch {}
+          toast.error(friendlyHoldError(code, msg));
+          return;
+        }
+        const body = (await res.json()) as {
+          holds: Array<{ holdToken: string }>;
+          expiresAt: string;
+          deadlineMs: number;
+        };
+        allTokens.push(...body.holds.map((h) => h.holdToken));
+        sharedDeadlineMs = body.deadlineMs;
+        sharedExpiresAt = body.expiresAt;
+        allCourtIds.push(...groupCourts);
+        allSlotStarts.push(...slotStarts.filter((s) => !allSlotStarts.includes(s)));
+      }
+
       const holdState: HoldState = {
-        tokens: body.holds.map((h) => h.holdToken),
-        deadlineMs: body.deadlineMs,
-        expiresAt: body.expiresAt,
-        courtIds: [...courtIds].sort(),
-        slotStarts: selectedSorted,
+        tokens: allTokens,
+        deadlineMs: sharedDeadlineMs,
+        expiresAt: sharedExpiresAt,
+        courtIds: [...new Set(allCourtIds)].sort(),
+        slotStarts: [...new Set(allSlotStarts)].sort(),
       };
       setHold(holdState);
       toast.success("Slots held — add equipment or continue to details.");
@@ -404,7 +442,7 @@ export default function Step1DateTime({
 
   function handleContinueCta() {
     if (hold && onHoldSuccess && selectedDate) {
-      onHoldSuccess(hold, courtIds, selectedSorted, selectedDate, paddleQty, ball);
+      onHoldSuccess(hold, hold.courtIds, hold.slotStarts, selectedDate, paddleQty, ball);
       return;
     }
     void createHold();
@@ -415,9 +453,8 @@ export default function Step1DateTime({
   const leadBlanks = firstWeekdayManila(view.y, view.m);
   const daysInMonth = daysInManilaMonth(view.y, view.m);
   const viewKey = `${view.y}-${pad2(view.m + 1)}`;
-  const curKey = todayStr.slice(0, 7);
   const maxKey = maxStr.slice(0, 7);
-  const prevDisabled = viewKey <= curKey;
+  const prevDisabled = viewKey <= tomorrowStr.slice(0, 7);
   const nextDisabled = viewKey >= maxKey;
 
   function shiftView(dir: 1 | -1) {
@@ -425,37 +462,39 @@ export default function Step1DateTime({
     setView({ y: view.y + Math.floor(m / 12), m: ((m % 12) + 12) % 12 });
   }
 
-  function pickDate(dateStr: string) {
-    if (dateStr < todayStr || dateStr > maxStr) return;
+  function pickDate(dateStr: string, stayOnTimeGrid = false) {
+    if (dateStr < tomorrowStr || dateStr > maxStr) return;
     if (dateStr === selectedDate) {
-      setPanel(1);
+      if (!stayOnTimeGrid) setPanel(1);
       return;
     }
-    const carried = selected
-      .map((iso) => gridSlots.indexOf(iso))
-      .filter((i) => i >= 0);
     const freshGrid = slotsForDate(dateStr).map((s) => s.start.toISOString());
-    const next = carried
-      .map((i) => freshGrid[i] as string | undefined)
-      .filter((iso): iso is string => !!iso);
+    // Carry compatible (court, slot) pairs to the new date by slot index
+    const carried = selected.map((pair) => {
+      const [cId, iso] = pair.split("|") as [string, string];
+      const idx = gridSlots.indexOf(iso);
+      if (idx < 0) return null;
+      const newIso = freshGrid[idx];
+      return newIso ? `${cId}|${newIso}` : null;
+    }).filter((p): p is string => p !== null);
     if (hold) {
       setHold(null);
       toast("Date changed — your previous hold was released.");
     }
-    carryRef.current = next.length > 0;
-    setSelected(next);
+    carryRef.current = carried.length > 0;
+    setSelected(carried);
     setSelectedDate(dateStr);
     setAvail(null);
     setView(partsOf(dateStr));
-    setPanel(1); // go to court selection after date pick
+    if (!stayOnTimeGrid) setPanel(1);
   }
 
-  // Shift selected date by +/- days (for the date nav in the time grid panel)
+  // Shift selected date by +/- days — stay on the time grid
   function shiftDate(dir: 1 | -1) {
     if (!selectedDate) return;
     const next = addDaysManilaStr(selectedDate, dir);
-    if (next < todayStr || next > maxStr) return;
-    pickDate(next);
+    if (next < tomorrowStr || next > maxStr) return;
+    pickDate(next, true);
   }
 
   const weekRows = useMemo<Array<Array<{ key: string; dateStr: string | null }>>>(() => {
@@ -473,87 +512,25 @@ export default function Step1DateTime({
 
   type DayKind = "past" | "today" | "open" | "selected" | "beyond";
   function dayKind(dateStr: string): DayKind {
-    if (dateStr < todayStr) return "past";
+    if (dateStr < tomorrowStr) return "past";
     if (dateStr > maxStr) return "beyond";
     if (dateStr === selectedDate) return "selected";
-    if (dateStr === todayStr) return "today";
+    if (dateStr === tomorrowStr) return "today"; // highlight tomorrow as "soonest"
     return "open";
   }
 
   const dateLabel = (() => {
     if (!selectedDate) return "Pick a date";
     const long = formatManilaLong(selectedDate);
-    if (selectedDate === todayStr) return `Today · ${long}`;
     if (selectedDate === tomorrowStr) return `Tomorrow · ${long}`;
     return long;
   })();
 
-  const ctaDisabled = selectedSorted.length === 0 || holding || !!hold || courtIds.length === 0;
+  const ctaDisabled = selected.length === 0 || holding || !!hold || courtIds.length === 0;
 
   // ── Panel 2: Time Grid ─────────────────────────────────────────────
   // Renders a scrollable table: rows = time slots, columns = each selected court
   // Each cell shows the availability state for that (court, slot) pair.
-
-  function TimeGridCell({
-    iso,
-    courtId,
-  }: {
-    iso: string;
-    courtId: string;
-  }) {
-    const cs = slotStateForCourt(iso, courtId);
-    const isSel = isSlotSelected(iso);
-    const isOpen = cs === "open";
-
-    // When loading, show subtle placeholder
-    if (loadingAvail && !avail) {
-      return (
-        <div className="flex items-center justify-center">
-          <div className="size-8 rounded-full border-2 border-line-warm/30 bg-surface-dim/20 animate-pulse" />
-        </div>
-      );
-    }
-
-    if (cs === "past" || cs === "closed") {
-      return (
-        <div className="flex items-center justify-center" aria-label="Unavailable">
-          <div className="size-8 rounded-full border-2 border-line-warm/20 bg-surface-dim/10 flex items-center justify-center">
-            <X className="size-3.5 text-warm-muted/40" strokeWidth={2.5} />
-          </div>
-        </div>
-      );
-    }
-
-    if (cs === "booked" || cs === "held") {
-      return (
-        <div className="flex items-center justify-center" aria-label="Booked">
-          <div className="size-8 rounded-full border-2 border-line-warm/30 bg-surface-dim/20 flex items-center justify-center">
-            <X className="size-3.5 text-warm-muted/50" strokeWidth={2.5} />
-          </div>
-        </div>
-      );
-    }
-
-    // Open or selected
-    return (
-      <button
-        type="button"
-        disabled={!!hold || holding}
-        onClick={() => toggleSlot(iso)}
-        aria-pressed={isSel}
-        aria-label={`${formatSlotRange(iso)} — ${isSel ? "Selected" : "Available"}`}
-        className={cn(
-          "flex items-center justify-center mx-auto rounded-full border-2 size-8 transition-all",
-          isSel
-            ? "border-flame bg-flame text-white shadow-sm scale-110"
-            : "border-flame/40 bg-flame/5 hover:bg-flame/15 hover:border-flame/70",
-          (!!hold || holding) && "cursor-not-allowed opacity-60",
-        )}
-      >
-        {isSel && <Check className="size-3.5" strokeWidth={3} />}
-      </button>
-    );
-  }
 
   // ── Render ─────────────────────────────────────────────────────────
 
@@ -577,7 +554,7 @@ export default function Step1DateTime({
               <button
                 type="button"
                 onClick={() => shiftDate(-1)}
-                disabled={!selectedDate || selectedDate <= todayStr}
+                disabled={!selectedDate || selectedDate <= tomorrowStr}
                 aria-label="Previous day"
                 className="grid size-9 place-items-center rounded-lg border border-line-warm/60 text-warm-muted transition-colors hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -613,9 +590,9 @@ export default function Step1DateTime({
               ) : (
                 <>
                   <span className="hidden sm:inline">Hold</span>
-                  {selectedSorted.length > 0 && (
+                  {selected.length > 0 && (
                     <span className="rounded-full bg-white/25 px-1.5 py-0.5 text-[11px] font-extrabold">
-                      {selectedSorted.length}h
+                      {selected.length}
                     </span>
                   )}
                   <ArrowRight className="size-4" aria-hidden />
@@ -701,7 +678,7 @@ export default function Step1DateTime({
                     idx === 0 ||
                     (isEvening &&
                       timeBandFor(new Date(gridSlots[idx - 1] as string)) !== "evening");
-                  const isSel = isSlotSelected(iso);
+                  const rowHasSelection = courtIds.some((id) => isCellSelected(iso, id));
                   const allClosed = courtIds.every((id) => {
                     const cs = slotStateForCourt(iso, id);
                     return cs === "past" || cs === "closed" || cs === "booked" || cs === "held";
@@ -722,7 +699,7 @@ export default function Step1DateTime({
                       <tr
                         className={cn(
                           "border-b border-line-warm/30 transition-colors",
-                          isSel ? "bg-flame/5" : allClosed ? "opacity-60" : "hover:bg-oat/40",
+                          rowHasSelection ? "bg-flame/5" : allClosed ? "opacity-60" : "hover:bg-oat/40",
                         )}
                       >
                         {/* Time label */}
@@ -730,7 +707,7 @@ export default function Step1DateTime({
                           <span
                             className={cn(
                               "text-xs font-semibold leading-snug",
-                              isSel ? "text-flame font-bold" : "text-ink",
+                              rowHasSelection ? "text-flame font-bold" : "text-ink",
                             )}
                           >
                             {formatSlotRange(iso).split("–").join("→")}
@@ -739,11 +716,44 @@ export default function Step1DateTime({
                         {/* Court cells */}
                         {courts
                           .filter((c) => courtIds.includes(c.id))
-                          .map((court) => (
-                            <td key={court.id} className="py-2 px-2 text-center">
-                              <TimeGridCell iso={iso} courtId={court.id} />
-                            </td>
-                          ))}
+                          .map((court) => {
+                            const cs = slotStateForCourt(iso, court.id);
+                            const isSel = isCellSelected(iso, court.id);
+                            return (
+                              <td key={court.id} className="py-2 px-2 text-center">
+                                {cs === "past" || cs === "closed" ? (
+                                  <div className="flex items-center justify-center" aria-label="Unavailable">
+                                    <div className="size-8 rounded-full border-2 border-line-warm/20 bg-surface-dim/10 flex items-center justify-center">
+                                      <X className="size-3.5 text-warm-muted/40" strokeWidth={2.5} />
+                                    </div>
+                                  </div>
+                                ) : cs === "booked" || cs === "held" ? (
+                                  <div className="flex items-center justify-center" aria-label="Booked">
+                                    <div className="size-8 rounded-full border-2 border-line-warm/30 bg-surface-dim/20 flex items-center justify-center">
+                                      <X className="size-3.5 text-warm-muted/50" strokeWidth={2.5} />
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    disabled={!!hold || holding}
+                                    onClick={() => toggleCell(iso, court.id)}
+                                    aria-pressed={isSel}
+                                    aria-label={`${formatSlotRange(iso)} — ${isSel ? "Selected" : "Available"}`}
+                                    className={cn(
+                                      "flex items-center justify-center mx-auto rounded-full border-2 size-8 transition-all",
+                                      isSel
+                                        ? "border-flame bg-flame text-white shadow-sm scale-110"
+                                        : "border-flame/40 bg-flame/5 hover:bg-flame/15 hover:border-flame/70",
+                                      (!!hold || holding) && "cursor-not-allowed opacity-60",
+                                    )}
+                                  >
+                                    {isSel && <Check className="size-3.5" strokeWidth={3} />}
+                                  </button>
+                                )}
+                              </td>
+                            );
+                          })}
                       </tr>
                     </Fragment>
                   );
@@ -756,14 +766,11 @@ export default function Step1DateTime({
         {/* Bottom bar: selection summary + CTA */}
         <div className="sticky bottom-0 z-20 border-t border-line-warm/60 bg-white/95 backdrop-blur-sm px-4 py-3 flex items-center justify-between gap-3">
           <div className="text-sm">
-            {selectedSorted.length === 0 ? (
-              <span className="text-warm-muted">Tap a slot to select it</span>
+            {selected.length === 0 ? (
+              <span className="text-warm-muted">Tap a cell to select a slot</span>
             ) : (
               <span className="font-bold text-ink">
-                <span className="text-flame">{selectedSorted.length}</span> hour{selectedSorted.length !== 1 ? "s" : ""} selected
-                {courtIds.length > 1 && (
-                  <span className="ml-1 text-warm-muted font-normal">× {courtIds.length} courts</span>
-                )}
+                <span className="text-flame">{selected.length}</span> court-hour{selected.length !== 1 ? "s" : ""} selected
               </span>
             )}
           </div>
@@ -965,7 +972,7 @@ export default function Step1DateTime({
                                 isSel ? "text-flame" : isToday ? "text-flame" : "text-warm-muted/70 font-semibold",
                               )}
                             >
-                              {isSel ? "Selected" : isToday ? "Today" : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][weekdayManila(dateStr)]}
+                              {isSel ? "Selected" : isToday ? "Soonest" : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][weekdayManila(dateStr)]}
                             </span>
                           </button>
                         </div>
@@ -1025,7 +1032,12 @@ export default function Step1DateTime({
                             ? current.filter((id) => id !== court.id)
                             : [...current, court.id],
                         );
-                        setSelected([]);
+                        // Clear selections for any court being removed
+                        setSelected((prev) =>
+                          courtIds.includes(court.id)
+                            ? prev.filter((pair) => !pair.startsWith(`${court.id}|`))
+                            : prev,
+                        );
                         setAvail(null);
                       }}
                       className={cn(
@@ -1221,7 +1233,7 @@ export default function Step1DateTime({
             type="button"
             onClick={() => {
               if (!hold || !selectedDate) return;
-              onHoldSuccess?.(hold, courtIds, selectedSorted, selectedDate, paddleQty, ball);
+              onHoldSuccess?.(hold, hold.courtIds, hold.slotStarts, selectedDate, paddleQty, ball);
             }}
             disabled={!hold || !selectedDate}
             className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-flame px-5 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
