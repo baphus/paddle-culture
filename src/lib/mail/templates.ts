@@ -226,14 +226,22 @@ function linesOf(
   return [...courtLines, ...otherLines];
 }
 
+function appBase(): string {
+  return (process.env.APP_URL || "https://ckgrounds.vercel.app").replace(/\/$/, "");
+}
+
 function bookingUrl(token: string): string | null {
-  const base = (process.env.APP_URL || "https://ckgrounds.vercel.app").replace(/\/$/, "");
+  const base = appBase();
   if (!base || !token) return null;
   return `${base}/track/${token}`;
 }
 
+function adminUrl(): string {
+  return `${appBase()}/admin`;
+}
+
 function logoUrl(): string | null {
-  const base = (process.env.APP_URL || "https://ckgrounds.vercel.app").replace(/\/$/, "");
+  const base = appBase();
   if (!base) return null;
   return `${base}/logo.jpg`;
 }
@@ -588,6 +596,7 @@ export async function renderOutboxEmail(
 
     // -----------------------------------------------------------------------
     case OUTBOX_TEMPLATE_OWNER_ALERT: {
+      const adminLink = adminUrl();
       const textLines = [
         `New booking from ${fullName} — action needed`,
         "Verify the payment proof, then approve or reject in the admin panel.",
@@ -601,7 +610,10 @@ export async function renderOutboxEmail(
         "",
         "INVOICE",
         ...textInvoice(lines, total),
-        ...(url ? ["", url] : []),
+        "",
+        "Admin panel:",
+        adminLink,
+        ...(url ? ["", "Customer tracking link:", url] : []),
       ];
 
       const htmlBody = `
@@ -635,7 +647,10 @@ export async function renderOutboxEmail(
 
         ${lines.length || total ? `${sectionLabel("Invoice")}${invoiceBlock(lines, total)}` : ""}
 
-        ${url ? `${ctaButton("Open in Admin Panel", url)}${linkFallback(url)}` : ""}`;
+        ${ctaButton("Open Admin Panel", adminLink)}
+        ${linkFallback(adminLink)}
+
+        ${url ? `${sectionLabel("Customer tracking link")}${linkFallback(url)}` : ""}`;
 
       return {
         subject: `CK Grounds — new booking from ${fullName || "customer"}`,

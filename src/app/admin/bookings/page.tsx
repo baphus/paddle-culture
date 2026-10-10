@@ -82,12 +82,21 @@ export default async function BookingsPage({
     );
   }
 
-  const {
-    rows,
-    page: safePage,
-    totalPages,
-    total,
-  } = await listBookings(db, { q, status, from, to, page });
+  let listResult: Awaited<ReturnType<typeof listBookings>>;
+  try {
+    listResult = await listBookings(db, { q, status, from, to, page });
+  } catch (err) {
+    console.error("[bookings] listBookings failed:", err);
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Bookings" />
+        <p className="text-sm text-warm-muted">
+          Could not load bookings. Check your database connection and try again.
+        </p>
+      </div>
+    );
+  }
+  const { rows, page: safePage, totalPages, total } = listResult;
 
   // Build base params (no page) for pagination links
   const base: Record<string, string> = {};

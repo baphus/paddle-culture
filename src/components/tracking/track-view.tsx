@@ -58,16 +58,28 @@ export default function TrackView({
   rental,
 }: TrackViewProps) {
   const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
   const qrRef = useRef<SVGSVGElement>(null);
 
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(url);
       setCopiedLink(true);
-      toast.success("QR link copied!");
+      toast.success("Booking link copied!");
       setTimeout(() => setCopiedLink(false), 2000);
     } catch {
-      toast.error("Could not copy QR link.");
+      toast.error("Could not copy link.");
+    }
+  };
+
+  const copyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(trackingCode);
+      setCopiedCode(true);
+      toast.success("Tracking code copied!");
+      setTimeout(() => setCopiedCode(false), 2000);
+    } catch {
+      toast.error("Could not copy tracking code.");
     }
   };
 
@@ -257,11 +269,31 @@ export default function TrackView({
           <div className="flex w-full flex-col gap-4 sm:justify-between">
             {/* Tracking Code badge */}
             <div className="rounded-2xl border border-line-warm/60 bg-cream/60 p-4">
-              <div className="mb-1.5 flex items-center gap-1.5">
-                <Hash className="size-3.5 text-flame" />
-                <span className="text-xs font-bold tracking-wider text-warm-muted uppercase">
-                  Tracking Code
-                </span>
+              <div className="mb-1.5 flex items-center justify-between gap-1.5">
+                <div className="flex items-center gap-1.5">
+                  <Hash className="size-3.5 text-flame" aria-hidden />
+                  <span className="text-xs font-bold tracking-wider text-warm-muted uppercase">
+                    Tracking Code
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={copyCode}
+                  aria-label="Copy tracking code"
+                  className="inline-flex items-center gap-1 rounded-lg border border-line-warm/50 bg-white px-2 py-1 text-[11px] font-semibold text-pine transition-all hover:bg-oat active:scale-95"
+                >
+                  {copiedCode ? (
+                    <>
+                      <Check className="size-3 text-live-dot" aria-hidden />
+                      <span>Copied</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="size-3" aria-hidden />
+                      <span>Copy</span>
+                    </>
+                  )}
+                </button>
               </div>
               <p className="font-mono text-3xl font-black tracking-[0.25em] text-ink">
                 {trackingCode}
@@ -276,24 +308,24 @@ export default function TrackView({
               <button
                 type="button"
                 onClick={downloadQr}
-                className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-xl bg-flame px-4 py-2 text-xs font-bold text-white shadow-sm transition-all hover:bg-flame-hover active:scale-[0.98]"
+                className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl bg-flame px-4 py-2.5 text-xs font-bold text-white shadow-sm transition-all hover:bg-flame-hover hover:-translate-y-0.5 active:scale-[0.98]"
               >
-                <Download className="size-3.5" />
+                <Download className="size-4" aria-hidden />
                 <span>Download QR</span>
               </button>
               <button
                 type="button"
                 onClick={copyLink}
-                className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-xl border border-line-warm/70 bg-cream px-4 py-2 text-xs font-bold text-pine transition-colors hover:bg-oat"
+                className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl border border-line-warm/70 bg-cream px-4 py-2.5 text-xs font-bold text-pine transition-all hover:bg-oat hover:-translate-y-0.5 active:scale-[0.98]"
               >
                 {copiedLink ? (
                   <>
-                    <Check className="size-3.5 text-live-dot" />
+                    <Check className="size-4 text-live-dot" aria-hidden />
                     <span>Link Copied!</span>
                   </>
                 ) : (
                   <>
-                    <Copy className="size-3.5" />
+                    <Copy className="size-4" aria-hidden />
                     <span>Copy Link</span>
                   </>
                 )}
@@ -304,21 +336,21 @@ export default function TrackView({
       </div>
 
       {/* ── Actions Footer ── */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pt-2">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pt-2 pb-2">
         <Link
           href="/book"
-          className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-flame px-6 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99]"
+          className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-flame px-6 text-sm font-bold text-white shadow-sm transition-all hover:bg-flame-hover hover:-translate-y-0.5 active:scale-[0.99]"
         >
-          <RotateCcw className="size-4" />
+          <RotateCcw className="size-4" aria-hidden />
           <span>Book Another Court</span>
         </Link>
 
         <Link
           href="/"
-          className="inline-flex min-h-[48px] items-center justify-center gap-1.5 rounded-xl border border-line-warm/70 bg-white px-5 text-sm font-bold text-ink transition-all hover:bg-cream"
+          className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl border border-line-warm/70 bg-white px-6 text-sm font-bold text-ink transition-all hover:bg-cream hover:-translate-y-0.5 active:scale-[0.99]"
         >
-          <span>Return to Homepage</span>
-          <ArrowRight className="size-4 text-warm-muted" />
+          <span>Back to Homepage</span>
+          <ArrowRight className="size-4 text-warm-muted" aria-hidden />
         </Link>
       </div>
     </div>

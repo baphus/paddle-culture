@@ -16,3 +16,4 @@ tsconfig.tsbuildinfo
 # OS / editor
 .DS_Store
 Thumbs.db
+next-env.d.ts

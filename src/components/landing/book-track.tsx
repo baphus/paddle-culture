@@ -50,7 +50,7 @@ export default function BookTrack({ rates = FALLBACK_RATES }: { rates?: DisplayR
           <div className="rounded-2xl bg-white p-6 text-ink sm:p-7" aria-label="View an existing booking">
             <h3 className="text-xl font-black tracking-tight text-ink">View Your Booking</h3>
             <p className="mt-1 mb-4 text-sm leading-6 text-ink/70">
-              Scan your QR code or paste the booking link from your email to check status.
+              Enter the 5-character tracking code from your confirmation email to check your reservation status.
             </p>
             <TrackInput />
           </div>

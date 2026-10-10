@@ -1,8 +1,9 @@
 {
-  "ranAt": "2026-10-04T03:46:44.498Z",
+  "ranAt": "2026-10-10T06:59:07.340Z",
   "courts": {
-    "before": 2,
-    "existing": [
+    "before": 0,
+    "existing": [],
+    "inserted": [
       {
         "name": "Court 1",
         "status": "active"
@@ -12,16 +13,51 @@
         "status": "active"
       }
     ],
-    "inserted": [],
     "after": 2
   },
   "operating_hours": {
-    "before": 7,
-    "inserted": [],
+    "before": 0,
+    "inserted": [
+      {
+        "day": 0,
+        "open": "06:00",
+        "close": "03:00"
+      },
+      {
+        "day": 1,
+        "open": "06:00",
+        "close": "03:00"
+      },
+      {
+        "day": 2,
+        "open": "06:00",
+        "close": "03:00"
+      },
+      {
+        "day": 3,
+        "open": "06:00",
+        "close": "03:00"
+      },
+      {
+        "day": 4,
+        "open": "06:00",
+        "close": "03:00"
+      },
+      {
+        "day": 5,
+        "open": "06:00",
+        "close": "03:00"
+      },
+      {
+        "day": 6,
+        "open": "06:00",
+        "close": "03:00"
+      }
+    ],
     "after": 7
   },
   "pricing_rules": {
-    "count": 6,
+    "count": 0,
     "touched": false
   }
 }

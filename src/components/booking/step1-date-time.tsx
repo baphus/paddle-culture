@@ -1,17 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowLeft,
   ArrowRight,
-  Calendar,
-  CalendarDays,
   Check,
   ChevronLeft,
   ChevronRight,
-  Dumbbell,
-  Info,
-  Moon,
-  Sun,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -81,14 +77,6 @@ function cellState(slot: AvailabilitySlot, now: number): CellState {
   return "open";
 }
 
-const CELL_LABEL: Record<CellState, string> = {
-  open: "Open",
-  held: "Held",
-  booked: "Booked",
-  closed: "Closed",
-  past: "Past",
-};
-
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }
@@ -98,15 +86,6 @@ function partsOf(dateStr: string): { y: number; m: number } {
   return { y: y as number, m: (m as number) - 1 };
 }
 
-const CARD = "bg-cream border border-line-warm/60 rounded-2xl p-6 sm:p-7 shadow-sm";
-
-/**
- * Wizard step 1 — play date + time slots (+ live booking summary).
- *
- * Holds ALL active courts for the picked hours (court choice is
- * step 2, which consumes a subset of these hold tokens). Pairs are capped at
- * MAX_SLOTS_PER_BOOKING, enforced client-side with toast() before POST.
- */
 export interface Step1DateTimeProps {
   initialCourts: CourtOption[];
   initialRates?: DisplayRates;
@@ -136,6 +115,9 @@ export interface Step1DateTimeProps {
   }) => void;
 }
 
+// Panel order: 0=Date, 1=Courts, 2=TimeGrid, 3=Equipment
+type Panel = 0 | 1 | 2 | 3;
+
 export default function Step1DateTime({
   initialCourts,
   initialRates = FALLBACK_RATES,
@@ -163,7 +145,6 @@ export default function Step1DateTime({
         : [],
   );
   const [rates, setRates] = useState<DisplayRates>(initialRates);
-  // No date pre-selected: progressive reveal shows ONLY the date card first unless initialSelectedDate is provided.
   const [selectedDate, setSelectedDate] = useState<string | null>(initialSelectedDate ?? null);
   const [view, setView] = useState(() => partsOf(initialSelectedDate ?? todayStr));
   const [avail, setAvail] = useState<CourtAvailability[] | null>(null);
@@ -174,27 +155,27 @@ export default function Step1DateTime({
   const [hold, setHold] = useState<HoldState | null>(existingHold ?? null);
   const [holding, setHolding] = useState(false);
 
-  // Equipment rental state — live-feeds summary panel
   const [paddleQty, setPaddleQty] = useState<number>(initialPaddleQty);
   const [ball, setBall] = useState<boolean>(initialBall);
 
-  // Carousel: 0=Courts 1=Date 2=Time 3=Equipment
-  const [panel, setPanel] = useState<0 | 1 | 2 | 3>(initialSelectedDate ? 2 : 0);
+  // Panel: 0=Date, 1=Courts, 2=TimeGrid, 3=Equipment
+  const [panel, setPanel] = useState<Panel>(() => {
+    if (initialSelectedDate && (initialCourtIds?.length ?? 0) > 0) return 2;
+    if (initialSelectedDate) return 1;
+    return 0;
+  });
   const panelHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const selectedRef = useRef<string[]>([]);
   selectedRef.current = selected;
   const carryRef = useRef(false);
-  const touchX = useRef<number | null>(null);
 
-  // Notify parent of any live state change so the summary panel stays in sync
-  // without waiting for hold/submit.
+  // Notify parent of live state changes
   useEffect(() => {
     onLiveUpdate?.({ courtIds, selectedDate, selectedSlots: selected, paddleQty, ball });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [courtIds, selectedDate, selected, paddleQty, ball]);
 
-  // Refresh the court list live (read-only); keep the server-rendered list as
-  // fallback when the DB is unreachable.
+  // Refresh court list live
   useEffect(() => {
     fetch("/api/courts")
       .then((r) => (r.ok ? r.json() : null))
@@ -211,8 +192,7 @@ export default function Step1DateTime({
       .catch(() => {});
   }, []);
 
-  // Refresh display rates live (estimate-only — the server recalculates the
-  // authoritative total at submit and never trusts this number).
+  // Refresh display rates live
   useEffect(() => {
     fetch("/api/pricing")
       .then((r) => (r.ok ? r.json() : null))
@@ -223,13 +203,7 @@ export default function Step1DateTime({
             (n) => typeof n === "number" && Number.isFinite(n) && n > 0,
           )
         ) {
-          setRates({
-            morning: b.morning,
-            evening: b.evening,
-            paddle: b.paddle,
-            ball: b.ball,
-            currency: "PHP",
-          });
+          setRates({ morning: b.morning, evening: b.evening, paddle: b.paddle, ball: b.ball, currency: "PHP" });
         }
       })
       .catch(() => {});
@@ -237,7 +211,7 @@ export default function Step1DateTime({
 
   const courtsKey = useMemo(() => [...courtIds].sort().join(","), [courtIds]);
 
-  // Availability read (single grid source: 06:00–03:00+1d from the server).
+  // Availability fetch when date or courts change
   useEffect(() => {
     if (courtIds.length === 0 || !selectedDate) {
       setAvail(null);
@@ -264,8 +238,6 @@ export default function Step1DateTime({
       })
       .then((b) => {
         setAvail(b.courts);
-        // Date-change carry-over: keep the same slot indices where still open
-        // on every court; drop the rest with a toast explanation.
         if (carryRef.current) {
           carryRef.current = false;
           const fresh = new Map(
@@ -308,8 +280,6 @@ export default function Step1DateTime({
     return m;
   }, [avail]);
 
-  // Canonical 21-slot grid for the selected Manila date (single date source:
-  // slots + labels both derive from selectedDate; empty until a date is picked).
   const gridSlots = useMemo(
     () => (selectedDate ? slotsForDate(selectedDate).map((s) => s.start.toISOString()) : []),
     [selectedDate],
@@ -320,30 +290,53 @@ export default function Step1DateTime({
     [selected],
   );
 
+  // Keep focus on panel change
+  const panelMounted = useRef(false);
+  useEffect(() => {
+    if (!panelMounted.current) { panelMounted.current = true; return; }
+    panelHeadingRef.current?.focus({ preventScroll: true });
+  }, [panel]);
+
+  function goPanel(p: Panel) {
+    if (p === 1 && !selectedDate) { toast.error("Pick a play date first."); return; }
+    if (p === 2 && !selectedDate) { toast.error("Pick a play date first."); return; }
+    if (p === 2 && courtIds.length === 0) { toast.error("Choose at least one court first."); return; }
+    if (p === 3 && selectedSorted.length === 0) { toast.error("Pick at least 1 time slot first."); return; }
+    setPanel(p);
+  }
+
+  // Slot state for a given court+slot combination
+  function slotStateForCourt(iso: string, courtId: string): CellState {
+    if (!avail) return new Date(iso).getTime() <= Date.now() ? "past" : "open";
+    const slot = slotByCourt.get(courtId)?.get(iso);
+    if (!slot) return "closed";
+    return cellState(slot, Date.now());
+  }
+
+  // Whether a slot is selected (selected = chosen on ALL courts, intersection)
+  function isSlotSelected(iso: string): boolean {
+    return selected.includes(iso);
+  }
+
+  // Toggle slot — must be open on every selected court
   function toggleSlot(startIso: string) {
     if (hold) return;
-    if (!avail) {
-      toast.error("Loading fresh slots — try again in a moment.");
-      return;
-    }
-    if (courtIds.length === 0) {
-      toast.error("No courts listed right now — check back soon.");
-      return;
-    }
+    if (!avail) { toast.error("Loading fresh slots — try again in a moment."); return; }
+    if (courtIds.length === 0) { toast.error("No courts listed right now."); return; }
     const now = Date.now();
     if (selected.includes(startIso)) {
       setSelected(selected.filter((s) => s !== startIso));
       return;
     }
-    // Must be open on EVERY held court (same slots across courts).
     for (const id of courtIds) {
       const slot = slotByCourt.get(id)?.get(startIso);
       const name = courts.find((c) => c.id === id)?.name ?? "Court";
       if (!slot || cellState(slot, now) !== "open") {
+        const cs = slot ? cellState(slot, now) : "closed";
         const reason =
-          !slot || cellState(slot, now) === "booked" || cellState(slot, now) === "held"
+          cs === "booked" || cs === "held"
             ? "is already taken"
-            : cellState(slot, now) === "past"
+            : cs === "past"
               ? "already started (future slots only)"
               : "is closed";
         toast.error(`${name} ${formatSlotRange(startIso)} ${reason}.`);
@@ -354,23 +347,15 @@ export default function Step1DateTime({
       (a, b) => new Date(a).getTime() - new Date(b).getTime(),
     );
     if (next.length * courtIds.length > MAX_SLOTS_PER_BOOKING) {
-      toast.error(
-        `Max ${MAX_SLOTS_PER_BOOKING} court-hours per booking — fewer hours or courts.`,
-      );
+      toast.error(`Max ${MAX_SLOTS_PER_BOOKING} court-hours per booking.`);
       return;
     }
     setSelected(next);
   }
 
   async function createHold() {
-    if (selectedSorted.length === 0) {
-      toast.error("Pick at least 1 hour first.");
-      return;
-    }
-    if (courtIds.length === 0) {
-      toast.error("No courts listed right now — check back soon.");
-      return;
-    }
+    if (selectedSorted.length === 0) { toast.error("Pick at least 1 hour first."); return; }
+    if (courtIds.length === 0) { toast.error("No courts listed right now."); return; }
     setHolding(true);
     try {
       const res = await fetch("/api/holds", {
@@ -403,7 +388,6 @@ export default function Step1DateTime({
       };
       setHold(holdState);
       toast.success("Slots held — add equipment or continue to details.");
-      // Advance to equipment panel so user can optionally add gear
       setPanel(3);
     } catch {
       toast.error("Could not hold those slots. Check your connection and retry.");
@@ -415,9 +399,7 @@ export default function Step1DateTime({
   const handleHoldExpired = useCallback(() => {
     setHold(null);
     if (onHoldExpired) onHoldExpired();
-    toast.error("Your hold expired — tap “Hold & Continue” again to re-hold your slots.", {
-      duration: 8000,
-    });
+    toast.error('Your hold expired — tap "Hold & Continue" again.', { duration: 8000 });
   }, [onHoldExpired]);
 
   function handleContinueCta() {
@@ -428,48 +410,7 @@ export default function Step1DateTime({
     void createHold();
   }
 
-  function resetSlots() {
-    if (hold) return;
-    setSelected([]);
-  }
-
-  function startOver() {
-    setHold(null);
-    setSelected([]);
-    setSelectedDate(null);
-    setPaddleQty(0);
-    setBall(false);
-    setPanel(0);
-  }
-
-  // Keep keyboard/screen-reader focus inside the wizard on panel switches.
-  // preventScroll: the carousel must never cause page scroll jumps.
-  const panelMounted = useRef(false);
-  useEffect(() => {
-    if (!panelMounted.current) {
-      panelMounted.current = true;
-      return;
-    }
-    panelHeadingRef.current?.focus({ preventScroll: true });
-  }, [panel]);
-
-  function goPanel(p: 0 | 1 | 2 | 3) {
-    if (p === 1 && courtIds.length === 0) {
-      toast.error("Choose at least one court first.");
-      return;
-    }
-    if (p === 2 && !selectedDate) {
-      toast.error("Pick a play date first.");
-      return;
-    }
-    if (p === 3 && selectedSorted.length === 0) {
-      toast.error("Pick at least 1 time slot first.");
-      return;
-    }
-    setPanel(p);
-  }
-
-  // ---- Calendar model (single source: `view` drives label + day cells) ----
+  // Calendar model
   const monthLabel = monthLabelManila(view.y, view.m);
   const leadBlanks = firstWeekdayManila(view.y, view.m);
   const daysInMonth = daysInManilaMonth(view.y, view.m);
@@ -487,13 +428,9 @@ export default function Step1DateTime({
   function pickDate(dateStr: string) {
     if (dateStr < todayStr || dateStr > maxStr) return;
     if (dateStr === selectedDate) {
-      // Re-tapping the active date just opens the time panel.
-      setPanel(2);
-      panelHeadingRef.current?.focus({ preventScroll: true });
+      setPanel(1);
       return;
     }
-    // Carry compatible hours (same slot indices) to the new date; the
-    // availability read below verifies them and drops closed ones with a toast.
     const carried = selected
       .map((iso) => gridSlots.indexOf(iso))
       .filter((i) => i >= 0);
@@ -508,24 +445,19 @@ export default function Step1DateTime({
     carryRef.current = next.length > 0;
     setSelected(next);
     setSelectedDate(dateStr);
-    // Drop stale availability so the time panel shows loading, not old data.
     setAvail(null);
-    // Keep the month view on the picked date (single source, no label drift).
     setView(partsOf(dateStr));
-    // Selecting a date auto-advances to the time panel (no scrolling).
-    setPanel(2);
+    setPanel(1); // go to court selection after date pick
   }
 
-  type DayKind = "past" | "today" | "open" | "selected" | "beyond";
-  function dayKind(dateStr: string): DayKind {
-    if (dateStr < todayStr) return "past";
-    if (dateStr > maxStr) return "beyond";
-    if (dateStr === selectedDate) return "selected";
-    if (dateStr === todayStr) return "today";
-    return "open";
+  // Shift selected date by +/- days (for the date nav in the time grid panel)
+  function shiftDate(dir: 1 | -1) {
+    if (!selectedDate) return;
+    const next = addDaysManilaStr(selectedDate, dir);
+    if (next < todayStr || next > maxStr) return;
+    pickDate(next);
   }
 
-  // Chunk leading blanks + month days into week rows (grid > row > gridcell).
   const weekRows = useMemo<Array<Array<{ key: string; dateStr: string | null }>>>(() => {
     const cells: Array<{ key: string; dateStr: string | null }> = [];
     for (let i = 0; i < leadBlanks; i++) cells.push({ key: `blank-${i}`, dateStr: null });
@@ -539,185 +471,546 @@ export default function Step1DateTime({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view.y, view.m, leadBlanks, daysInMonth]);
 
-  // ---- Slots split: Day 06:00–18:00 vs Night 18:00–03:00+1d ----
-  const nowMs = Date.now();
-  const daySlots = useMemo(
-    () => gridSlots.filter((iso) => timeBandFor(new Date(iso)) !== "evening"),
-    [gridSlots],
-  );
-  const nightSlots = useMemo(
-    () => gridSlots.filter((iso) => timeBandFor(new Date(iso)) === "evening"),
-    [gridSlots],
-  );
-
-  function slotCell(iso: string): { state: CellState; blocked: boolean } {
-    // Blocked unless open on EVERY held court; fall back to grid-only past
-    // check while availability is loading so the grid still renders.
-    if (!avail) {
-      return new Date(iso).getTime() <= nowMs
-        ? { state: "past", blocked: true }
-        : { state: "open", blocked: false };
-    }
-    for (const id of courtIds) {
-      const slot = slotByCourt.get(id)?.get(iso);
-      const st = slot ? cellState(slot, nowMs) : "closed";
-      if (st !== "open") return { state: st, blocked: true };
-    }
-    return { state: "open", blocked: false };
+  type DayKind = "past" | "today" | "open" | "selected" | "beyond";
+  function dayKind(dateStr: string): DayKind {
+    if (dateStr < todayStr) return "past";
+    if (dateStr > maxStr) return "beyond";
+    if (dateStr === selectedDate) return "selected";
+    if (dateStr === todayStr) return "today";
+    return "open";
   }
 
-  function renderSlotButton(iso: string) {
-    const { state, blocked } = slotCell(iso);
-    const isSel = selected.includes(iso);
-    const label = formatSlotRange(iso);
-    const rate = timeBandFor(new Date(iso)) === "evening" ? rates.evening : rates.morning;
-    if (blocked) {
-      const tag = state === "booked" || state === "held" ? "Booked" : CELL_LABEL[state];
-      return (
-        <button
-          key={iso}
-          type="button"
-          disabled
-          aria-disabled="true"
-          title={`${label} — ${CELL_LABEL[state]}`}
-          className="flex cursor-not-allowed flex-col rounded-xl border border-line-warm/30 bg-surface-dim/30 p-3 text-left opacity-60"
-        >
-          <span className="text-xs font-medium text-warm-muted line-through">{label}</span>
-          <span className="mt-0.5 text-[10px] font-bold uppercase text-error">{tag}</span>
-        </button>
-      );
-    }
-    return (
-      <button
-        key={iso}
-        type="button"
-        disabled={!!hold || holding}
-        onClick={() => toggleSlot(iso)}
-        aria-pressed={isSel}
-        aria-disabled={!!hold || holding}
-        title={`${label} — ${isSel ? "Selected" : "Open"}`}
-        className={cn(
-          "flex flex-col rounded-xl border p-3 text-left shadow-xs transition-all",
-          isSel
-            ? "border-flame bg-flame text-white shadow-sm"
-            : "border-line-warm/60 bg-white hover:border-flame/50",
-        )}
-      >
-        <span
-          className={cn(
-            "flex items-center justify-between text-xs font-bold",
-            isSel ? "text-white" : "text-ink",
-          )}
-        >
-          <span>{label}</span>
-          {isSel ? <Check className="size-3.5" aria-hidden /> : null}
-        </span>
-        <span className={cn("mt-0.5 text-[11px]", isSel ? "text-white/90" : "text-warm-muted")}>
-          {peso(rate)} / hr
-        </span>
-      </button>
-    );
-  }
-
-  // ---- Date label (used in panel subtitle + sr-only status) ----
   const dateLabel = (() => {
-    if (!selectedDate) return "Pick a date to see slots";
+    if (!selectedDate) return "Pick a date";
     const long = formatManilaLong(selectedDate);
-    if (selectedDate === tomorrowStr) return `Tomorrow (${long})`;
-    if (selectedDate === addDaysManilaStr(todayStr, 2)) return `Day after tomorrow (${long})`;
+    if (selectedDate === todayStr) return `Today · ${long}`;
+    if (selectedDate === tomorrowStr) return `Tomorrow · ${long}`;
     return long;
   })();
 
   const ctaDisabled = selectedSorted.length === 0 || holding || !!hold || courtIds.length === 0;
 
-  return (
-    <>
-    <div>
-      <div className="flex min-w-0 flex-col gap-6">
-        <section
-          aria-labelledby="wizard-heading"
-          className={cn(CARD, !selectedDate && "mx-auto w-full max-w-3xl")}
-        >
-          {/* Stepper header */}
-          <div className="mb-6">
-            <div className="flex items-center justify-between gap-3">
-              <h1 id="wizard-heading" className="text-2xl font-extrabold tracking-tight text-ink sm:text-3xl">
-                {panel === 0 ? "Step 1 of 4 — Courts" : panel === 1 ? "Step 2 of 4 — Date" : panel === 2 ? "Step 3 of 4 — Time" : "Step 4 of 4 — Equipment"}
-              </h1>
-              <nav aria-label="Booking steps" className="flex shrink-0 items-center gap-1.5">
-                {([0, 1, 2, 3] as const).map((i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => goPanel(i)}
-                    aria-current={panel === i ? "step" : undefined}
-                    aria-label={i === 0 ? "Step 1: choose courts" : i === 1 ? "Step 2: pick a date" : i === 2 ? "Step 3: pick a time" : "Step 4: equipment"}
-                    className={cn(
-                      "inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 rounded-full px-2.5 text-xs font-bold transition-all",
-                      panel === i
-                        ? "bg-flame text-white shadow-sm"
-                        : "border border-line-warm/60 bg-white text-warm-muted hover:border-flame/50 hover:text-ink",
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "grid size-5 place-items-center rounded-full text-[11px] font-black",
-                        panel === i ? "bg-white/25 text-white" : "bg-oat text-pine",
-                      )}
-                    >
-                      {i + 1}
-                    </span>
-                    <span className="hidden sm:inline">{i === 0 ? "Courts" : i === 1 ? "Date" : i === 2 ? "Time" : "Gear"}</span>
-                  </button>
-                ))}
-              </nav>
-            </div>
-            <div
-              className="mt-3 h-1.5 overflow-hidden rounded-full bg-oat"
-              role="progressbar"
-              aria-valuemin={1}
-              aria-valuemax={4}
-              aria-valuenow={panel + 1}
-              aria-label="Booking progress"
+  // ── Panel 2: Time Grid ─────────────────────────────────────────────
+  // Renders a scrollable table: rows = time slots, columns = each selected court
+  // Each cell shows the availability state for that (court, slot) pair.
+
+  function TimeGridCell({
+    iso,
+    courtId,
+  }: {
+    iso: string;
+    courtId: string;
+  }) {
+    const cs = slotStateForCourt(iso, courtId);
+    const isSel = isSlotSelected(iso);
+    const isOpen = cs === "open";
+
+    // When loading, show subtle placeholder
+    if (loadingAvail && !avail) {
+      return (
+        <div className="flex items-center justify-center">
+          <div className="size-8 rounded-full border-2 border-line-warm/30 bg-surface-dim/20 animate-pulse" />
+        </div>
+      );
+    }
+
+    if (cs === "past" || cs === "closed") {
+      return (
+        <div className="flex items-center justify-center" aria-label="Unavailable">
+          <div className="size-8 rounded-full border-2 border-line-warm/20 bg-surface-dim/10 flex items-center justify-center">
+            <X className="size-3.5 text-warm-muted/40" strokeWidth={2.5} />
+          </div>
+        </div>
+      );
+    }
+
+    if (cs === "booked" || cs === "held") {
+      return (
+        <div className="flex items-center justify-center" aria-label="Booked">
+          <div className="size-8 rounded-full border-2 border-line-warm/30 bg-surface-dim/20 flex items-center justify-center">
+            <X className="size-3.5 text-warm-muted/50" strokeWidth={2.5} />
+          </div>
+        </div>
+      );
+    }
+
+    // Open or selected
+    return (
+      <button
+        type="button"
+        disabled={!!hold || holding}
+        onClick={() => toggleSlot(iso)}
+        aria-pressed={isSel}
+        aria-label={`${formatSlotRange(iso)} — ${isSel ? "Selected" : "Available"}`}
+        className={cn(
+          "flex items-center justify-center mx-auto rounded-full border-2 size-8 transition-all",
+          isSel
+            ? "border-flame bg-flame text-white shadow-sm scale-110"
+            : "border-flame/40 bg-flame/5 hover:bg-flame/15 hover:border-flame/70",
+          (!!hold || holding) && "cursor-not-allowed opacity-60",
+        )}
+      >
+        {isSel && <Check className="size-3.5" strokeWidth={3} />}
+      </button>
+    );
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────
+
+  // Panel 2 (time grid) is fullscreen — rendered separately from the card wrapper
+  if (panel === 2) {
+    return (
+      <div className="flex flex-col">
+        {/* Sticky top bar */}
+        <div className="sticky top-0 z-20 bg-cream border-b border-line-warm/60 shadow-sm">
+          <div className="flex items-center justify-between gap-3 px-4 py-3">
+            <button
+              type="button"
+              onClick={() => setPanel(1)}
+              className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-1 rounded-xl border border-line-warm/60 bg-white px-3 text-sm font-bold text-pine transition-all hover:bg-oat"
             >
-              <div className={cn("h-full rounded-full bg-flame transition-all", panel === 0 ? "w-1/4" : panel === 1 ? "w-2/4" : panel === 2 ? "w-3/4" : "w-full")} />
+              <ArrowLeft className="size-4" aria-hidden /> Courts
+            </button>
+
+            {/* Date navigator */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => shiftDate(-1)}
+                disabled={!selectedDate || selectedDate <= todayStr}
+                aria-label="Previous day"
+                className="grid size-9 place-items-center rounded-lg border border-line-warm/60 text-warm-muted transition-colors hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ChevronLeft className="size-4" aria-hidden />
+              </button>
+              <button
+                type="button"
+                onClick={() => setPanel(0)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-line-warm/60 bg-white px-3 py-1.5 text-xs font-bold text-ink hover:bg-oat transition-colors"
+              >
+                <span>{dateLabel}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => shiftDate(1)}
+                disabled={!selectedDate || selectedDate >= maxStr}
+                aria-label="Next day"
+                className="grid size-9 place-items-center rounded-lg border border-line-warm/60 text-ink transition-colors hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ChevronRight className="size-4" aria-hidden />
+              </button>
             </div>
-            <p className="mt-2 text-xs text-warm-muted sm:text-sm">
-              {panel === 0
-                ? "Choose one or more courts. Times must be free on every court you select."
-                : panel === 1
-                  ? "Select an active calendar date to view available hours."
-                  : panel === 2
-                    ? `${dateLabel} · times shown are free on every selected court`
-                    : "Optional: add paddles or a ball set to your booking."}
-            </p>
+
+            {/* Selection count + CTA */}
+            <button
+              type="button"
+              onClick={handleContinueCta}
+              disabled={ctaDisabled}
+              className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-flame px-4 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
+            >
+              {holding ? (
+                <LoadingAnimation size="compact" label="Holding slots" />
+              ) : (
+                <>
+                  <span className="hidden sm:inline">Hold</span>
+                  {selectedSorted.length > 0 && (
+                    <span className="rounded-full bg-white/25 px-1.5 py-0.5 text-[11px] font-extrabold">
+                      {selectedSorted.length}h
+                    </span>
+                  )}
+                  <ArrowRight className="size-4" aria-hidden />
+                </>
+              )}
+            </button>
           </div>
 
-          {/* Panels: one visible at a time in the same footprint, swipeable */}
-          <div
-            className="min-h-[480px] sm:min-h-[560px]"
-            onTouchStart={(e) => {
-              touchX.current = e.touches[0]?.clientX ?? null;
-            }}
-            onTouchEnd={(e) => {
-              if (touchX.current === null) return;
-              const dx = (e.changedTouches[0]?.clientX ?? 0) - touchX.current;
-              touchX.current = null;
-              if (Math.abs(dx) < 60) return;
-              if (dx < 0) goPanel(panel < 3 ? ((panel + 1) as 0 | 1 | 2 | 3) : 3);
-              else setPanel(panel > 0 ? ((panel - 1) as 0 | 1 | 2 | 3) : 0);
-            }}
-          >
-          {panel === 0 ? (
-          <div key="panel-courts" className="animate-rise motion-reduce:animate-none">
-            <h2 ref={panelHeadingRef} tabIndex={-1} className="text-lg font-extrabold tracking-tight text-ink outline-none sm:text-xl">
-              Choose your court{courts.length === 1 ? "" : "s"}
-            </h2>
-            <p className="mt-1 text-sm text-warm-muted">Select every court you need. We will only offer times available on all of them.</p>
-            {courts.length === 0 ? (
-              <p className="mt-5 rounded-xl border border-line-warm/60 bg-white p-4 text-sm text-warm-muted">No courts listed right now — check back soon.</p>
+          {/* Legend */}
+          <div className="flex items-center gap-4 px-4 pb-2.5 text-[11px] font-semibold text-warm-muted">
+            <span className="flex items-center gap-1.5">
+              <span className="size-3.5 rounded-full border-2 border-flame bg-flame inline-block" />
+              Selected
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="size-3.5 rounded-full border-2 border-flame/40 bg-flame/5 inline-block" />
+              Available
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="size-3.5 rounded-full border-2 border-line-warm/30 bg-surface-dim/20 inline-block" />
+              Unavailable
+            </span>
+          </div>
+        </div>
+
+        {/* Scrollable grid */}
+        <div className="overflow-x-auto overflow-y-auto flex-1" style={{ maxHeight: "calc(100vh - 220px)", minHeight: 400 }}>
+          {loadingAvail && !avail ? (
+            <div className="flex min-h-64 items-center justify-center py-16">
+              <LoadingAnimation label="Loading court availability" />
+            </div>
+          ) : availFailed ? (
+            <div className="p-6 text-center">
+              <p className="text-sm text-warm-muted">Could not load availability for this date.</p>
+              <button
+                type="button"
+                onClick={() => setRetryKey((k) => k + 1)}
+                className="mt-3 inline-flex min-h-[44px] items-center font-bold text-flame hover:underline"
+              >
+                Retry
+              </button>
+            </div>
+          ) : (
+            <table className="w-full min-w-[320px] border-collapse text-sm">
+              <thead>
+                <tr className="sticky top-0 z-10 bg-cream border-b border-line-warm/60">
+                  {/* TIME column header */}
+                  <th
+                    scope="col"
+                    className="w-28 min-w-[96px] py-3 pl-4 pr-2 text-left text-[11px] font-extrabold uppercase tracking-wider text-warm-muted"
+                  >
+                    TIME
+                  </th>
+                  {/* Court column headers */}
+                  {courts
+                    .filter((c) => courtIds.includes(c.id))
+                    .map((court) => (
+                      <th
+                        key={court.id}
+                        scope="col"
+                        className="py-3 px-2 text-center text-xs font-extrabold text-ink"
+                      >
+                        <div className="flex flex-col items-center gap-1">
+                          <div className="size-8 rounded-lg overflow-hidden border border-line-warm/60 bg-oat">
+                            <LandingImage
+                              src={`/images/court-${(courts.findIndex((c) => c.id === court.id) % 2) + 1}.jpg`}
+                              alt={court.name}
+                              label={`${court.name} photo`}
+                              className="w-full h-full"
+                              imgClassName="object-cover"
+                            />
+                          </div>
+                          <span className="leading-tight max-w-[72px] truncate">{court.name}</span>
+                        </div>
+                      </th>
+                    ))}
+                </tr>
+              </thead>
+              <tbody>
+                {gridSlots.map((iso, idx) => {
+                  const isEvening = timeBandFor(new Date(iso)) === "evening";
+                  const showBand =
+                    idx === 0 ||
+                    (isEvening &&
+                      timeBandFor(new Date(gridSlots[idx - 1] as string)) !== "evening");
+                  const isSel = isSlotSelected(iso);
+                  const allClosed = courtIds.every((id) => {
+                    const cs = slotStateForCourt(iso, id);
+                    return cs === "past" || cs === "closed" || cs === "booked" || cs === "held";
+                  });
+
+                  return (
+                    <Fragment key={iso}>
+                      {showBand && (
+                        <tr className="bg-oat/60">
+                          <td
+                            colSpan={courtIds.length + 1}
+                            className="px-4 py-1.5 text-[10px] font-extrabold uppercase tracking-widest text-warm-muted"
+                          >
+                            {isEvening ? "Evening · ₱200/hr" : "Morning · ₱150/hr"}
+                          </td>
+                        </tr>
+                      )}
+                      <tr
+                        className={cn(
+                          "border-b border-line-warm/30 transition-colors",
+                          isSel ? "bg-flame/5" : allClosed ? "opacity-60" : "hover:bg-oat/40",
+                        )}
+                      >
+                        {/* Time label */}
+                        <td className="py-2.5 pl-4 pr-2 text-left">
+                          <span
+                            className={cn(
+                              "text-xs font-semibold leading-snug",
+                              isSel ? "text-flame font-bold" : "text-ink",
+                            )}
+                          >
+                            {formatSlotRange(iso).split("–").join("→")}
+                          </span>
+                        </td>
+                        {/* Court cells */}
+                        {courts
+                          .filter((c) => courtIds.includes(c.id))
+                          .map((court) => (
+                            <td key={court.id} className="py-2 px-2 text-center">
+                              <TimeGridCell iso={iso} courtId={court.id} />
+                            </td>
+                          ))}
+                      </tr>
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Bottom bar: selection summary + CTA */}
+        <div className="sticky bottom-0 z-20 border-t border-line-warm/60 bg-white/95 backdrop-blur-sm px-4 py-3 flex items-center justify-between gap-3">
+          <div className="text-sm">
+            {selectedSorted.length === 0 ? (
+              <span className="text-warm-muted">Tap a slot to select it</span>
             ) : (
-              <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <span className="font-bold text-ink">
+                <span className="text-flame">{selectedSorted.length}</span> hour{selectedSorted.length !== 1 ? "s" : ""} selected
+                {courtIds.length > 1 && (
+                  <span className="ml-1 text-warm-muted font-normal">× {courtIds.length} courts</span>
+                )}
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={handleContinueCta}
+            disabled={ctaDisabled}
+            className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-flame px-6 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
+          >
+            {holding ? (
+              <><LoadingAnimation size="compact" label="Holding slots" /> Holding…</>
+            ) : hold ? (
+              <>Continue to Equipment <ArrowRight className="size-4" /></>
+            ) : (
+              <>Hold &amp; Continue <ArrowRight className="size-4" /></>
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Panels 0, 1, 3 (card layout) ──────────────────────────────────
+  return (
+    <div className="bg-cream border border-line-warm/60 rounded-2xl p-5 sm:p-7 shadow-sm">
+      {/* Stepper header */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between gap-3">
+          <h1
+            className="text-xl font-extrabold tracking-tight text-ink sm:text-2xl"
+          >
+            {panel === 0
+              ? "Pick a date"
+              : panel === 1
+                ? "Choose your courts"
+                : "Optional equipment"}
+          </h1>
+          {/* Step dots */}
+          <nav aria-label="Booking steps" className="flex shrink-0 items-center gap-1.5">
+            {([0, 1, 2, 3] as const).map((i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => goPanel(i)}
+                aria-current={panel === i ? "step" : undefined}
+                aria-label={
+                  i === 0 ? "Step 1: pick a date" :
+                  i === 1 ? "Step 2: choose courts" :
+                  i === 2 ? "Step 3: pick times" :
+                  "Step 4: equipment"
+                }
+                className={cn(
+                  "inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 rounded-full px-2.5 text-xs font-bold transition-all",
+                  panel === i
+                    ? "bg-flame text-white shadow-sm"
+                    : "border border-line-warm/60 bg-white text-warm-muted hover:border-flame/50 hover:text-ink",
+                )}
+              >
+                <span
+                  className={cn(
+                    "grid size-5 place-items-center rounded-full text-[11px] font-black",
+                    panel === i ? "bg-white/25 text-white" : "bg-oat text-pine",
+                  )}
+                >
+                  {i + 1}
+                </span>
+                <span className="hidden sm:inline">
+                  {i === 0 ? "Date" : i === 1 ? "Courts" : i === 2 ? "Time" : "Gear"}
+                </span>
+              </button>
+            ))}
+          </nav>
+        </div>
+        <div
+          className="mt-3 h-1.5 overflow-hidden rounded-full bg-oat"
+          role="progressbar"
+          aria-valuemin={1}
+          aria-valuemax={4}
+          aria-valuenow={panel + 1}
+          aria-label="Booking progress"
+        >
+          <div
+            className={cn(
+              "h-full rounded-full bg-flame transition-all",
+              panel === 0 ? "w-1/4" : panel === 1 ? "w-2/4" : "w-full",
+            )}
+          />
+        </div>
+        <p className="mt-2 text-xs text-warm-muted sm:text-sm">
+          {panel === 0
+            ? "Select an available date to begin booking."
+            : panel === 1
+              ? "Select every court you need — only slots open on all courts will appear."
+              : "Optional: add paddles or a ball set to your booking."}
+        </p>
+      </div>
+
+      {/* Panels */}
+      <div className="min-h-[420px] sm:min-h-[500px]">
+
+        {/* ── Panel 0: Date Picker ── */}
+        {panel === 0 && (
+          <div className="animate-rise motion-reduce:animate-none">
+            <div className="rounded-xl border border-line-warm/50 bg-white p-4 shadow-inner sm:p-5">
+              {/* Month nav */}
+              <div className="mb-3 flex items-center justify-between border-b border-line-warm/40 pb-4">
+                <h2
+                  ref={panelHeadingRef}
+                  tabIndex={-1}
+                  className="text-base font-bold text-ink outline-none"
+                >
+                  {monthLabel}
+                </h2>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={prevDisabled}
+                    onClick={() => shiftView(-1)}
+                    aria-label="Previous month"
+                    className="grid size-11 place-items-center rounded-lg border border-line-warm/60 text-warm-muted transition-colors hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <ChevronLeft className="size-[18px]" aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={nextDisabled}
+                    onClick={() => shiftView(1)}
+                    aria-label="Next month"
+                    className="grid size-11 place-items-center rounded-lg border border-line-warm/60 text-ink transition-colors hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <ChevronRight className="size-[18px]" aria-hidden />
+                  </button>
+                </div>
+              </div>
+
+              {/* Day-of-week headers */}
+              <div className="mb-2 grid grid-cols-7 gap-1 text-center text-[10px] font-bold tracking-wide text-warm-muted uppercase sm:text-[11px]">
+                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+                  <div key={d}>{d}</div>
+                ))}
+              </div>
+
+              {/* Day cells */}
+              <div role="grid" aria-label={`Choose a play date — ${monthLabel}`} className="grid grid-cols-7 gap-1 sm:gap-2">
+                {weekRows.map((row, ri) => (
+                  <div key={`row-${ri}`} role="row" className="contents">
+                    {row.map((cell) => {
+                      if (!cell.dateStr) {
+                        return <div key={cell.key} role="gridcell" aria-disabled="true" className="h-11 sm:h-16" />;
+                      }
+                      const dateStr = cell.dateStr;
+                      const kind = dayKind(dateStr);
+                      const dayNum = Number(dateStr.slice(8, 10));
+
+                      if (kind === "past" || kind === "beyond") {
+                        return (
+                          <div
+                            key={cell.key}
+                            role="gridcell"
+                            aria-disabled="true"
+                            aria-label={`${formatManilaLong(dateStr)} — unavailable`}
+                            className="flex h-11 cursor-not-allowed flex-col justify-between rounded-lg border border-line-warm/20 bg-surface-dim/20 p-1 text-xs text-warm-muted/50 sm:h-16 sm:rounded-xl sm:p-1.5"
+                          >
+                            <span className="font-medium">{dayNum}</span>
+                          </div>
+                        );
+                      }
+
+                      const isSel = kind === "selected";
+                      const isToday = kind === "today";
+
+                      return (
+                        <div key={cell.key} role="gridcell" aria-selected={isSel}>
+                          <button
+                            type="button"
+                            onClick={() => pickDate(dateStr)}
+                            aria-pressed={isSel}
+                            aria-label={`${formatManilaLong(dateStr)}${isToday ? " — today" : ""}`}
+                            className={cn(
+                              "flex h-11 w-full flex-col justify-between rounded-lg border p-1 text-left transition-all sm:h-16 sm:rounded-xl sm:p-1.5",
+                              isSel
+                                ? "border-2 border-flame bg-pine text-white shadow-md"
+                                : isToday
+                                  ? "border-flame/40 bg-flame-light/30 text-ink hover:bg-flame-light/50"
+                                  : "border-line-warm/70 bg-white text-ink hover:bg-oat",
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                "text-sm font-bold sm:text-base",
+                                isSel ? "text-white font-extrabold" : isToday ? "text-flame font-extrabold" : "text-ink",
+                              )}
+                            >
+                              {dayNum}
+                            </span>
+                            <span
+                              className={cn(
+                                "block text-[9px] font-bold uppercase tracking-wide leading-tight",
+                                isSel ? "text-flame" : isToday ? "text-flame" : "text-warm-muted/70 font-semibold",
+                              )}
+                            >
+                              {isSel ? "Selected" : isToday ? "Today" : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][weekdayManila(dateStr)]}
+                            </span>
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+
+              {/* Legend */}
+              <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-line-warm/40 pt-3 text-[11px] text-warm-muted">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="size-2.5 rounded border border-flame bg-pine" aria-hidden />
+                  Selected
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="size-2 rounded-full bg-warm-muted/40" aria-hidden />
+                  Unavailable
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Panel 1: Court Selection ── */}
+        {panel === 1 && (
+          <div className="animate-rise motion-reduce:animate-none">
+            <h2
+              ref={panelHeadingRef}
+              tabIndex={-1}
+              className="mb-1 text-base font-extrabold tracking-tight text-ink outline-none sm:text-lg"
+            >
+              {courts.length === 1 ? "Your court" : "Choose your courts"}
+            </h2>
+            {selectedDate && (
+              <p className="mb-4 text-xs font-semibold text-warm-muted">
+                {dateLabel} · Tap a court to select it.
+              </p>
+            )}
+            {courts.length === 0 ? (
+              <p className="mt-5 rounded-xl border border-line-warm/60 bg-white p-4 text-sm text-warm-muted">
+                No courts listed right now — check back soon.
+              </p>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2">
                 {courts.map((court, index) => {
                   const isSelected = courtIds.includes(court.id);
                   return (
@@ -727,16 +1020,43 @@ export default function Step1DateTime({
                       aria-pressed={isSelected}
                       onClick={() => {
                         if (hold) return;
-                        setCourtIds((current) => current.includes(court.id) ? current.filter((id) => id !== court.id) : [...current, court.id]);
+                        setCourtIds((current) =>
+                          current.includes(court.id)
+                            ? current.filter((id) => id !== court.id)
+                            : [...current, court.id],
+                        );
                         setSelected([]);
                         setAvail(null);
                       }}
-                      className={cn("overflow-hidden rounded-2xl border-2 bg-white text-left shadow-sm transition-all hover:-translate-y-0.5", isSelected ? "border-flame ring-2 ring-flame/20" : "border-line-warm/60 hover:border-flame/50")}
+                      className={cn(
+                        "overflow-hidden rounded-2xl border-2 bg-white text-left shadow-sm transition-all hover:-translate-y-0.5",
+                        isSelected
+                          ? "border-flame ring-2 ring-flame/20"
+                          : "border-line-warm/60 hover:border-flame/50",
+                      )}
                     >
-                      <LandingImage src={`/images/court-${(index % 2) + 1}.jpg`} alt={`${court.name} court`} label={`${court.name} photo`} className="aspect-[16/8]" imgClassName="object-cover" />
+                      <LandingImage
+                        src={`/images/court-${(index % 2) + 1}.jpg`}
+                        alt={`${court.name} court`}
+                        label={`${court.name} photo`}
+                        className="aspect-[16/8]"
+                        imgClassName="object-cover"
+                      />
                       <span className="flex items-center justify-between gap-3 p-4">
-                        <span><span className="block text-base font-extrabold text-ink">{court.name}</span><span className="mt-0.5 block text-xs font-semibold text-warm-muted">{peso(rates.morning)}/hr day · {peso(rates.evening)}/hr evening</span></span>
-                        <span className={cn("grid size-7 shrink-0 place-items-center rounded-full border", isSelected ? "border-flame bg-flame text-white" : "border-line-warm text-transparent")}>{isSelected && <Check className="size-4" />}</span>
+                        <span>
+                          <span className="block text-base font-extrabold text-ink">{court.name}</span>
+                          <span className="mt-0.5 block text-xs font-semibold text-warm-muted">
+                            {peso(rates.morning)}/hr day · {peso(rates.evening)}/hr evening
+                          </span>
+                        </span>
+                        <span
+                          className={cn(
+                            "grid size-7 shrink-0 place-items-center rounded-full border",
+                            isSelected ? "border-flame bg-flame text-white" : "border-line-warm text-transparent",
+                          )}
+                        >
+                          {isSelected && <Check className="size-4" />}
+                        </span>
                       </span>
                     </button>
                   );
@@ -744,346 +1064,21 @@ export default function Step1DateTime({
               </div>
             )}
           </div>
-          ) : panel === 1 ? (
-          <div key="panel-date" className="animate-rise motion-reduce:animate-none">
-          <div className="rounded-xl border border-line-warm/50 bg-white p-4 shadow-inner sm:p-5">
-            <div className="mb-3 flex items-center justify-between border-b border-line-warm/40 pb-4">
-              <div className="flex items-center gap-2">
-                <CalendarDays className="size-[22px] text-flame" aria-hidden />
-                <h2 ref={panelHeadingRef} tabIndex={-1} className="text-base font-bold text-ink outline-none">{monthLabel}</h2>
-              </div>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  disabled={prevDisabled}
-                  onClick={() => shiftView(-1)}
-                  title="Previous Month"
-                  aria-label="Previous month"
-                  className="grid size-11 place-items-center rounded-lg border border-line-warm/60 text-warm-muted transition-colors hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <ChevronLeft className="size-[18px]" aria-hidden />
-                </button>
-                <button
-                  type="button"
-                  disabled={nextDisabled}
-                  onClick={() => shiftView(1)}
-                  title="Next Month"
-                  aria-label="Next month"
-                  className="grid size-11 place-items-center rounded-lg border border-line-warm/60 text-ink transition-colors hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <ChevronRight className="size-[18px]" aria-hidden />
-                </button>
-              </div>
-            </div>
+        )}
 
-            <div className="mb-2 grid grid-cols-7 gap-1 text-center text-[10px] font-bold tracking-wide text-warm-muted uppercase sm:text-[11px] sm:tracking-wider">
-              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-                <div key={d}>{d}</div>
-              ))}
-            </div>
-
-            <div role="grid" aria-label={`Choose a play date — ${monthLabel}`} className="grid grid-cols-7 gap-1 sm:gap-2">
-              {weekRows.map((row, ri) => (
-                <div key={`row-${ri}`} role="row" className="contents">
-                    {row.map((cell) => {
-                      if (!cell.dateStr) {
-                        return (
-                          <div key={cell.key} role="gridcell" aria-disabled="true" className="h-12 sm:h-20" />
-                        );
-                      }
-                      const dateStr = cell.dateStr;
-                      const kind = dayKind(dateStr);
-                      const dayNum = Number(dateStr.slice(8, 10));
-                      if (kind === "past" || kind === "beyond") {
-                        return (
-                          <div
-                            key={cell.key}
-                            role="gridcell"
-                            aria-disabled="true"
-                            aria-label={`${formatManilaLong(dateStr)} — unavailable`}
-                            className="flex h-12 cursor-not-allowed flex-col justify-between rounded-lg border border-line-warm/20 bg-surface-dim/20 p-1 text-xs text-warm-muted/50 sm:h-20 sm:rounded-xl sm:p-1.5"
-                          >
-                            <span className="font-medium">{dayNum}</span>
-                            {kind === "past" ? (
-                              <span className="text-[9px] font-bold uppercase">Past</span>
-                            ) : null}
-                          </div>
-                        );
-                      }
-                      if (kind === "today") {
-                        const isSel = selectedDate === dateStr;
-                        return (
-                          <div key={cell.key} role="gridcell" aria-selected={isSel}>
-                            <button
-                              type="button"
-                              onClick={() => pickDate(dateStr)}
-                              aria-pressed={isSel}
-                              aria-label={`${formatManilaLong(dateStr)} — today`}
-                              className={cn(
-                                "flex h-12 w-full flex-col justify-between rounded-lg border p-1 text-left transition-all sm:h-20 sm:rounded-xl sm:p-1.5",
-                                isSel
-                                  ? "border-2 border-flame bg-pine text-white shadow-md"
-                                  : "border-flame/40 bg-flame-light/30 text-ink hover:bg-flame-light/50",
-                              )}
-                            >
-                              <div className="flex items-center justify-between">
-                                <span
-                                  className={cn(
-                                    "text-sm font-bold sm:text-base",
-                                    isSel ? "font-extrabold text-white" : "font-extrabold text-flame",
-                                  )}
-                                >
-                                  {dayNum}
-                                </span>
-                              </div>
-                              <div className="leading-tight">
-                                <span className={cn(
-                                  "block text-[9px] font-black uppercase tracking-wide",
-                                  isSel ? "text-flame" : "text-flame",
-                                )}>
-                                  Today
-                                </span>
-                              </div>
-                            </button>
-                          </div>
-                        );
-                      }
-                      const isSel = kind === "selected";
-                      return (
-                        <div key={cell.key} role="gridcell" aria-selected={isSel}>
-                          <button
-                            type="button"
-                            onClick={() => pickDate(dateStr)}
-                            aria-pressed={isSel}
-                            aria-label={`${formatManilaLong(dateStr)}${dateStr === tomorrowStr ? " — tomorrow" : ""}`}
-                            className={cn(
-                                "flex h-12 w-full flex-col justify-between rounded-lg border p-1 text-left transition-all sm:h-20 sm:rounded-xl sm:p-1.5",
-                              isSel
-                                ? "border-2 border-flame bg-pine text-white shadow-md"
-                                : "border-line-warm/70 bg-white text-ink hover:bg-oat",
-                            )}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span
-                                className={cn(
-                                  "text-sm font-bold sm:text-base",
-                                  isSel ? "font-extrabold text-white" : "text-ink",
-                                )}
-                              >
-                                {dayNum}
-                              </span>
-                            </div>
-                            <div className="leading-tight">
-                              {isSel ? (
-                                <span className="block text-[9px] font-black tracking-wide text-flame uppercase">
-                                  Selected
-                                </span>
-                              ) : (
-                                <span className="block text-[9px] font-semibold text-warm-muted">
-                                  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][
-                                    weekdayManila(dateStr)
-                                  ]}
-                                </span>
-                              )}
-                            </div>
-                          </button>
-                        </div>
-                      );
-                    })}
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-line-warm/40 pt-3 text-[11px] text-warm-muted">
-              <div className="flex items-center gap-3">
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="size-2.5 rounded border border-flame bg-pine" aria-hidden />
-                  Selected Date
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="size-2 rounded-full bg-warm-muted/40" aria-hidden />
-                  Unavailable
-                </span>
-              </div>
-            </div>
-          </div>
-          <p className="sr-only" role="status">
-            {selectedDate
-              ? `Step ${panel + 1} of 4. Active date ${dateLabel}. ${selectedSorted.length} hours selected.`
-              : "No date selected yet. Pick a play date to see time slots."}
-          </p>
-          </div>
-          ) : panel === 2 ? (
-          <div key="panel-time" className="animate-rise motion-reduce:animate-none">
-          <div className="rounded-xl border border-line-warm/50 bg-white p-4 shadow-inner sm:p-5">
-            {/* Court selection belongs to the first panel; this compact line
-                keeps the time step focused on availability. */}
-            <p className="mb-5 text-xs font-semibold text-warm-muted">
-              {courtIds.length} court{courtIds.length === 1 ? "" : "s"} selected. Change them from the Courts step.
-            </p>
-            {false && courts.length > 0 && (
-              <div className="mb-5 rounded-2xl border border-line-warm/70 bg-cream/40 p-4">
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-xs font-bold text-pine uppercase tracking-wider">
-                    Select Court(s)
-                  </span>
-                  <span className="text-[11px] font-semibold text-warm-muted">
-                    {courtIds.length === 1
-                      ? courts.find((c) => c.id === courtIds[0])?.name ?? "1 Court"
-                      : `${courtIds.length} Courts (${peso(rates.morning * courtIds.length)}/hr Day · ${peso(rates.evening * courtIds.length)}/hr Night)`}
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {courts.map((c) => {
-                    const isSelected = courtIds.includes(c.id) && courtIds.length === 1;
-                    return (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => {
-                          if (hold) return;
-                          setCourtIds([c.id]);
-                          setSelected([]);
-                        }}
-                        className={cn(
-                          "inline-flex min-h-[40px] items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition-all",
-                          isSelected
-                            ? "bg-pine text-white shadow-xs"
-                            : "border border-line-warm bg-white text-ink hover:bg-cream",
-                        )}
-                      >
-                        <span>{c.name}</span>
-                        {isSelected && <Check className="size-3.5" />}
-                      </button>
-                    );
-                  })}
-                  {courts.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (hold) return;
-                        setCourtIds(courts.map((c) => c.id));
-                        setSelected([]);
-                      }}
-                      className={cn(
-                        "inline-flex min-h-[40px] items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition-all",
-                        courtIds.length === courts.length
-                          ? "bg-pine text-white shadow-xs"
-                          : "border border-line-warm bg-white text-ink hover:bg-cream",
-                      )}
-                    >
-                      <span>All Courts ({courts.length})</span>
-                      {courtIds.length === courts.length && <Check className="size-3.5" />}
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-
-            <div className="mb-4 flex items-center gap-2">
-              <h2
-                ref={panelHeadingRef}
-                tabIndex={-1}
-                id="slots-heading"
-                className="text-lg font-extrabold tracking-tight text-ink outline-none sm:text-xl"
-              >
-                Available Time Slots
-              </h2>
-            </div>
-
-          {courtIds.length === 0 ? (
-            <p className="rounded-xl border border-line-warm/60 bg-white p-4 text-sm text-warm-muted">
-              No courts listed right now — check back soon.
-            </p>
-          ) : loadingAvail && !avail ? (
-              <div className="flex min-h-32 items-center justify-center">
-                <LoadingAnimation label="Loading available court times" />
-              </div>
-          ) : availFailed || !avail ? (
-            <div className="rounded-xl border border-line-warm/60 bg-white p-4 text-sm">
-              <p className="text-warm-muted">Could not load availability for this date.</p>
-              <button
-                type="button"
-                onClick={() => setRetryKey((k) => k + 1)}
-                className="mt-2 inline-flex min-h-[44px] items-center font-bold text-flame hover:text-flame-hover hover:underline"
-              >
-                Retry
-              </button>
-            </div>
-          ) : (
-            <>
-              <div className="mb-7">
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex min-w-0 items-center gap-1.5 text-xs font-bold text-ink">
-                    <Sun className="size-[17px] text-flame" aria-hidden />
-                    <span>Morning (06:00 AM – 06:00 PM)</span>
-                    <span className="font-extrabold text-flame">• {peso(rates.morning)}/hr</span>
-                  </div>
-                  <span className="text-[11px] font-semibold text-warm-muted">
-                    {daySlots.length} Day Slots
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4" role="group" aria-label="Daytime slots">
-                  {daySlots.map((iso) => renderSlotButton(iso))}
-                </div>
-              </div>
-
-              <div>
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex min-w-0 items-center gap-1.5 text-xs font-bold text-ink">
-                    <Moon className="size-[17px] text-pine" aria-hidden />
-                    <span>Evening (06:00 PM – 03:00 AM)</span>
-                    <span className="font-extrabold text-flame">• {peso(rates.evening)}/hr</span>
-                  </div>
-                  <span className="text-[11px] font-semibold text-warm-muted">
-                    {nightSlots.length} Night Slots
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4" role="group" aria-label="Evening and night slots">
-                  {nightSlots.map((iso) => renderSlotButton(iso))}
-                </div>
-              </div>
-            </>
-          )}
-
-          <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-line-warm/40 pt-4 text-xs text-warm-muted">
-            <div className="flex items-center gap-2">
-              <Info className="size-[18px] text-pine" aria-hidden />
-              <span>
-                Selected:{" "}
-                <strong className="font-bold text-pine">
-                  {selectedSorted.length} hour{selectedSorted.length === 1 ? "" : "s"}
-                </strong>{" "}
-                (Min 1 hr, max 12 hrs)
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={resetSlots}
-              disabled={hold !== null || selected.length === 0}
-              className="inline-flex min-h-[44px] items-center text-xs font-bold text-flame hover:underline disabled:cursor-not-allowed disabled:opacity-40 disabled:no-underline"
+        {/* ── Panel 3: Equipment ── */}
+        {panel === 3 && (
+          <div className="animate-rise motion-reduce:animate-none">
+            <h2
+              ref={panelHeadingRef}
+              tabIndex={-1}
+              className="text-base font-extrabold tracking-tight text-ink outline-none sm:text-lg"
             >
-              Reset Time Selection
-            </button>
-            <a
-              href="/"
-              className="inline-flex min-h-[44px] items-center text-xs font-semibold text-warm-muted transition-colors hover:text-ink lg:hidden"
-            >
-              Cancel
-            </a>
-          </div>
-          </div>
-          </div>
-          ) : (
-          /* Panel 3 — Equipment rentals */
-          <div key="panel-equipment" className="animate-rise motion-reduce:animate-none">
-            <h2 ref={panelHeadingRef} tabIndex={-1} className="text-lg font-extrabold tracking-tight text-ink outline-none sm:text-xl">
-              Equipment Rentals <span className="text-base font-semibold text-warm-muted">(Optional)</span>
+              Equipment Rentals <span className="text-sm font-semibold text-warm-muted">(Optional)</span>
             </h2>
             <p className="mt-1 text-sm text-warm-muted">
-              Add paddles or a ball set — the booking summary updates instantly.
+              Add paddles or a ball set — the summary updates instantly.
             </p>
-
             <div className="mt-5 space-y-4">
               {/* Paddle Rentals */}
               <div className="rounded-2xl border border-line-warm/60 bg-cream/40 p-4 sm:p-5">
@@ -1121,9 +1116,7 @@ export default function Step1DateTime({
                     >
                       −
                     </button>
-                    <span className="min-w-8 text-center text-base font-extrabold text-ink">
-                      {paddleQty}
-                    </span>
+                    <span className="min-w-8 text-center text-base font-extrabold text-ink">{paddleQty}</span>
                     <button
                       type="button"
                       onClick={() => setPaddleQty((q) => Math.min(50, q + 1))}
@@ -1142,9 +1135,7 @@ export default function Step1DateTime({
                 htmlFor="ball-toggle"
                 className={cn(
                   "flex cursor-pointer items-center gap-3.5 rounded-2xl border p-4 sm:p-5 transition-all select-none",
-                  ball
-                    ? "border-flame bg-flame-light/30 shadow-xs"
-                    : "border-line-warm/60 bg-cream/40 hover:bg-cream/70",
+                  ball ? "border-flame bg-flame-light/30 shadow-xs" : "border-line-warm/60 bg-cream/40 hover:bg-cream/70",
                 )}
               >
                 <div className="relative size-16 shrink-0 overflow-hidden rounded-xl border border-line-warm/60 bg-gradient-to-br from-oat via-cream to-flame-light sm:size-20">
@@ -1178,76 +1169,67 @@ export default function Step1DateTime({
               </label>
             </div>
           </div>
-          )}
-          </div>
+        )}
+      </div>
 
-          {/* Thumb-reachable controls at the card bottom */}
-          <div className="mt-6 flex items-center justify-between gap-3 border-t border-line-warm/40 pt-4">
-            {panel > 0 ? (
-              <button
-                type="button"
-                onClick={() => setPanel((panel - 1) as 0 | 1 | 2 | 3)}
-                className="inline-flex min-h-[44px] items-center gap-1 rounded-xl border border-line-warm/60 bg-white px-5 text-sm font-bold text-pine transition-all hover:bg-oat"
-              >
-                <ChevronLeft className="size-4" aria-hidden /> Back
-              </button>
-            ) : (
-              <a
-                href="/"
-                className="inline-flex min-h-[44px] items-center text-xs font-semibold text-warm-muted transition-colors hover:text-ink"
-              >
-                Cancel
-              </a>
-            )}
-            {panel === 0 ? (
-              <button
-                type="button"
-                onClick={() => goPanel(1)}
-                disabled={courtIds.length === 0}
-                className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-flame px-5 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
-              >
-                Continue to date <ArrowRight className="size-4" aria-hidden />
-              </button>
-            ) : panel === 1 ? (
-              <button
-                type="button"
-                onClick={() => goPanel(2)}
-                disabled={!selectedDate}
-                className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-flame px-5 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
-              >
-                Continue to time <ArrowRight className="size-4" aria-hidden />
-              </button>
-            ) : panel === 2 ? (
-              <button
-                type="button"
-                onClick={handleContinueCta}
-                disabled={ctaDisabled}
-                className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-flame px-5 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
-              >
-                {holding ? (
-                  <><LoadingAnimation size="compact" label="Holding selected court times" /> Holding…</>
-                ) : (
-                  <>Hold &amp; Add Equipment <ArrowRight className="size-4" aria-hidden /></>
-                )}
-              </button>
-            ) : (
-              /* Panel 3 — confirm equipment and proceed */
-              <button
-                type="button"
-                onClick={() => {
-                  if (!hold || !selectedDate) return;
-                  onHoldSuccess?.(hold, courtIds, selectedSorted, selectedDate, paddleQty, ball);
-                }}
-                disabled={!hold || !selectedDate}
-                className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-flame px-5 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
-              >
-                Continue to Details <ArrowRight className="size-4" aria-hidden />
-              </button>
-            )}
-          </div>
-        </section>
+      {/* Bottom controls */}
+      <div className="mt-6 flex items-center justify-between gap-3 border-t border-line-warm/40 pt-4">
+        {panel > 0 ? (
+          <button
+            type="button"
+            onClick={() => setPanel((panel - 1) as Panel)}
+            className="inline-flex min-h-[44px] items-center gap-1 rounded-xl border border-line-warm/60 bg-white px-5 text-sm font-bold text-pine transition-all hover:bg-oat"
+          >
+            <ChevronLeft className="size-4" aria-hidden /> Back
+          </button>
+        ) : (
+          <a
+            href="/"
+            className="inline-flex min-h-[44px] items-center text-xs font-semibold text-warm-muted transition-colors hover:text-ink"
+          >
+            Cancel
+          </a>
+        )}
+
+        {panel === 0 && (
+          <button
+            type="button"
+            onClick={() => {
+              if (!selectedDate) { toast.error("Pick a date first."); return; }
+              goPanel(1);
+            }}
+            disabled={!selectedDate}
+            className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-flame px-5 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
+          >
+            Choose courts <ArrowRight className="size-4" aria-hidden />
+          </button>
+        )}
+
+        {panel === 1 && (
+          <button
+            type="button"
+            onClick={() => goPanel(2)}
+            disabled={courtIds.length === 0}
+            className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-flame px-5 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
+          >
+            Pick times <ArrowRight className="size-4" aria-hidden />
+          </button>
+        )}
+
+        {panel === 3 && (
+          <button
+            type="button"
+            onClick={() => {
+              if (!hold || !selectedDate) return;
+              onHoldSuccess?.(hold, courtIds, selectedSorted, selectedDate, paddleQty, ball);
+            }}
+            disabled={!hold || !selectedDate}
+            className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-flame px-5 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
+          >
+            Continue to Details <ArrowRight className="size-4" aria-hidden />
+          </button>
+        )}
       </div>
     </div>
-    </>
   );
 }

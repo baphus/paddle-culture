@@ -19,7 +19,11 @@ export function getDb(): Db {
       "[db] runtime using :5432 direct connection — switch DATABASE_URL/DATABASE_POOLER_URL to pooler :6543; direct is migrations-only",
     );
   }
-  const client = postgres(poolerUrl, { prepare: false, max: 1 });
+  const client = postgres(poolerUrl, {
+    prepare: false,
+    max: 1,
+    connect_timeout: 10, // fail fast if DB is unreachable (seconds)
+  });
   db = drizzle(client, { schema });
   return db;
 }

@@ -341,3 +341,67 @@ export async function revenueByMonth(db: Db): Promise<RevenueMonthResult> {
 
   return { months, totalBookings, totalCents };
 }
+
+/** Fetch a single booking by ID with full detail (used by calendar booking-detail sheet). */
+export async function getBookingById(
+  db: Db,
+  id: string,
+): Promise<BookingDetail | null> {
+  const bookingRows = await db
+    .select()
+    .from(bookings)
+    .where(eq(bookings.id, id));
+  const booking = bookingRows[0];
+  if (!booking) return null;
+
+  const slotRows = await db
+    .select({
+      bookingId: bookingSlots.bookingId,
+      courtId: bookingSlots.courtId,
+      courtName: courts.name,
+      slotStart: bookingSlots.slotStart,
+    })
+    .from(bookingSlots)
+    .innerJoin(courts, eq(bookingSlots.courtId, courts.id))
+    .where(eq(bookingSlots.bookingId, id));
+
+  const rentalRows = await db
+    .select()
+    .from(bookingRentals)
+    .where(eq(bookingRentals.bookingId, id));
+
+  const proofRows = await db
+    .select({ path: paymentProofs.path })
+    .from(paymentProofs)
+    .where(eq(paymentProofs.bookingId, id));
+
+  const slots = slotRows
+    .slice()
+    .sort((a, c) => a.slotStart.getTime() - c.slotStart.getTime());
+  const rental = rentalRows[0];
+  const courtNames = [...new Set(slots.map((s) => s.courtName))].join(", ");
+
+  return {
+    id: booking.id,
+    fullName: booking.fullName,
+    email: booking.email,
+    phone: booking.phone,
+    total: booking.total,
+    status: booking.status,
+    rejectReason: booking.rejectReason,
+    createdAt: booking.createdAt.toISOString(),
+    trackingToken: booking.trackingToken,
+    courts: courtNames,
+    date: slots.length > 0 ? manilaDateStr(slots[0]!.slotStart) : "—",
+    slotLabels: slots.map((s) => slotLabel(s.slotStart)),
+    slots: slots.map((s) => ({
+      courtId: s.courtId,
+      courtName: s.courtName,
+      slotStart: s.slotStart.toISOString(),
+    })),
+    paddleQty: rental?.paddleQty ?? 0,
+    paddleHours: rental?.paddleHours ?? null,
+    hasBall: rental?.ballFee != null,
+    proofPath: proofRows[0]?.path ?? null,
+  };
+}

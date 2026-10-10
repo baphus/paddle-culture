@@ -18,7 +18,20 @@ export default async function CourtsPage() {
     );
   }
 
-  const courts = await listCourts(db);
+  let courts: Awaited<ReturnType<typeof listCourts>>;
+  try {
+    courts = await listCourts(db);
+  } catch (err) {
+    console.error("[courts] data fetch failed:", err);
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Courts" />
+        <p className="text-sm text-warm-muted">
+          Could not load data. Check your database connection and try again.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

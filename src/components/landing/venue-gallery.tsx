@@ -264,7 +264,7 @@ export default function VenueGallery() {
                 <span className="text-ink/80">{SLIDES[current].caption}</span>
               </p>
               <p className="mt-1.5 text-[11px] font-medium uppercase tracking-wide text-ink/40">
-                Book at ckgrounds.com
+                Book at ckgrounds.vercel.app
               </p>
             </div>
 

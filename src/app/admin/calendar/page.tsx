@@ -1,5 +1,12 @@
 import { getDb } from "@/db/client";
-import { getCalendarBookings, manilaDateToday, manilaYearMonth } from "@/lib/admin/calendar";
+import {
+  addDaysStr,
+  getCalendarBookings,
+  getCalendarBookingsRange,
+  manilaDateToday,
+  manilaYearMonth,
+  weekStartManila,
+} from "@/lib/admin/calendar";
 import CalendarView from "@/components/admin/calendar-view";
 import PageHeader from "@/components/admin/page-header";
 
@@ -22,15 +29,37 @@ export default async function CalendarPage({
   const { year: nowYear, month: nowMonth } = manilaYearMonth();
   const today = manilaDateToday();
 
+  const view = (first(sp.view) || "weekly") as "daily" | "weekly" | "monthly";
+
+  // ── monthly ──────────────────────────────────────────────────────────────
   const rawY = Number.parseInt(first(sp.y), 10);
   const rawM = Number.parseInt(first(sp.m), 10);
   const year = Number.isFinite(rawY) ? clamp(rawY, 2020, 2099) : nowYear;
   const month = Number.isFinite(rawM) ? clamp(rawM, 1, 12) : nowMonth;
 
-  let events = [] as Awaited<ReturnType<typeof getCalendarBookings>>;
+  // ── weekly / daily ────────────────────────────────────────────────────────
+  // anchor: ?date=YYYY-MM-DD — defaults to today
+  const rawDate = first(sp.date);
+  const anchorDate =
+    rawDate && /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : today;
+
+  // Weekly: Mon–Sun week containing anchorDate
+  const weekStart = weekStartManila(anchorDate);
+  const weekEnd = addDaysStr(weekStart, 7);
+
+  // Daily: just anchorDate → anchorDate+1
+  const dayEnd = addDaysStr(anchorDate, 1);
+
+  let events: Awaited<ReturnType<typeof getCalendarBookings>> = [];
   try {
     const db = getDb();
-    events = await getCalendarBookings(db, year, month);
+    if (view === "monthly") {
+      events = await getCalendarBookings(db, year, month);
+    } else if (view === "weekly") {
+      events = await getCalendarBookingsRange(db, weekStart, weekEnd);
+    } else {
+      events = await getCalendarBookingsRange(db, anchorDate, dayEnd);
+    }
   } catch {
     // DB not configured — render empty calendar
   }
@@ -48,7 +77,9 @@ export default async function CalendarPage({
           year={year}
           month={month}
           today={today}
-          mode="full"
+          view={view}
+          anchorDate={anchorDate}
+          weekStart={weekStart}
         />
       </div>
     </div>

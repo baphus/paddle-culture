@@ -24,6 +24,7 @@ ON CONFLICT (id) DO UPDATE SET
   allowed_mime_types = EXCLUDED.allowed_mime_types;
 
 -- Service role: full access (server mints upload + signed-read URLs).
+DROP POLICY IF EXISTS "proofs_service_role_all" ON storage.objects;
 CREATE POLICY "proofs_service_role_all"
 ON storage.objects FOR ALL
 TO service_role
@@ -33,6 +34,7 @@ WITH CHECK (bucket_id = 'proofs');
 -- No public read: belt-and-braces explicit deny for anon/authenticated.
 -- (Signed URLs bypass RLS via service_role, so admin/customer reads keep
 -- working while direct bucket access stays closed.)
+DROP POLICY IF EXISTS "proofs_no_public_read" ON storage.objects;
 CREATE POLICY "proofs_no_public_read"
 ON storage.objects FOR SELECT
 TO anon, authenticated

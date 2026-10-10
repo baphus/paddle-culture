@@ -18,11 +18,26 @@ export default async function HoursPage() {
     );
   }
 
-  const [hours, closures, courts] = await Promise.all([
-    listHours(db),
-    listClosures(db),
-    listCourts(db),
-  ]);
+  let hours: Awaited<ReturnType<typeof listHours>>;
+  let closures: Awaited<ReturnType<typeof listClosures>>;
+  let courts: Awaited<ReturnType<typeof listCourts>>;
+  try {
+    [hours, closures, courts] = await Promise.all([
+      listHours(db),
+      listClosures(db),
+      listCourts(db),
+    ]);
+  } catch (err) {
+    console.error("[hours] data fetch failed:", err);
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Hours & Closures" />
+        <p className="text-sm text-warm-muted">
+          Could not load data. Check your database connection and try again.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

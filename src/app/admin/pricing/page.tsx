@@ -18,7 +18,20 @@ export default async function PricingPage() {
     );
   }
 
-  const rules = await listPricingRules(db);
+  let rules: Awaited<ReturnType<typeof listPricingRules>>;
+  try {
+    rules = await listPricingRules(db);
+  } catch (err) {
+    console.error("[pricing] data fetch failed:", err);
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Pricing" />
+        <p className="text-sm text-warm-muted">
+          Could not load data. Check your database connection and try again.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
