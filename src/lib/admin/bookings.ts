@@ -116,12 +116,20 @@ export async function listBookings(
   // ── Build the bookings query ──────────────────────────────────────────────
   // Count via range(0,0) + count:"exact" (one row, no body walk) so the
   // embedded filter applies to the count too.
-  let countQuery = db
-    .from("bookings")
-    .select("id", { count: "exact" })
-    .range(0, 0)
-    .gte("booking_slots.slot_start", lo)
-    .lt("booking_slots.slot_start", hi);
+  // booking_slots!inner must appear in the select when we filter on it;
+  // omit it (and the range filters) when there is no date range so we avoid
+  // an unnecessary join on every unfiltered count.
+  let countQuery = isDateFiltered
+    ? db
+        .from("bookings")
+        .select("id,booking_slots!inner(slot_start)", { count: "exact" })
+        .range(0, 0)
+        .gte("booking_slots.slot_start", lo)
+        .lt("booking_slots.slot_start", hi)
+    : db
+        .from("bookings")
+        .select("id", { count: "exact" })
+        .range(0, 0);
   let dataQuery = db
     .from("bookings")
     .select(
