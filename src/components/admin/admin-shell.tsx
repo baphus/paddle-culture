@@ -1,8 +1,23 @@
 "use client";
 
-import { useState } from "react";
-import { Menu } from "lucide-react";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import NextTopLoader from "nextjs-toploader";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
+import { Separator } from "@/components/ui/separator";
+import {
+  SidebarInset,
+  SidebarProvider,
+  SidebarTrigger,
+} from "@/components/ui/sidebar";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import AdminSidebar from "./admin-sidebar";
 
 interface Props {
@@ -12,50 +27,47 @@ interface Props {
 }
 
 export default function AdminShell({ email, name, children }: Props) {
-  const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+  const section = pathname.split("/")[2];
+  const label = section
+    ? section.charAt(0).toUpperCase() + section.slice(1)
+    : "Dashboard";
 
   return (
-    <div className="flex min-h-svh bg-cream">
-      {/* Desktop sidebar — fixed left column */}
-      <aside className="hidden w-56 shrink-0 border-r border-line bg-parchment lg:flex lg:flex-col">
-        <div className="sticky top-0 h-svh overflow-hidden">
-          <AdminSidebar email={email} name={name} />
-        </div>
-      </aside>
-
-      {/* Mobile sidebar sheet */}
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent
-          side="left"
-          className="w-56 border-r border-line bg-parchment p-0"
-          aria-label="Admin navigation"
-        >
-          <AdminSidebar email={email} name={name} onNavigate={() => setOpen(false)} />
-        </SheetContent>
-      </Sheet>
-
-      {/* Main area */}
-      <div className="flex min-w-0 flex-1 flex-col">
-        {/* Mobile topbar */}
-        <header className="flex h-14 items-center gap-3 border-b border-line bg-parchment px-4 lg:hidden">
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            aria-label="Open navigation"
-            className="grid size-9 place-items-center rounded-xl border border-line bg-white text-ink transition-colors hover:bg-oat"
-          >
-            <Menu className="size-4" aria-hidden />
-          </button>
-          <span className="text-sm font-extrabold tracking-tight text-ink">
-            CK Grounds Admin
-          </span>
-        </header>
-
-        {/* Page content */}
-        <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-          {children}
-        </main>
-      </div>
-    </div>
+    <TooltipProvider>
+      <NextTopLoader color="var(--primary)" showSpinner={false} />
+      <SidebarProvider>
+        <AdminSidebar email={email} name={name} />
+        <SidebarInset>
+          <header className="flex h-16 shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
+            <div className="flex items-center gap-2 px-4">
+              <SidebarTrigger className="-ml-1" />
+              <Separator
+                orientation="vertical"
+                className="mr-2 data-[orientation=vertical]:h-4"
+              />
+              <Breadcrumb>
+                <BreadcrumbList>
+                  <BreadcrumbItem>
+                    <BreadcrumbLink render={<Link href="/admin" />}>
+                      Admin
+                    </BreadcrumbLink>
+                  </BreadcrumbItem>
+                  {section ? (
+                    <>
+                      <BreadcrumbSeparator />
+                      <BreadcrumbItem>
+                        <BreadcrumbPage>{label}</BreadcrumbPage>
+                      </BreadcrumbItem>
+                    </>
+                  ) : null}
+                </BreadcrumbList>
+              </Breadcrumb>
+            </div>
+          </header>
+          <div className="flex flex-1 flex-col gap-4 p-4 pt-0">{children}</div>
+        </SidebarInset>
+      </SidebarProvider>
+    </TooltipProvider>
   );
 }

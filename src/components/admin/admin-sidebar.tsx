@@ -1,8 +1,9 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import {
   BarChart2,
   BookOpen,
@@ -15,7 +16,19 @@ import {
   Settings,
   Users,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarRail,
+} from "@/components/ui/sidebar";
 
 const NAV_ITEMS = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
@@ -35,16 +48,19 @@ const CONFIG_ITEMS = [
 interface Props {
   email: string;
   name: string | null;
-  onNavigate?: () => void;
 }
 
-export default function AdminSidebar({ email, name, onNavigate }: Props) {
+export default function AdminSidebar({ email, name }: Props) {
   const pathname = usePathname();
   const router = useRouter();
 
+  // Highlight flips on press; pathname takes over once navigation lands.
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+  useEffect(() => setPendingHref(null), [pathname]);
+
   function isActive(href: string, exact?: boolean) {
-    if (exact) return pathname === href;
-    return pathname.startsWith(href);
+    if (pendingHref) return pendingHref === href;
+    return exact ? pathname === href : pathname.startsWith(href);
   }
 
   async function logout() {
@@ -54,113 +70,109 @@ export default function AdminSidebar({ email, name, onNavigate }: Props) {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Brand */}
-      <div className="flex items-center gap-2.5 border-b border-line px-5 py-4">
-        <Link href="/" aria-label="Back to CK Grounds site">
-          <Image
-            src="/logo.jpg"
-            alt="CK Grounds"
-            width={34}
-            height={34}
-            className="size-[34px] rounded-full object-cover"
-          />
-        </Link>
-        <div className="min-w-0">
-          <p className="truncate text-[13px] font-extrabold tracking-tight text-ink">
-            CK Grounds
-          </p>
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-warm-muted">
-            Admin
-          </p>
-        </div>
-      </div>
-
-      {/* Nav */}
-      <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Admin navigation">
-        <div className="space-y-0.5">
-          {NAV_ITEMS.map(({ href, label, icon: Icon, ...rest }) => {
-          const exact = "exact" in rest ? rest.exact : undefined;
-          return (
-            <Link
-              key={href}
-              href={href}
-              onClick={onNavigate}
-              className={cn(
-                "flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors",
-                isActive(href, exact)
-                  ? "bg-flame/10 text-flame"
-                  : "text-ink/70 hover:bg-oat hover:text-ink",
-              )}
-              aria-current={isActive(href, exact) ? "page" : undefined}
+    <Sidebar collapsible="icon">
+      <SidebarHeader>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              size="lg"
+              tooltip="CK Grounds"
+              render={<Link href="/" aria-label="Back to CK Grounds site" />}
             >
-              <Icon
-                className={cn(
-                  "size-4 shrink-0",
-                  isActive(href, exact) ? "text-flame" : "text-ink/50",
-                )}
-                aria-hidden
+              <Image
+                src="/logo.jpg"
+                alt="CK Grounds"
+                width={32}
+                height={32}
+                className="size-8 rounded-full object-cover"
               />
-              {label}
-            </Link>
-          );
-        })}
-        </div>
+              <div className="grid flex-1 text-left text-sm leading-tight">
+                <span className="truncate font-medium">CK Grounds</span>
+                <span className="truncate text-xs text-muted-foreground">
+                  Admin
+                </span>
+              </div>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarHeader>
 
-        <div className="mt-5">
-          <p className="mb-1.5 px-3 text-[10px] font-bold uppercase tracking-widest text-warm-muted">
-            Config
-          </p>
-          <div className="space-y-0.5">
-            {CONFIG_ITEMS.map(({ href, label, icon: Icon }) => (
-              <Link
-                key={href}
-                href={href}
-                onClick={onNavigate}
-                className={cn(
-                  "flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors",
-                  isActive(href)
-                    ? "bg-flame/10 text-flame"
-                    : "text-ink/70 hover:bg-oat hover:text-ink",
-                )}
-                aria-current={isActive(href) ? "page" : undefined}
-              >
-                <Icon
-                  className={cn(
-                    "size-4 shrink-0",
-                    isActive(href) ? "text-flame" : "text-ink/50",
-                  )}
-                  aria-hidden
-                />
-                {label}
-              </Link>
-            ))}
-          </div>
-        </div>
-      </nav>
+      <SidebarContent>
+        <SidebarGroup>
+          <SidebarGroupLabel>Platform</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {NAV_ITEMS.map(({ href, label, icon: Icon, ...rest }) => {
+                const exact = "exact" in rest ? rest.exact : undefined;
+                const active = isActive(href, exact);
+                return (
+                  <SidebarMenuItem key={href}>
+                    <SidebarMenuButton
+                      render={<Link href={href} />}
+                      onClick={() => setPendingHref(href)}
+                      isActive={active}
+                      tooltip={label}
+                      aria-current={active ? "page" : undefined}
+                    >
+                      <Icon />
+                      <span>{label}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
 
-      {/* User footer */}
-      <div className="border-t border-line px-3 py-3">
-        <div className="mb-1 flex items-center gap-2.5 rounded-xl px-3 py-2">
-          <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-pine/10 text-[11px] font-bold text-pine">
+        <SidebarGroup>
+          <SidebarGroupLabel>Config</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {CONFIG_ITEMS.map(({ href, label, icon: Icon }) => {
+                const active = isActive(href);
+                return (
+                  <SidebarMenuItem key={href}>
+                    <SidebarMenuButton
+                      render={<Link href={href} />}
+                      onClick={() => setPendingHref(href)}
+                      isActive={active}
+                      tooltip={label}
+                      aria-current={active ? "page" : undefined}
+                    >
+                      <Icon />
+                      <span>{label}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
+
+      <SidebarFooter>
+        <div className="flex items-center gap-2 px-2 py-1.5 group-data-[collapsible=icon]:hidden">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-sidebar-primary text-xs font-medium text-sidebar-primary-foreground">
             {(name ?? email).charAt(0).toUpperCase()}
-          </div>
-          <div className="min-w-0 flex-1">
-            {name ? (
-              <p className="truncate text-[13px] font-semibold text-ink">{name}</p>
-            ) : null}
-            <p className="truncate text-[11px] text-warm-muted">{email}</p>
+          </span>
+          <div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
+            {name ? <span className="truncate font-medium">{name}</span> : null}
+            <span className="truncate text-xs text-muted-foreground">
+              {email}
+            </span>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={logout}
-          className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-semibold text-ink/60 transition-colors hover:bg-oat hover:text-ink"
-        >
-          <LogOut className="size-4 shrink-0" aria-hidden />
-          Sign out
-        </button>
-      </div>
-    </div>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton onClick={logout} tooltip="Sign out">
+              <LogOut />
+              <span>Sign out</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
+
+      <SidebarRail />
+    </Sidebar>
   );
 }

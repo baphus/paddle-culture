@@ -12,6 +12,14 @@ import {
   Settings,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -26,7 +34,6 @@ import { requireAdmin } from "@/lib/admin/session";
 import { getDashboardStats, type DashboardStats } from "@/lib/admin/dashboard";
 import { getCalendarBookings, manilaDateToday, manilaYearMonth } from "@/lib/admin/calendar";
 import { formatPesosFromCents, revenueByDay, revenueByMonth } from "@/lib/admin/bookings";
-import PageHeader from "@/components/admin/page-header";
 import CalendarView from "@/components/admin/calendar-view";
 import RevenueChartLoader from "@/components/admin/revenue-chart-loader";
 
@@ -78,18 +85,22 @@ export default async function AdminPage() {
   const chartMonthsPromise = safe(async () => (await revenueByMonth(getDb())).months, [] as MonthArr);
 
   return (
-    <div className="space-y-8">
-      <PageHeader
-        title={`Good ${getGreeting()}, ${session.name?.split(" ")[0] ?? "Admin"}`}
-        description="Here's what's happening at CK Grounds today."
-      />
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {`Good ${getGreeting()}, ${session.name?.split(" ")[0] ?? "Admin"}`}
+        </h1>
+        <p className="text-muted-foreground">
+          Here&apos;s what&apos;s happening at CK Grounds today.
+        </p>
+      </div>
 
       {/* Stat cards */}
       <Suspense
         fallback={
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {[0, 1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-[74px] rounded-xl bg-oat/60" />
+              <Skeleton key={i} className="h-[74px] rounded-xl" />
             ))}
           </div>
         }
@@ -98,55 +109,51 @@ export default async function AdminPage() {
       </Suspense>
 
       {/* Mini revenue chart */}
-      <section>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-bold text-ink">Revenue</h2>
-          <Link
-            href="/admin/revenue"
-            className="text-xs font-semibold text-flame hover:underline"
-          >
-            Full report →
-          </Link>
-        </div>
-        <div className="rounded-xl border border-line bg-white p-4">
-          <Suspense fallback={<Skeleton className="h-52 bg-oat/60" />}>
+      <Card>
+        <CardHeader className="border-b">
+          <CardTitle>Revenue</CardTitle>
+          <CardAction>
+            <Link href="/admin/revenue" className="text-sm text-muted-foreground hover:text-foreground">
+              Full report
+            </Link>
+          </CardAction>
+        </CardHeader>
+        <CardContent>
+          <Suspense fallback={<Skeleton className="h-52" />}>
             <MiniRevenueChart days={chartDaysPromise} months={chartMonthsPromise} />
           </Suspense>
-        </div>
-      </section>
+        </CardContent>
+      </Card>
 
       {/* Recent bookings */}
-      <section>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-bold text-ink">Recent bookings</h2>
-          <Link
-            href="/admin/bookings"
-            className="text-xs font-semibold text-flame hover:underline"
-          >
-            View all →
-          </Link>
-        </div>
-
-        <div className="overflow-hidden rounded-xl border border-line bg-white">
-          <Suspense fallback={<Skeleton className="h-32 bg-oat/60" />}>
+      <Card>
+        <CardHeader className="border-b">
+          <CardTitle>Recent bookings</CardTitle>
+          <CardAction>
+            <Link href="/admin/bookings" className="text-sm text-muted-foreground hover:text-foreground">
+              View all
+            </Link>
+          </CardAction>
+        </CardHeader>
+        <CardContent className="px-0">
+          <Suspense fallback={<Skeleton className="mx-4 h-32" />}>
             <RecentBookings stats={statsPromise} />
           </Suspense>
-        </div>
-      </section>
+        </CardContent>
+      </Card>
 
       {/* Mini calendar */}
-      <section>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-bold text-ink">This month</h2>
-          <Link
-            href="/admin/calendar"
-            className="text-xs font-semibold text-flame hover:underline"
-          >
-            Full calendar →
-          </Link>
-        </div>
-        <div className="overflow-hidden rounded-xl border border-line bg-white px-3 pb-3 pt-2">
-          <Suspense fallback={<Skeleton className="h-80 bg-oat/60" />}>
+      <Card>
+        <CardHeader className="border-b">
+          <CardTitle>This month</CardTitle>
+          <CardAction>
+            <Link href="/admin/calendar" className="text-sm text-muted-foreground hover:text-foreground">
+              Full calendar
+            </Link>
+          </CardAction>
+        </CardHeader>
+        <CardContent>
+          <Suspense fallback={<Skeleton className="h-80" />}>
             <MiniCalendar
               events={calendarPromise}
               year={calYear}
@@ -154,13 +161,13 @@ export default async function AdminPage() {
               today={today}
             />
           </Suspense>
-        </div>
-      </section>
+        </CardContent>
+      </Card>
 
       {/* Quick links */}
       <section>
-        <h2 className="mb-3 text-sm font-bold text-ink">Quick access</h2>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <h2 className="mb-3 text-sm font-medium text-muted-foreground">Quick access</h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <QuickLink href="/admin/bookings" icon={BookOpen} label="Manage Bookings" desc="Review, approve, or reject" />
           <QuickLink href="/admin/revenue" icon={BarChart2} label="Revenue" desc="Daily breakdown & chart" />
           <QuickLink href="/admin/audit" icon={ScrollText} label="Audit Log" desc="Full action history" />
@@ -183,28 +190,24 @@ async function StatCards({ stats: statsPromise }: { stats: Promise<DashboardStat
         label="Pending review"
         value={stats ? String(stats.pending) : "—"}
         icon={Clock}
-        accent={stats && stats.pending > 0 ? "flame" : "muted"}
         href="/admin/bookings?status=Pending"
       />
       <StatCard
         label="Approved today"
         value={stats ? String(stats.approvedToday) : "—"}
         icon={CalendarCheck}
-        accent="pine"
         href="/admin/bookings?status=Approved"
       />
       <StatCard
         label="Revenue today"
         value={stats ? formatPesosFromCents(stats.revenueToday) : "—"}
         icon={DollarSign}
-        accent="pine"
         href="/admin/revenue"
       />
       <StatCard
         label="All-time approved"
         value={stats ? stats.totalApproved.toLocaleString() : "—"}
         icon={BarChart2}
-        accent="muted"
         href="/admin/revenue"
       />
     </div>
@@ -227,57 +230,51 @@ async function RecentBookings({ stats: statsPromise }: { stats: Promise<Dashboar
 
   if (!stats || stats.recentBookings.length === 0) {
     return (
-      <div className="flex h-32 items-center justify-center text-sm text-warm-muted">
+      <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
         {stats ? "No bookings yet." : "Database not configured."}
       </div>
     );
   }
 
   return (
-    <div className="overflow-x-auto">
-      <Table>
-        <TableHeader>
-          <TableRow className="bg-oat/40 hover:bg-oat/40 border-b border-line">
-            <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">Name</TableHead>
-            <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">Courts</TableHead>
-            <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">Date</TableHead>
-            <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">Total</TableHead>
-            <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">Status</TableHead>
-            <TableHead className="px-4"></TableHead>
+    <Table>
+      <TableHeader>
+        <TableRow className="bg-muted/50 hover:bg-muted/50">
+          <TableHead className="px-4">Name</TableHead>
+          <TableHead className="px-4">Courts</TableHead>
+          <TableHead className="px-4">Date</TableHead>
+          <TableHead className="px-4">Total</TableHead>
+          <TableHead className="px-4">Status</TableHead>
+          <TableHead className="px-4"></TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {stats.recentBookings.map((b) => (
+          <TableRow key={b.id}>
+            <TableCell className="px-4 font-medium">{b.fullName}</TableCell>
+            <TableCell className="px-4 text-muted-foreground">{b.courts || "—"}</TableCell>
+            <TableCell className="px-4 text-muted-foreground">{b.date}</TableCell>
+            <TableCell className="px-4 font-medium">
+              ₱{Number(b.total).toLocaleString("en-PH", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
+            </TableCell>
+            <TableCell className="px-4">
+              <Badge variant={statusVariant(b.status)}>{b.status}</Badge>
+            </TableCell>
+            <TableCell className="px-4">
+              <Link
+                href="/admin/bookings"
+                className="text-sm text-muted-foreground hover:text-foreground"
+              >
+                View all
+              </Link>
+            </TableCell>
           </TableRow>
-        </TableHeader>
-        <TableBody>
-          {stats.recentBookings.map((b) => (
-            <TableRow key={b.id} className="border-b border-line/60 transition-colors hover:bg-oat/20">
-              <TableCell className="px-4 py-3 font-medium text-ink">
-                {b.fullName}
-              </TableCell>
-              <TableCell className="px-4 py-3 text-sm text-ink/70">{b.courts || "—"}</TableCell>
-              <TableCell className="px-4 py-3 text-sm text-ink/70">{b.date}</TableCell>
-              <TableCell className="px-4 py-3 text-sm font-semibold text-ink">
-                ₱{Number(b.total).toLocaleString("en-PH", {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-              </TableCell>
-              <TableCell className="px-4 py-3">
-                <Badge variant={statusVariant(b.status)} className="text-[11px]">
-                  {b.status}
-                </Badge>
-              </TableCell>
-              <TableCell className="px-4 py-3">
-                <Link
-                  href="/admin/bookings"
-                  className="text-xs font-semibold text-flame hover:underline"
-                >
-                  View all
-                </Link>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 
@@ -311,46 +308,24 @@ interface StatCardProps {
   label: string;
   value: string;
   icon: React.ComponentType<{ className?: string }>;
-  accent: "flame" | "pine" | "muted";
   href: string;
 }
 
-function StatCard({ label, value, icon: Icon, accent, href }: StatCardProps) {
-  const accentMap = {
-    flame: {
-      bg: "bg-flame/10",
-      icon: "text-flame",
-      value: "text-flame",
-    },
-    pine: {
-      bg: "bg-pine/10",
-      icon: "text-pine",
-      value: "text-pine",
-    },
-    muted: {
-      bg: "bg-oat",
-      icon: "text-warm-muted",
-      value: "text-ink",
-    },
-  };
-  const colors = accentMap[accent];
-
+function StatCard({ label, value, icon: Icon, href }: StatCardProps) {
   return (
     <Link
       href={href}
-      className="group flex items-center gap-4 rounded-xl border border-line bg-white p-4 transition-all hover:border-line-warm hover:shadow-[0_4px_16px_rgba(66,48,45,0.08)]"
+      className="rounded-xl outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <span className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${colors.bg}`}>
-        <Icon className={`size-5 ${colors.icon}`} />
-      </span>
-      <div className="min-w-0">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-warm-muted">
-          {label}
-        </p>
-        <p className={`mt-0.5 text-xl font-black tracking-tight ${colors.value}`}>
-          {value}
-        </p>
-      </div>
+      <Card size="sm" className="h-full">
+        <CardHeader>
+          <CardDescription>{label}</CardDescription>
+          <CardTitle className="text-2xl tabular-nums">{value}</CardTitle>
+          <CardAction>
+            <Icon className="size-4 text-muted-foreground" />
+          </CardAction>
+        </CardHeader>
+      </Card>
     </Link>
   );
 }
@@ -366,15 +341,17 @@ function QuickLink({ href, icon: Icon, label, desc }: QuickLinkProps) {
   return (
     <Link
       href={href}
-      className="flex items-center gap-3 rounded-xl border border-line bg-white p-4 transition-all hover:border-line-warm hover:shadow-[0_4px_16px_rgba(66,48,45,0.08)]"
+      className="rounded-xl outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-oat">
-        <Icon className="size-4 text-ink/60" />
-      </span>
-      <div className="min-w-0">
-        <p className="text-sm font-semibold text-ink">{label}</p>
-        <p className="text-[11px] text-warm-muted">{desc}</p>
-      </div>
+      <Card size="sm" className="h-full">
+        <CardContent className="flex items-center gap-3">
+          <Icon className="size-5 shrink-0 text-muted-foreground" />
+          <div className="min-w-0">
+            <p className="truncate font-medium">{label}</p>
+            <p className="truncate text-xs text-muted-foreground">{desc}</p>
+          </div>
+        </CardContent>
+      </Card>
     </Link>
   );
 }
