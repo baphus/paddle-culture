@@ -2,6 +2,8 @@ import QRCode from "qrcode";
 import {
   OUTBOX_TEMPLATE_CUSTOMER_SUBMITTED,
   OUTBOX_TEMPLATE_OWNER_ALERT,
+  VENUE_PHONE_DISPLAY,
+  VENUE_PHONE_LINK,
 } from "../booking/constants";
 
 // Transactional templates (ADR-05). Submit writes the first two; the
@@ -350,6 +352,10 @@ function emailShell(opts: { preheader: string; body: string }): string {
                   <p style="margin:0;font-size:12px;color:${BRAND.muted};line-height:1.6;">
                     This email was sent by the CK Grounds booking system.
                     Do not share your booking link with others.
+                  </p>
+                  <p style="margin:8px 0 0;font-size:12px;color:${BRAND.muted};line-height:1.6;">
+                    Questions? Call or text us at
+                    <a href="${VENUE_PHONE_LINK}" style="color:${BRAND.pine};">${VENUE_PHONE_DISPLAY}</a>.
                   </p>
                 </td>
               </tr>

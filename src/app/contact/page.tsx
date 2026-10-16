@@ -1,6 +1,7 @@
-import { CarFront, Clock, ExternalLink, Mail, MapPin } from "lucide-react";
+import { CarFront, Clock, ExternalLink, Mail, MapPin, Phone } from "lucide-react";
 import Header from "@/components/landing/header";
 import Footer from "@/components/landing/footer";
+import { VENUE_PHONE_DISPLAY, VENUE_PHONE_LINK } from "@/lib/booking/constants";
 
 const MAP_EMBED = "https://www.google.com/maps?q=Tabuelan,+Cebu,+Philippines&output=embed";
 const MAP_LINK = "https://www.google.com/maps/search/?api=1&query=Tabuelan+Cebu+Philippines";
@@ -61,6 +62,25 @@ export default function ContactPage() {
                 >
                   <Mail className="size-4 shrink-0 text-flame" aria-hidden />
                   {CONTACT_EMAIL}
+                </a>
+              </div>
+
+              {/* Phone */}
+              <div className="rounded-2xl border border-line bg-white p-6 shadow-sm">
+                <p className="flex items-center gap-2 text-[11px] font-extrabold tracking-[0.14em] text-flame uppercase">
+                  <Phone className="size-3.5" aria-hidden />
+                  Call or Text
+                </p>
+                <h2 className="mt-2 text-lg font-bold text-pine">Talk to Us</h2>
+                <p className="mt-1 text-[13px] leading-5 text-warm-muted">
+                  Available during operating hours for bookings and inquiries:
+                </p>
+                <a
+                  href={VENUE_PHONE_LINK}
+                  className="mt-4 flex items-center gap-2.5 rounded-xl border border-line bg-oat/60 px-4 py-3 text-sm font-bold text-ink transition-colors hover:border-flame/40 hover:text-flame"
+                >
+                  <Phone className="size-4 shrink-0 text-flame" aria-hidden />
+                  {VENUE_PHONE_DISPLAY}
                 </a>
               </div>
 

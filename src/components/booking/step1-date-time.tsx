@@ -769,8 +769,8 @@ export default function Step1DateTime({
           )}
         </div>
 
-        {/* Bottom bar: selection summary + CTA */}
-        <div className="sticky bottom-0 z-20 border-t border-line-warm/60 bg-white/95 backdrop-blur-sm px-4 py-3 flex items-center justify-between gap-3">
+        {/* Bottom bar: selection summary + CTA — desktop only; on mobile the summary sheet owns the bottom */}
+        <div className="sticky bottom-0 z-20 hidden border-t border-line-warm/60 bg-white/95 backdrop-blur-sm px-4 py-3 lg:flex items-center justify-between gap-3">
           <div className="text-sm">
             {selected.length === 0 ? (
               <span className="text-warm-muted">Tap a cell to select a slot</span>
@@ -784,6 +784,7 @@ export default function Step1DateTime({
             type="button"
             onClick={handleContinueCta}
             disabled={ctaDisabled}
+            id="step1-advance"
             className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-flame px-6 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
           >
             {holding ? (
@@ -1130,6 +1131,7 @@ export default function Step1DateTime({
         {panel === 0 && (
           <button
             type="button"
+            id="step1-advance"
             onClick={() => {
               if (!selectedDate) { toast.error("Pick a date first."); return; }
               goPanel(1);
@@ -1144,6 +1146,7 @@ export default function Step1DateTime({
         {panel === 2 && (
           <button
             type="button"
+            id="step1-advance"
             onClick={() => {
               if (!hold || !selectedDate) return;
               onHoldSuccess?.(hold, hold.courtIds, hold.slotStarts, selectedDate, paddleQty, ball);

@@ -27,7 +27,7 @@ export default function RootLayout({
     <html lang="en" className={cn("scroll-smooth", jakarta.variable)}>
       <body className="bg-cream font-sans text-ink">
         {children}
-        <Toaster richColors position="bottom-right" />
+        <Toaster richColors position="top-center" mobileOffset={{ top: "max(16px, env(safe-area-inset-top))" }} />
       </body>
     </html>
   );

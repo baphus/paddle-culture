@@ -1,6 +1,7 @@
 import Image from "next/image";
-import { Clock, Mail, MapPin } from "lucide-react";
+import { Clock, Mail, MapPin, Phone } from "lucide-react";
 import { FALLBACK_RATES, type DisplayRates } from "@/lib/pricing-display";
+import { VENUE_PHONE_DISPLAY, VENUE_PHONE_LINK } from "@/lib/booking/constants";
 
 const FB_LINK = "https://www.facebook.com/profile.php?id=61595287250420";
 
@@ -89,6 +90,16 @@ export default function Footer({ rates = FALLBACK_RATES }: { rates?: DisplayRate
             >
               <Mail className="size-4 shrink-0 text-flame" aria-hidden />
               ckgrounds1@gmail.com
+            </a>
+            <p className="pt-1 text-[11px] font-extrabold tracking-[0.12em] text-ink/50 uppercase">
+              Call or text
+            </p>
+            <a
+              href={VENUE_PHONE_LINK}
+              className="flex items-center gap-2 text-[13px] font-bold text-ink hover:text-flame hover:underline"
+            >
+              <Phone className="size-4 shrink-0 text-flame" aria-hidden />
+              {VENUE_PHONE_DISPLAY}
             </a>
             <p className="pt-1 text-[11px] font-extrabold tracking-[0.12em] text-ink/50 uppercase">
               Facebook

@@ -191,6 +191,7 @@ export default function DetailsForm({
 
         <button
           type="submit"
+          id="details-advance"
           disabled={busy}
           className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-flame px-7 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:opacity-50"
         >

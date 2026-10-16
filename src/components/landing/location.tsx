@@ -1,5 +1,6 @@
-import { CarFront, Clock, ExternalLink, MapPin } from "lucide-react";
+import { CarFront, Clock, ExternalLink, MapPin, Phone } from "lucide-react";
 import { FALLBACK_RATES, type DisplayRates } from "@/lib/pricing-display";
+import { VENUE_PHONE_DISPLAY, VENUE_PHONE_LINK } from "@/lib/booking/constants";
 
 const MAP_EMBED =
   "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d491.4386556!2d123.8695702!3d10.8232574!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x33a85725c976d467%3A0x3ec0c36bd48bb35!2sRVF9%2B6XW%2C+Poblacion%2C+Tabuelan%2C+Cebu!5e0!3m2!1sen!2sph!4v1700000000000!5m2!1sen!2sph";
@@ -62,6 +63,20 @@ export default function Location({ rates = FALLBACK_RATES }: { rates?: DisplayRa
                   <span className="block text-[13px] leading-5 text-ink/70">
                     Dedicated vehicle and motorcycle parking with 24/7 security.
                   </span>
+                </span>
+              </li>
+              <li className="flex items-start gap-3 rounded-2xl border border-line bg-cream p-4">
+                <span className="grid size-9 shrink-0 place-items-center rounded-full bg-flame-light text-flame">
+                  <Phone className="size-4" aria-hidden />
+                </span>
+                <span>
+                  <span className="block text-sm font-extrabold text-ink">Call or Text</span>
+                  <a
+                    href={VENUE_PHONE_LINK}
+                    className="block text-[13px] text-ink/70 hover:text-flame hover:underline"
+                  >
+                    {VENUE_PHONE_DISPLAY}
+                  </a>
                 </span>
               </li>
             </ul>

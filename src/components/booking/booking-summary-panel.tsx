@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
+  ArrowRight,
   Calendar,
   ChevronDown,
   ChevronUp,
@@ -171,6 +172,15 @@ function computeBreakdown(
 }
 
 // ---- Desktop sticky panel ---------------------------------------------------
+
+/** Advance control for the mobile sheet — reuses the step's own CTA via its
+ *  element id, so hold/validation/payment logic is never duplicated here. */
+export interface SummaryAdvance {
+  /** id of the step's real advance button (clicked programmatically) */
+  targetId: string;
+  label: string;
+  disabled: boolean;
+}
 
 export function BookingSummaryDesktop({ data }: { data: SummaryData }) {
   const { selectedDate, selectedSlots, courtNames, rates, paddleQty, ball, isHeld, holdDeadlineMs } = data;
@@ -394,7 +404,7 @@ export function BookingSummaryDesktop({ data }: { data: SummaryData }) {
 
 // ---- Mobile bottom sheet ----------------------------------------------------
 
-export function BookingSummaryMobile({ data }: { data: SummaryData }) {
+export function BookingSummaryMobile({ data, advance }: { data: SummaryData; advance: SummaryAdvance | null }) {
   const [open, setOpen] = useState(false);
   const { selectedDate, selectedSlots, courtNames, rates, paddleQty, ball, isHeld, holdDeadlineMs } = data;
 
@@ -426,16 +436,11 @@ export function BookingSummaryMobile({ data }: { data: SummaryData }) {
         />
       )}
 
-      {/* Bottom sheet */}
-      <div
-        className={cn(
-          "fixed inset-x-0 bottom-0 z-50 lg:hidden transition-transform duration-300",
-          open ? "translate-y-0" : "translate-y-[calc(100%-56px)]",
-        )}
-      >
+      {/* Bottom sheet — collapsed = pill only (body hidden), always flush at viewport bottom */}
+      <div className="fixed inset-x-0 bottom-0 z-50 lg:hidden">
         <div
           className={cn(
-            "mx-auto max-w-lg rounded-t-2xl border-t shadow-[0_-8px_32px_rgba(66,48,45,0.18)]",
+            "mx-auto max-w-lg rounded-t-2xl border border-b-0 shadow-[0_-8px_32px_rgba(66,48,45,0.18)]",
             isHeld && holdDeadlineMs !== null && urgent
               ? "border-error/40 bg-error/10"
               : isHeld && holdDeadlineMs !== null
@@ -443,16 +448,17 @@ export function BookingSummaryMobile({ data }: { data: SummaryData }) {
                 : "border-line-warm/60 bg-cream",
           )}
         >
-          {/* Collapsed pill — always visible */}
+          {/* Pill header — always visible; centered grabber + chevron, tall touch target */}
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}
             aria-expanded={open}
             aria-controls="mobile-summary-body"
-            className="flex w-full items-center justify-between gap-3 px-4 py-3"
+            className="flex min-h-[68px] w-full flex-col items-center justify-center gap-1 px-4 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2"
           >
-            <div className="flex min-w-0 flex-1 items-center gap-3">
-              <div
+            <span aria-hidden className="h-1.5 w-12 shrink-0 rounded-full bg-ink/15" />
+            <span className="flex w-full min-w-0 flex-1 items-center gap-3">
+              <span
                 className={cn(
                   "grid size-7 shrink-0 place-items-center rounded-full text-white",
                   isHeld && holdDeadlineMs !== null && urgent ? "bg-error" : "bg-flame",
@@ -463,46 +469,46 @@ export function BookingSummaryMobile({ data }: { data: SummaryData }) {
                 ) : (
                   <Receipt className="size-3.5" aria-hidden />
                 )}
-              </div>
+              </span>
               {/* Show countdown in pill when held */}
-              {isHeld && holdDeadlineMs !== null ? (
-                <div role="timer" aria-live="polite" className="min-w-0">
-                  <p className={cn("text-sm font-bold leading-tight", urgent ? "text-error" : "text-amber-800")}>
-                    Hold expires in{" "}
-                    <strong className={cn("font-extrabold", urgent ? "text-error" : "text-amber-700")}>
-                      {countdownLabel}
-                    </strong>
-                  </p>
-                  {hasSlots && (
-                    <p className="text-[11px] text-warm-muted">
-                      {durationLabel} · <span className="font-extrabold text-flame">{peso(total)}</span>
-                    </p>
-                  )}
-                </div>
-              ) : hasSlots ? (
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-bold text-ink leading-tight">{rangeLabel}</p>
-                  <p className="text-[11px] text-warm-muted">
-                    {durationLabel} ·{" "}
-                    <span className="font-extrabold text-flame">{peso(total)}</span>
-                  </p>
-                </div>
-              ) : (
-                <p className="truncate text-sm font-semibold text-ink">Booking Summary</p>
-              )}
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
+              <span className="min-w-0 flex-1 text-left">
+                {isHeld && holdDeadlineMs !== null ? (
+                  <span role="timer" aria-live="polite" className="block min-w-0">
+                    <span className={cn("block text-sm font-bold leading-tight", urgent ? "text-error" : "text-amber-800")}>
+                      Hold expires in{" "}
+                      <strong className={cn("font-extrabold", urgent ? "text-error" : "text-amber-700")}>
+                        {countdownLabel}
+                      </strong>
+                    </span>
+                    {hasSlots && (
+                      <span className="block text-[11px] text-warm-muted">
+                        {durationLabel} · <span className="font-extrabold text-flame">{peso(total)}</span>
+                      </span>
+                    )}
+                  </span>
+                ) : hasSlots ? (
+                  <span className="block min-w-0">
+                    <span className="block truncate text-sm font-bold text-ink leading-tight">{rangeLabel}</span>
+                    <span className="block text-[11px] text-warm-muted">
+                      {durationLabel} ·{" "}
+                      <span className="font-extrabold text-flame">{peso(total)}</span>
+                    </span>
+                  </span>
+                ) : (
+                  <span className="block truncate text-sm font-semibold text-ink">Booking Summary</span>
+                )}
+              </span>
               {isHeld && holdDeadlineMs === null && (
-                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
                   Held
                 </span>
               )}
-              {open ? (
-                <ChevronDown className="size-4 text-warm-muted" aria-hidden />
-              ) : (
-                <ChevronUp className="size-4 text-warm-muted" aria-hidden />
-              )}
-            </div>
+            </span>
+            {open ? (
+              <ChevronDown className="size-4 shrink-0 text-warm-muted" aria-hidden />
+            ) : (
+              <ChevronUp className="size-4 shrink-0 text-warm-muted" aria-hidden />
+            )}
           </button>
 
           {/* Expanded body */}
@@ -618,12 +624,25 @@ export function BookingSummaryMobile({ data }: { data: SummaryData }) {
                 </div>
               </div>
             )}
+
+            {/* Continue — fires the step's own CTA, so hold/validation/payment logic stays in one place */}
+            {advance && (
+              <button
+                type="button"
+                onClick={() => document.getElementById(advance.targetId)?.click()}
+                disabled={advance.disabled}
+                className="mt-4 inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-flame px-6 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
+              >
+                <span>{advance.label}</span>
+                <ArrowRight className="size-4" aria-hidden />
+              </button>
+            )}
           </div>
         </div>
       </div>
 
       {/* Spacer */}
-      <div className="h-14 lg:hidden" aria-hidden />
+      <div className="h-20 lg:hidden" aria-hidden />
     </>
   );
 }

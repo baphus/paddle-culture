@@ -21,6 +21,7 @@ import Step1DateTime, { type HoldState } from "./step1-date-time";
 import {
   BookingSummaryDesktop,
   BookingSummaryMobile,
+  type SummaryAdvance,
   type SummaryData,
 } from "./booking-summary-panel";
 
@@ -276,6 +277,21 @@ export default function BookingFlow({
 
   const showSummaryPanel = step !== "confirmation";
 
+  // Mobile sheet Continue — clicks the step's own CTA by id, so the real
+  // hold/validation/submit path (including disabled states) always runs.
+  const summaryAdvance: SummaryAdvance | null =
+    step === "select"
+      ? {
+          targetId: "step1-advance",
+          label: hold ? "Continue to Details" : "Hold & Continue",
+          disabled: selectedSlots.length === 0,
+        }
+      : step === "details"
+        ? { targetId: "details-advance", label: "Continue to Payment", disabled: false }
+        : step === "payment"
+          ? { targetId: "payment-advance", label: "Submit Booking", disabled: false }
+          : null;
+
   return (
     <div className="space-y-6">
       {/* Stepper Navigation Indicator */}
@@ -436,7 +452,7 @@ export default function BookingFlow({
       ) : null}
 
       {/* Mobile floating summary — steps 1–3 */}
-      {showSummaryPanel && <BookingSummaryMobile data={summaryData} />}
+      {showSummaryPanel && <BookingSummaryMobile data={summaryData} advance={summaryAdvance} />}
 
       {/* Step 4: Confirmation */}
       {step === "confirmation" && result && details && (

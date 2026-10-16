@@ -424,6 +424,7 @@ export default function PaymentStep({
 
         <button
           type="button"
+          id="payment-advance"
           onClick={handleSubmit}
           disabled={busy || uploading || !proof}
           className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-flame px-7 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:opacity-50"
