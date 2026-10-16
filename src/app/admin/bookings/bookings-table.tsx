@@ -2,15 +2,19 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  AdminFilterDropdown,
+  FilterGroupSection,
+} from "@/components/admin/admin-filter-dropdown";
 import {
   BOOKINGS_PAGE_SIZE,
   BOOKING_STATUSES,
   type BookingDetail,
 } from "@/lib/admin/bookings";
 import { columns } from "./columns";
-import BookingsFilterDropdown from "./bookings-filter-dropdown";
 
 export interface BookingsFilters {
   q: string;
@@ -53,41 +57,82 @@ export default function BookingsTable({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q]);
 
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-1.5">
-        {["all", ...BOOKING_STATUSES].map((s) => (
-          <Button
-            key={s}
-            type="button"
-            size="sm"
-            variant={filters.status === s ? "default" : "outline"}
-            className="rounded-full"
-            onClick={() => router.push(href({ status: s }))}
-          >
-            {s === "all" ? "All" : s}
-          </Button>
-        ))}
-        <BookingsFilterDropdown
-          q={filters.q}
-          status={filters.status}
-          from={filters.from}
-          to={filters.to}
-        />
-      </div>
+  const filterActions = (
+    <AdminFilterDropdown
+      label={filters.status !== "all" ? `Filter: ${filters.status}` : "Filter"}
+      count={[filters.from, filters.to].filter(Boolean).length}
+      onApply={(values) =>
+        router.push(
+          href({
+            status: values.status || "all",
+            from: values.from ?? "",
+            to: values.to ?? "",
+          }),
+        )
+      }
+      onReset={() => router.push(href({ status: "all", from: "", to: "" }))}
+    >
+      <FilterGroupSection title="Status">
+        <div className="flex flex-col gap-1.5">
+          {["all", ...BOOKING_STATUSES].map((s) => (
+            <label key={s} className="flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                name="status"
+                value={s}
+                defaultChecked={filters.status === s}
+                className="size-3.5 accent-primary"
+              />
+              {s === "all" ? "All" : s}
+            </label>
+          ))}
+        </div>
+      </FilterGroupSection>
 
-      <DataTable
-        columns={columns}
-        data={rows}
-        manualPagination
-        pageCount={pageCount}
-        pageIndex={page - 1}
-        onPageChange={(p) => router.push(href({ page: p + 1 }))}
-        searchValue={q}
-        onSearchChange={setQ}
-        placeholder="Search by name…"
-        pageSize={BOOKINGS_PAGE_SIZE}
-      />
-    </div>
+      <FilterGroupSection title="Date Range">
+        <div className="flex flex-col gap-2">
+          <div className="space-y-0.5">
+            <Label htmlFor="filter-from" className="text-[11px] font-semibold">
+              From
+            </Label>
+            <Input
+              id="filter-from"
+              name="from"
+              type="date"
+              defaultValue={filters.from}
+              className="w-full"
+            />
+          </div>
+          <div className="space-y-0.5">
+            <Label htmlFor="filter-to" className="text-[11px] font-semibold">
+              To
+            </Label>
+            <Input
+              id="filter-to"
+              name="to"
+              type="date"
+              defaultValue={filters.to}
+              className="w-full"
+            />
+          </div>
+        </div>
+      </FilterGroupSection>
+    </AdminFilterDropdown>
+  );
+
+  return (
+    <DataTable
+      columns={columns}
+      data={rows}
+      manualPagination
+      pageCount={pageCount}
+      pageIndex={page - 1}
+      onPageChange={(p) => router.push(href({ page: p + 1 }))}
+      searchValue={q}
+      onSearchChange={setQ}
+      placeholder="Search by name…"
+      pageSize={BOOKINGS_PAGE_SIZE}
+      actions={filterActions}
+    />
   );
 }

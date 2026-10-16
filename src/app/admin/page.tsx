@@ -5,18 +5,23 @@ import { addDays, subDays } from "date-fns";
 import {
   BarChart2,
   BookOpen,
+  BookOpenCheck,
   CalendarCheck,
   Clock,
   DollarSign,
   ScrollText,
   Settings,
+  TrendingDown,
+  TrendingUp,
 } from "lucide-react";
+import { BookingStatusBadge } from "@/components/admin/status-badge";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardAction,
   CardContent,
   CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -32,21 +37,12 @@ import {
 import { getDb } from "@/db/client";
 import { requireAdmin } from "@/lib/admin/session";
 import { getDashboardStats, type DashboardStats } from "@/lib/admin/dashboard";
-import { getCalendarBookings, manilaDateToday, manilaYearMonth } from "@/lib/admin/calendar";
+import { manilaDateToday } from "@/lib/admin/calendar";
 import { formatPesosFromCents, revenueByDay, revenueByMonth } from "@/lib/admin/bookings";
-import CalendarView from "@/components/admin/calendar-view";
+import { manilaDateStr } from "@/lib/booking/slots";
 import RevenueChartLoader from "@/components/admin/revenue-chart-loader";
 
 export const dynamic = "force-dynamic";
-
-function statusVariant(
-  status: string,
-): "default" | "secondary" | "destructive" | "outline" {
-  if (status === "Approved") return "default";
-  if (status === "Rejected") return "destructive";
-  if (status === "Pending") return "secondary";
-  return "outline";
-}
 
 // DB not configured or query failure → empty fallback keeps the skeleton UI rendering
 function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
@@ -59,22 +55,15 @@ function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
 
 type DayArr = Awaited<ReturnType<typeof revenueByDay>>["days"];
 type MonthArr = Awaited<ReturnType<typeof revenueByMonth>>["months"];
-type CalEvents = Awaited<ReturnType<typeof getCalendarBookings>>;
 
 export default async function AdminPage() {
   const session = await requireAdmin();
 
-  const { year: calYear, month: calMonth } = manilaYearMonth();
-  const today = manilaDateToday();
   const todayStart = new TZDate(`${manilaDateToday()}T00:00:00`, "Asia/Manila") as unknown as Date;
 
   // Queries start here, but nothing awaits them yet: the shell below paints
   // immediately and each section streams in behind its own Suspense boundary.
   const statsPromise = safe(() => getDashboardStats(getDb()), null);
-  const calendarPromise = safe(
-    () => getCalendarBookings(getDb(), calYear, calMonth),
-    [] as CalEvents,
-  );
   const chartDaysPromise = safe(
     // Mini revenue chart data — last 30 days daily
     async () =>
@@ -100,12 +89,12 @@ export default async function AdminPage() {
         fallback={
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {[0, 1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-[74px] rounded-xl" />
+              <Skeleton key={i} className="h-[132px] rounded-xl" />
             ))}
           </div>
         }
       >
-        <StatCards stats={statsPromise} />
+        <StatCards stats={statsPromise} days={chartDaysPromise} />
       </Suspense>
 
       {/* Mini revenue chart */}
@@ -142,28 +131,6 @@ export default async function AdminPage() {
         </CardContent>
       </Card>
 
-      {/* Mini calendar */}
-      <Card>
-        <CardHeader className="border-b">
-          <CardTitle>This month</CardTitle>
-          <CardAction>
-            <Link href="/admin/calendar" className="text-sm text-muted-foreground hover:text-foreground">
-              Full calendar
-            </Link>
-          </CardAction>
-        </CardHeader>
-        <CardContent>
-          <Suspense fallback={<Skeleton className="h-80" />}>
-            <MiniCalendar
-              events={calendarPromise}
-              year={calYear}
-              month={calMonth}
-              today={today}
-            />
-          </Suspense>
-        </CardContent>
-      </Card>
-
       {/* Quick links */}
       <section>
         <h2 className="mb-3 text-sm font-medium text-muted-foreground">Quick access</h2>
@@ -182,33 +149,59 @@ export default async function AdminPage() {
 
 // ─── streamed sections ───────────────────────────────────────────────────────
 
-async function StatCards({ stats: statsPromise }: { stats: Promise<DashboardStats | null> }) {
-  const stats = await statsPromise;
+async function StatCards({
+  stats: statsPromise,
+  days: daysPromise,
+}: {
+  stats: Promise<DashboardStats | null>;
+  days: Promise<DayArr>;
+}) {
+  const [stats, days] = await Promise.all([statsPromise, daysPromise]);
+
+  // chartDays is [today-29 … today]; split it in half so each badge compares
+  // the trailing 15 days with the 15 before them (like-for-like periods).
+  const cutoff = manilaDateStr(subDays(new TZDate(Date.now(), "Asia/Manila"), 14));
+  const recent = days.filter((d) => d.date >= cutoff);
+  const prior = days.filter((d) => d.date < cutoff);
+  const total = (rows: DayArr, key: "revenueCents" | "bookings") =>
+    rows.reduce((sum, d) => sum + d[key], 0);
+
+  const revenueCents = total(recent, "revenueCents");
+  const bookings = total(recent, "bookings");
+
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <StatCard
+        label="Total Revenue"
+        value={stats ? formatPesosFromCents(revenueCents) : "—"}
+        icon={DollarSign}
+        href="/admin/revenue"
+        trend={pctChange(revenueCents, total(prior, "revenueCents"))}
+        trendLabel="vs prior 15 days"
+        subtitle="Last 15 days"
+      />
+      <StatCard
+        label="Total Bookings"
+        value={stats ? bookings.toLocaleString() : "—"}
+        icon={BookOpenCheck}
+        href="/admin/bookings"
+        trend={pctChange(bookings, total(prior, "bookings"))}
+        trendLabel="vs prior 15 days"
+        subtitle="Last 15 days"
+      />
       <StatCard
         label="Pending review"
         value={stats ? String(stats.pending) : "—"}
         icon={Clock}
         href="/admin/bookings?status=Pending"
+        subtitle="Awaiting decision"
       />
       <StatCard
         label="Approved today"
         value={stats ? String(stats.approvedToday) : "—"}
         icon={CalendarCheck}
         href="/admin/bookings?status=Approved"
-      />
-      <StatCard
-        label="Revenue today"
-        value={stats ? formatPesosFromCents(stats.revenueToday) : "—"}
-        icon={DollarSign}
-        href="/admin/revenue"
-      />
-      <StatCard
-        label="All-time approved"
-        value={stats ? stats.totalApproved.toLocaleString() : "—"}
-        icon={BarChart2}
-        href="/admin/revenue"
+        subtitle="Approved today"
       />
     </div>
   );
@@ -261,7 +254,7 @@ async function RecentBookings({ stats: statsPromise }: { stats: Promise<Dashboar
               })}
             </TableCell>
             <TableCell className="px-4">
-              <Badge variant={statusVariant(b.status)}>{b.status}</Badge>
+              <BookingStatusBadge status={b.status} />
             </TableCell>
             <TableCell className="px-4">
               <Link
@@ -275,23 +268,6 @@ async function RecentBookings({ stats: statsPromise }: { stats: Promise<Dashboar
         ))}
       </TableBody>
     </Table>
-  );
-}
-
-async function MiniCalendar({
-  events: eventsPromise,
-  year,
-  month,
-  today,
-}: {
-  events: Promise<CalEvents>;
-  year: number;
-  month: number;
-  today: string;
-}) {
-  const events = await eventsPromise;
-  return (
-    <CalendarView events={events} year={year} month={month} today={today} mode="mini" />
   );
 }
 
@@ -309,25 +285,63 @@ interface StatCardProps {
   value: string;
   icon: React.ComponentType<{ className?: string }>;
   href: string;
+  trend?: number | null;
+  trendLabel?: string;
+  subtitle: string;
 }
 
-function StatCard({ label, value, icon: Icon, href }: StatCardProps) {
+function StatCard({
+  label,
+  value,
+  icon: Icon,
+  href,
+  trend,
+  trendLabel,
+  subtitle,
+}: StatCardProps) {
+  const up = trend != null && trend >= 0;
   return (
     <Link
       href={href}
       className="rounded-xl outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <Card size="sm" className="h-full">
+      <Card className="@container/card h-full">
         <CardHeader>
-          <CardDescription>{label}</CardDescription>
-          <CardTitle className="text-2xl tabular-nums">{value}</CardTitle>
-          <CardAction>
-            <Icon className="size-4 text-muted-foreground" />
-          </CardAction>
+          <CardDescription className="flex items-center gap-2">
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+              <Icon className="size-4" />
+            </span>
+            {label}
+          </CardDescription>
+          <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
+            {value}
+          </CardTitle>
+          {trend != null ? (
+            <CardAction>
+              <Badge variant="outline">
+                {up ? <TrendingUp /> : <TrendingDown />}
+                {`${up ? "+" : ""}${trend.toFixed(1)}%`}
+              </Badge>
+            </CardAction>
+          ) : null}
         </CardHeader>
+        <CardFooter className="flex-col items-start gap-1.5 text-sm">
+          {trend != null && trendLabel ? (
+            <div className="line-clamp-1 flex gap-2 font-medium">
+              {trendLabel}
+              {up ? <TrendingUp className="size-4" /> : <TrendingDown className="size-4" />}
+            </div>
+          ) : null}
+          <div className="text-muted-foreground">{subtitle}</div>
+        </CardFooter>
       </Card>
     </Link>
   );
+}
+
+/** % change vs a prior period, or null when there is no baseline to compare. */
+function pctChange(current: number, prior: number): number | null {
+  return prior > 0 ? ((current - prior) / prior) * 100 : null;
 }
 
 interface QuickLinkProps {

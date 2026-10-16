@@ -8,6 +8,7 @@
 --   2. rpc_apply_decision       — approve/reject with outbox + audit
 --   3. rpc_claim_outbox_batch   — FOR UPDATE SKIP LOCKED email outbox claim
 --   4. rpc_delete_expired_holds — soft retention purge (used by retention cron)
+--   5. rpc_delete_expired_proofs — 90-day payment-proof prune (proof-prune cron)
 --
 -- The index at the bottom of this file (holds_live_unique_idx) is the one
 -- other piece of schema this app depends on: without it two customers can
@@ -445,3 +446,40 @@ DROP INDEX IF EXISTS holds_court_slot_idx;
 -- ===========================================================================
 CREATE INDEX IF NOT EXISTS holds_expires_at_idx ON holds (expires_at);
 CREATE INDEX IF NOT EXISTS payment_proofs_path_idx ON payment_proofs (path);
+
+
+-- ===========================================================================
+-- 7. rpc_delete_expired_proofs
+--    90-day payment-proof prune, called by the proof-prune cron
+--    (vercel.json: /api/cron/proof-prune, 1st of the month 03:00 UTC).
+--
+--    Deletes payment_proofs rows uploaded before the cutoff and returns their
+--    storage paths in one row, so the caller can remove the matching objects
+--    from the private `proofs` bucket (same two-store rule as the holds purge:
+--    the DB row goes first — an object without a row is invisible to the app).
+--
+--    Nothing references payment_proofs (it is the child of bookings via the
+--    booking_id PK / ON DELETE CASCADE), so unlike a bookings delete this can
+--    never be blocked by email_outbox or idempotency_keys FKs.
+--
+--    A proof whose booking is still 'Pending' is pruned too: a submission
+--    undecided for 90 days is abandoned, and the checkout rule is that old
+--    screenshots do not get to live forever.
+-- ===========================================================================
+CREATE OR REPLACE FUNCTION rpc_delete_expired_proofs(p_cutoff timestamptz)
+RETURNS TABLE (deleted_paths text[])
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  v_paths text[];
+BEGIN
+  WITH deleted AS (
+    DELETE FROM payment_proofs
+    WHERE uploaded_at < p_cutoff
+    RETURNING path
+  )
+  SELECT coalesce(array_agg(path), '{}'::text[]) INTO v_paths FROM deleted;
+
+  RETURN QUERY SELECT v_paths;
+END;
+$$;

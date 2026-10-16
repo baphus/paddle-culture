@@ -42,7 +42,7 @@ export default async function CalendarPage({
   const { year: nowYear, month: nowMonth } = manilaYearMonth();
   const today = manilaDateToday();
 
-  const view = (first(sp.view) || "weekly") as "daily" | "weekly" | "monthly";
+  const view = (first(sp.view) || "monthly") as "daily" | "weekly" | "monthly";
 
   // ── monthly ──────────────────────────────────────────────────────────────
   const rawY = Number.parseInt(first(sp.y), 10);

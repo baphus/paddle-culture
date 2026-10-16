@@ -1,18 +1,9 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
-import { Badge } from "@/components/ui/badge";
+import { BookingStatusBadge } from "@/components/admin/status-badge";
 import type { BookingDetail } from "@/lib/admin/bookings";
 import BookingActions from "./booking-actions";
-
-function statusVariant(
-  status: string,
-): "default" | "secondary" | "destructive" | "outline" {
-  if (status === "Approved") return "default";
-  if (status === "Rejected") return "destructive";
-  if (status === "Pending") return "secondary";
-  return "outline";
-}
 
 function pesos(total: string): string {
   return `₱${Number(total).toLocaleString("en-PH", {
@@ -81,11 +72,7 @@ export const columns: ColumnDef<BookingDetail>[] = [
   {
     accessorKey: "status",
     header: "Status",
-    cell: ({ row }) => (
-      <Badge variant={statusVariant(row.original.status)}>
-        {row.original.status}
-      </Badge>
-    ),
+    cell: ({ row }) => <BookingStatusBadge status={row.original.status} />,
   },
   {
     id: "actions",

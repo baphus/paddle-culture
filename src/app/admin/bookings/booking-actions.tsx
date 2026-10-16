@@ -23,7 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
+import { BookingStatusBadge } from "@/components/admin/status-badge";
 import type { BookingDetail } from "@/lib/admin/bookings";
 
 function pesos(total: string): string {
@@ -31,15 +31,6 @@ function pesos(total: string): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
-}
-
-function statusVariant(
-  status: string,
-): "default" | "secondary" | "destructive" | "outline" {
-  if (status === "Approved") return "default";
-  if (status === "Rejected") return "destructive";
-  if (status === "Pending") return "secondary";
-  return "outline";
 }
 
 export default function BookingActions({ booking }: { booking: BookingDetail }) {
@@ -158,9 +149,10 @@ export default function BookingActions({ booking }: { booking: BookingDetail }) 
                   {booking.email} · {booking.phone}
                 </SheetDescription>
               </div>
-              <Badge variant={statusVariant(booking.status)} className="mt-0.5 shrink-0">
-                {booking.status}
-              </Badge>
+              <BookingStatusBadge
+                status={booking.status}
+                className="mt-0.5 shrink-0"
+              />
             </div>
           </SheetHeader>
 

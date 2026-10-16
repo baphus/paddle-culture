@@ -103,10 +103,19 @@ abandoned). A scheduled job prunes them automatically — Vercel primary:
   submit transaction lazy-deletes expired holds, so these rows can never be
    referenced again. The function returns `{ ok, purgedHolds }` for the
    function logs.
-- **NEVER touched:** `bookings`, `booking_slots`, `payment_proofs`,
-  `email_outbox`, `audit_log` — kept for the 3-year retention default
-  (disputes, revenue history, append-only audit). No customer data is purged
-  by this job, ever.
+- **NEVER touched:** `bookings`, `booking_slots`, `email_outbox`, `audit_log` —
+  kept for the 3-year retention default (disputes, revenue history,
+  append-only audit). No customer data is purged by this job, ever.
+- **Proofs age out (monthly, 90 days):** `payment_proofs` rows *and* their
+  files in the `proofs` bucket are deleted
+  `PROOF_RETENTION_DAYS = 90` days after upload — Vercel:
+  `src/app/api/cron/proof-prune` (`vercel.json` `0 3 1 * *`, 1st of the month
+  03:00 UTC ≈ 11:00 Manila), RPC `rpc_delete_expired_proofs`. The row goes
+  first, then the bucket objects, so a Storage failure leaves an orphaned file
+  (logged with its path, HTTP 500, partial `{ ok: false, purgedProofs, filesRemoved, filesFailed }`)
+  and never a row pointing at a missing file. This is the only deletion that
+  touches customer-uploaded content; decide before running it whether the
+  booking record itself should keep a 90-day screenshot for disputes.
 - **Failure mode:** if the function errors (e.g. DB paused after idle), it
   logs and retries next Sunday — worst case is a few extra stale hold rows,
   never data loss. Wake the project if Supabase paused it.

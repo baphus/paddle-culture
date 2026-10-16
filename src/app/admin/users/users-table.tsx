@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Badge } from "@/components/ui/badge";
+import { UserStatusBadge } from "@/components/admin/status-badge";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
 import type { AdminUserRecord } from "@/lib/admin/users";
@@ -63,13 +63,7 @@ export default function UsersTable({
       {
         accessorKey: "status",
         header: "Status",
-        cell: ({ row }) => (
-          <Badge
-            variant={row.original.status === "active" ? "default" : "secondary"}
-          >
-            {row.original.status === "active" ? "Active" : "Deactivated"}
-          </Badge>
-        ),
+        cell: ({ row }) => <UserStatusBadge status={row.original.status} />,
       },
       {
         id: "actions",

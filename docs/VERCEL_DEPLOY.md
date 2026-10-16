@@ -221,17 +221,18 @@ If you get `{ "ok": false }` with status 401: the `CRON_SECRET` env var doesn't 
 
 ## Step 6 — Cron jobs
 
-The `vercel.json` file configures three crons that Vercel invokes automatically on Pro plans:
+The `vercel.json` file configures four crons that Vercel invokes automatically on Pro plans:
 
 | Cron | Schedule | Purpose |
 |---|---|---|
 | `/api/cron/outbox` | `0 2 * * *` — daily 02:00 UTC | Backstop email drain (primary send is inline after submit/approve/reject) |
 | `/api/cron/retention` | `0 2 * * 0` — Sunday 02:00 UTC | Purges expired holds older than 24 hours |
 | `/api/cron/keepalive` | `10 2 * * *` — daily 02:10 UTC | Keeps the Supabase project alive (prevents free-tier pause after 1 week idle) |
+| `/api/cron/proof-prune` | `0 3 1 * *` — 1st of the month 03:00 UTC | Deletes payment_proofs rows + `proofs` bucket files older than 90 days |
 
 Vercel invokes crons with `Authorization: Bearer <CRON_SECRET>`. Ensure `CRON_SECRET` is set in Vercel env and is the same value as what's in your environment.
 
-✅ Verify crons are registered: **Vercel Dashboard → Project → Cron Jobs** — all three should appear.
+✅ Verify crons are registered: **Vercel Dashboard → Project → Cron Jobs** — all four should appear.
 
 ---
 

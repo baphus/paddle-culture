@@ -1,5 +1,5 @@
 import type { ColumnDef } from "@tanstack/react-table";
-import { Badge } from "@/components/ui/badge";
+import { AuditActionBadge } from "@/components/admin/status-badge";
 
 export type AuditRow = {
   id: string;
@@ -27,15 +27,6 @@ function formatAt(dateStr: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
-}
-
-function actionVariant(
-  action: string,
-): "default" | "secondary" | "destructive" | "outline" {
-  if (action === "approve") return "default";
-  if (action === "create") return "secondary";
-  if (action === "reject" || action === "delete") return "destructive";
-  return "outline";
 }
 
 const summary = (value: unknown) => (
@@ -68,11 +59,7 @@ export function buildColumns(withDiff: boolean): ColumnDef<AuditRow>[] {
     {
       accessorKey: "action",
       header: "Action",
-      cell: ({ row }) => (
-        <Badge variant={actionVariant(row.original.action)}>
-          {row.original.action}
-        </Badge>
-      ),
+      cell: ({ row }) => <AuditActionBadge action={row.original.action} />,
     },
     {
       accessorKey: "entity",

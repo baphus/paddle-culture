@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
+import { BookingStatusBadge } from "@/components/admin/status-badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { LoadingAnimation } from "@/components/ui/loading-animation";
 import {
@@ -59,15 +59,6 @@ function eventColors(status: string) {
     default:
       return { pill: "bg-muted text-muted-foreground border-border", dot: "bg-muted-foreground" };
   }
-}
-
-function statusVariant(
-  status: string,
-): "default" | "secondary" | "destructive" | "outline" {
-  if (status === "Approved") return "default";
-  if (status === "Rejected") return "destructive";
-  if (status === "Pending") return "secondary";
-  return "outline";
 }
 
 function pesos(total: string): string {
@@ -707,12 +698,7 @@ function DailyView({
                     </p>
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1">
-                    <span className={cn(
-                      "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold",
-                      c.pill,
-                    )}>
-                      {ev.status}
-                    </span>
+                    <BookingStatusBadge status={ev.status} />
                     <span className="text-xs font-bold text-foreground">{pesos(ev.total)}</span>
                   </div>
                 </div>
@@ -790,12 +776,7 @@ function DayPanel({
                   </p>
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1.5">
-                  <span className={cn(
-                    "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold",
-                    c.pill,
-                  )}>
-                    {ev.status}
-                  </span>
+                  <BookingStatusBadge status={ev.status} />
                   <span className="text-xs font-bold text-foreground">{pesos(ev.total)}</span>
                   {isLoading && <LoadingAnimation size="compact" label="Loading" />}
                 </div>
@@ -905,9 +886,10 @@ function BookingDetailSheet({
               {booking.email} · {booking.phone}
             </SheetDescription>
           </div>
-          <Badge variant={statusVariant(booking.status)} className="mt-0.5 shrink-0 text-[11px]">
-            {booking.status}
-          </Badge>
+          <BookingStatusBadge
+            status={booking.status}
+            className="mt-0.5 shrink-0 text-[11px]"
+          />
         </div>
       </SheetHeader>
 

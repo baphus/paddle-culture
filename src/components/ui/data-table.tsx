@@ -93,6 +93,7 @@ export function DataTable<TData, TValue>({
   onPageChange,
   searchValue,
   onSearchChange,
+  actions,
 }: {
   columns: ColumnDef<TData, TValue>[]
   data: TData[]
@@ -107,6 +108,8 @@ export function DataTable<TData, TValue>({
   /** Controlled search (fired on every change); the parent owns server filtering. */
   searchValue?: string
   onSearchChange?: (value: string) => void
+  /** Extra toolbar controls, rendered in the search row right after the input. */
+  actions?: React.ReactNode
 }) {
   const [search, setSearch] = React.useState("")
   const [sorting, setSorting] = React.useState<SortingState>([])
@@ -161,12 +164,15 @@ export function DataTable<TData, TValue>({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <Input
-          value={onSearchChange ? (searchValue ?? "") : search}
-          onChange={(e) => onSearch(e.target.value)}
-          placeholder={placeholder}
-          className="max-w-xs"
-        />
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <Input
+            value={onSearchChange ? (searchValue ?? "") : search}
+            onChange={(e) => onSearch(e.target.value)}
+            placeholder={placeholder}
+            className="max-w-xs"
+          />
+          {actions}
+        </div>
         <ColumnVisibilityMenu table={table} />
       </div>
 

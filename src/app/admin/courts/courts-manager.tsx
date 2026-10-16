@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { PlusCircle } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { CourtStatusBadge } from "@/components/admin/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -118,9 +118,7 @@ export default function CourtsManager({ initial }: { initial: CourtRow[] }) {
                 <TableRow key={c.id}>
                   <TableCell className="font-medium">{c.name}</TableCell>
                   <TableCell>
-                    <Badge variant={c.status === "active" ? "default" : "secondary"}>
-                      {c.status === "active" ? "Active" : "Inactive"}
-                    </Badge>
+                    <CourtStatusBadge status={c.status} />
                   </TableCell>
                   <TableCell>
                     <Button

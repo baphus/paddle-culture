@@ -101,13 +101,15 @@ export default function AdminSidebar({ email, name }: Props) {
         <SidebarGroup>
           <SidebarGroupLabel>Platform</SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu>
+            <SidebarMenu className="gap-2">
               {NAV_ITEMS.map(({ href, label, icon: Icon, ...rest }) => {
                 const exact = "exact" in rest ? rest.exact : undefined;
                 const active = isActive(href, exact);
                 return (
                   <SidebarMenuItem key={href}>
                     <SidebarMenuButton
+                      size="lg"
+                      className="gap-3 px-3 data-active:bg-black! data-active:text-white! [&&_svg]:size-5! group-data-[collapsible=icon]:[&&_svg]:size-4!"
                       render={<Link href={href} />}
                       onClick={() => setPendingHref(href)}
                       isActive={active}
@@ -127,12 +129,14 @@ export default function AdminSidebar({ email, name }: Props) {
         <SidebarGroup>
           <SidebarGroupLabel>Config</SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu>
+            <SidebarMenu className="gap-2">
               {CONFIG_ITEMS.map(({ href, label, icon: Icon }) => {
                 const active = isActive(href);
                 return (
                   <SidebarMenuItem key={href}>
                     <SidebarMenuButton
+                      size="lg"
+                      className="gap-3 px-3 data-active:bg-black! data-active:text-white! [&&_svg]:size-5! group-data-[collapsible=icon]:[&&_svg]:size-4!"
                       render={<Link href={href} />}
                       onClick={() => setPendingHref(href)}
                       isActive={active}

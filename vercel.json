@@ -12,6 +12,10 @@
     {
       "path": "/api/cron/keepalive",
       "schedule": "10 2 * * *"
+    },
+    {
+      "path": "/api/cron/proof-prune",
+      "schedule": "0 3 1 * *"
     }
   ]
 }

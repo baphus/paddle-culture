@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { LoadingAnimation } from "@/components/ui/loading-animation";
 
 export default function LoginForm() {
@@ -41,59 +43,69 @@ export default function LoginForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
-      <div className="space-y-1.5">
-        <Label htmlFor="email" className="text-sm font-semibold text-ink">
-          Email
-        </Label>
-        <Input
-          id="email"
-          type="email"
-          autoComplete="username"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="admin@example.com"
-          required
-          className="h-10 rounded-xl border-line bg-white px-3.5 text-sm placeholder:text-warm-muted focus-visible:border-flame focus-visible:ring-flame/20"
-        />
-      </div>
+    <Card className="p-0">
+      <CardContent className="grid p-0 md:grid-cols-2">
+        <form onSubmit={onSubmit} className="flex flex-col gap-6 p-6 md:p-8">
+          <div className="flex flex-col items-center gap-2 text-center">
+            <h1 className="text-2xl font-bold">Welcome back</h1>
+            <p className="text-sm text-balance text-muted-foreground">
+              Sign in to your CK Grounds admin account
+            </p>
+          </div>
 
-      <div className="space-y-1.5">
-        <Label htmlFor="password" className="text-sm font-semibold text-ink">
-          Password
-        </Label>
-        <Input
-          id="password"
-          type="password"
-          autoComplete="current-password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="••••••••"
-          required
-          className="h-10 rounded-xl border-line bg-white px-3.5 text-sm placeholder:text-warm-muted focus-visible:border-flame focus-visible:ring-flame/20"
-        />
-      </div>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="email">Email</FieldLabel>
+              <Input
+                id="email"
+                type="email"
+                autoComplete="username"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="admin@example.com"
+                required
+              />
+            </Field>
 
-      {error ? (
-        <p role="alert" className="rounded-xl border border-error/20 bg-error/5 px-3.5 py-2.5 text-sm font-medium text-error">
-          {error}
-        </p>
-      ) : null}
+            <Field>
+              <FieldLabel htmlFor="password">Password</FieldLabel>
+              <Input
+                id="password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+              />
+            </Field>
 
-      <Button
-        type="submit"
-        disabled={busy}
-        className="h-10 w-full rounded-xl bg-flame text-sm font-bold text-white shadow-[0_4px_14px_rgba(234,102,44,0.30)] transition-all hover:-translate-y-0.5 hover:bg-flame-hover disabled:opacity-60 disabled:translate-y-0"
-      >
-        {busy ? (
-          <span className="flex items-center justify-center gap-2">
-            <LoadingAnimation size="compact" label="Signing in" />
-            Signing in…
-          </span>
-        ) : (
-          "Sign in"
-        )}
-      </Button>
-    </form>
+            <Field>
+              <FieldError>{error}</FieldError>
+              <Button type="submit" disabled={busy} className="w-full">
+                {busy ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <LoadingAnimation size="compact" label="Signing in" />
+                    Signing in…
+                  </span>
+                ) : (
+                  "Sign in"
+                )}
+              </Button>
+            </Field>
+          </FieldGroup>
+        </form>
+
+        <div className="relative hidden md:block">
+          <Image
+            src="/images/net.jpg"
+            alt="Pickleball court at CK Grounds"
+            fill
+            sizes="(min-width: 768px) 50vw, 100vw"
+            className="object-cover dark:brightness-[0.2] dark:grayscale"
+          />
+        </div>
+      </CardContent>
+    </Card>
   );
 }

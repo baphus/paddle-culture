@@ -24,6 +24,10 @@ export const PROOF_INCOMING_PREFIX = "incoming/";
 // Signed admin read URLs (view/zoom/download) live 5 minutes.
 export const PROOF_READ_TTL_SECONDS = 300;
 
+// Proof files + payment_proofs rows are pruned this many days after upload
+// (rpc_delete_expired_proofs + /api/cron/proof-prune).
+export const PROOF_RETENTION_DAYS = 90;
+
 // Outbox templates written by the submit transaction (ADR-05: customer
 // submission email + owner alert; the approve/reject email is written by the
 // admin-decision lane, not here).
