@@ -343,8 +343,18 @@ export interface RevenueMonthResult {
  * Each booking is grouped by its FIRST slot (the Manila day it starts on),
  * which is what the revenue pages label as "the" date. Paged walk, no id
  * list, so this stays bounded as the table grows.
+ *
+ * The walk is also bounded at the source: only bookings created in the
+ * trailing 12 months are fetched, so a long-lived table does not stream
+ * every Approved row on each render. Bookings are created at/near their
+ * slot time, so this is the report's natural window.
  */
 export async function revenueByMonth(db: Db): Promise<RevenueMonthResult> {
+  // shortcut: a booking made up to the 12-month horizon before its slot can
+  // fall just outside this bound; widen to 24 months if that matters.
+  const since = new Date();
+  since.setMonth(since.getMonth() - 12);
+
   const rows = await fetchPaged<{
     id: string;
     total: string;
@@ -354,6 +364,7 @@ export async function revenueByMonth(db: Db): Promise<RevenueMonthResult> {
       .from("bookings")
       .select("id,total,booking_slots(slot_start)")
       .eq("status", "Approved")
+      .gte("created_at", since.toISOString())
       .order("id", { ascending: true })
       .range(from, to),
   );

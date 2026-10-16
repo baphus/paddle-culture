@@ -11,7 +11,7 @@ import Location from "@/components/landing/location";
 import Faq from "@/components/landing/faq";
 import Footer from "@/components/landing/footer";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
 export const metadata = {
   title: "CK Grounds — Book a Court in Tabuelan, Cebu",
@@ -31,8 +31,8 @@ async function loadRates(): Promise<DisplayRates> {
 }
 
 export default async function Home() {
-  // Fail-soft: rates → FALLBACK_RATES. force-dynamic keeps this fresh, so
-  // admin pricing edits reflect on the next load without a redeploy.
+  // Fail-soft: rates → FALLBACK_RATES. revalidate=60 caches the render, so
+  // admin pricing edits reflect within a minute without a redeploy.
   const initialRates = await loadRates();
   return (
     <>

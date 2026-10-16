@@ -44,7 +44,8 @@ export async function getDashboardStats(db: Db): Promise<DashboardStats> {
       .from("booking_slots")
       .select("booking_id")
       .gte("slot_start", todayStart.toISOString())
-      .lt("slot_start", tomorrowStart.toISOString()),
+      .lt("slot_start", tomorrowStart.toISOString())
+      .limit(2000),
   ]);
 
   const pending = pendingResult.count ?? 0;
@@ -59,14 +60,19 @@ export async function getDashboardStats(db: Db): Promise<DashboardStats> {
   let revenueToday = 0;
 
   if (candidateIds.length > 0) {
-    const { data: approvedTodayData } = await db
-      .from("bookings")
-      .select("total")
-      .eq("status", "Approved")
-      .in("id", candidateIds);
+    // .in() ids are chunked so the URL stays under the PostgREST/proxy length limit.
+    const approvedTodayRows: { total: string }[] = [];
+    for (let i = 0; i < candidateIds.length; i += 100) {
+      const { data } = await db
+        .from("bookings")
+        .select("total")
+        .eq("status", "Approved")
+        .in("id", candidateIds.slice(i, i + 100));
+      approvedTodayRows.push(...((data ?? []) as { total: string }[]));
+    }
 
-    approvedToday = (approvedTodayData ?? []).length;
-    revenueToday = ((approvedTodayData ?? []) as { total: string }[]).reduce(
+    approvedToday = approvedTodayRows.length;
+    revenueToday = approvedTodayRows.reduce(
       (sum, r) => sum + Math.round(Number(r.total) * 100),
       0,
     );

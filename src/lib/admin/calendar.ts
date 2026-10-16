@@ -73,24 +73,28 @@ async function buildEvents(
     .from("booking_slots")
     .select("booking_id,court_id,slot_start,courts(name)")
     .gte("slot_start", rangeStart.toISOString())
-    .lt("slot_start", rangeEnd.toISOString());
+    .lt("slot_start", rangeEnd.toISOString())
+    .limit(2000);
 
   if (slotError) throw new Error(slotError.message);
   if (!slotData || slotData.length === 0) return [];
 
   const bookingIds = [...new Set((slotData as SlotRow[]).map((s) => s.booking_id))];
 
-  const { data: bookingData, error: bookingError } = await db
-    .from("bookings")
-    .select("id,full_name,status,total")
-    .in("id", bookingIds);
-
-  if (bookingError) throw new Error(bookingError.message);
-
   type BookingRow = { id: string; full_name: string; status: string; total: string };
-  const bookingMap = new Map(
-    ((bookingData ?? []) as BookingRow[]).map((b) => [b.id, b]),
-  );
+  // .in() ids are chunked so the URL stays under the PostgREST/proxy length limit.
+  const bookingRows: BookingRow[] = [];
+  for (let i = 0; i < bookingIds.length; i += 100) {
+    const { data, error: bookingError } = await db
+      .from("bookings")
+      .select("id,full_name,status,total")
+      .in("id", bookingIds.slice(i, i + 100));
+
+    if (bookingError) throw new Error(bookingError.message);
+    if (data) bookingRows.push(...(data as BookingRow[]));
+  }
+
+  const bookingMap = new Map(bookingRows.map((b) => [b.id, b]));
 
   type SlotAcc = {
     courtNames: Set<string>;
