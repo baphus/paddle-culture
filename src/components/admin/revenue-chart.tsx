@@ -13,6 +13,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { BarChart3 } from "lucide-react";
 import type { RevenueDay, RevenueMonth } from "@/lib/admin/bookings";
 
 // ─── stock chart tokens (globals.css --chart-*) ──────────────────────────────
@@ -253,11 +254,12 @@ export default function RevenueChart({ days, months, mode = "full" }: Props) {
         </div>
       ) : (
         <div
-          className={`flex items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground ${
+          className={`flex flex-col items-center justify-center gap-2 rounded-lg bg-muted text-sm text-muted-foreground ${
             isMini ? "h-[130px]" : "h-[280px]"
           }`}
         >
-          No approved bookings in this range yet.
+          <BarChart3 className="size-6 opacity-50" />
+          <span>No approved bookings in this range yet.</span>
         </div>
       )}
 

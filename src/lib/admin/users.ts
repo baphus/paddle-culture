@@ -15,6 +15,7 @@ export interface AdminUserRecord {
   email: string;
   name: string | null;
   status: "active" | "deactivated";
+  createdAt: string;
 }
 
 /**

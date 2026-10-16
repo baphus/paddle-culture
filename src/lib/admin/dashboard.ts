@@ -20,10 +20,15 @@ function manilaDayStart(dateStr: string): Date {
 export interface DashboardStats {
   pending: number;
   approvedToday: number;
+  /** Bookings with a slot today, any status. */
+  todayTotal: number;
   revenueToday: number;
   totalApproved: number;
   recentBookings: BookingDetail[];
 }
+
+/** Rows the dashboard table pages through client-side. */
+export const DASHBOARD_RECENT_LIMIT = 50;
 
 export async function getDashboardStats(db: Db): Promise<DashboardStats> {
   const today = manilaToday();
@@ -46,7 +51,15 @@ export async function getDashboardStats(db: Db): Promise<DashboardStats> {
       .gte("slot_start", todayStart.toISOString())
       .lt("slot_start", tomorrowStart.toISOString())
       .limit(2000),
-    listBookings(db, { q: "", status: "all", from: "", to: "", page: 1, limit: 8 }),
+    listBookings(db, {
+      q: "",
+      status: "all",
+      from: "",
+      to: "",
+      page: 1,
+      limit: DASHBOARD_RECENT_LIMIT,
+    }),
+
   ]);
 
   const pending = pendingResult.count ?? 0;
@@ -56,6 +69,9 @@ export async function getDashboardStats(db: Db): Promise<DashboardStats> {
       ((todaySlotsResult.data ?? []) as { booking_id: string }[]).map((r) => r.booking_id),
     ),
   ];
+  // Today's bookings regardless of status — same slot-today candidate set the
+  // approved/revenue tally below narrows down.
+  const todayTotal = candidateIds.length;
 
   let approvedToday = 0;
   let revenueToday = 0;
@@ -84,6 +100,7 @@ export async function getDashboardStats(db: Db): Promise<DashboardStats> {
   return {
     pending,
     approvedToday,
+    todayTotal,
     revenueToday,
     totalApproved,
     recentBookings,

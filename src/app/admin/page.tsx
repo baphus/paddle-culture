@@ -7,6 +7,7 @@ import {
   BookOpen,
   BookOpenCheck,
   CalendarCheck,
+  CalendarX2,
   Clock,
   DollarSign,
   ScrollText,
@@ -14,7 +15,6 @@ import {
   TrendingDown,
   TrendingUp,
 } from "lucide-react";
-import { BookingStatusBadge } from "@/components/admin/status-badge";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -26,14 +26,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { getDb } from "@/db/client";
 import { requireAdmin } from "@/lib/admin/session";
 import { getDashboardStats, type DashboardStats } from "@/lib/admin/dashboard";
@@ -41,6 +33,7 @@ import { manilaDateToday } from "@/lib/admin/calendar";
 import { formatPesosFromCents, revenueByDay, revenueByMonth } from "@/lib/admin/bookings";
 import { manilaDateStr } from "@/lib/booking/slots";
 import RevenueChartLoader from "@/components/admin/revenue-chart-loader";
+import RecentBookingsTable from "./recent-bookings-table";
 
 export const dynamic = "force-dynamic";
 
@@ -126,7 +119,7 @@ export default async function AdminPage() {
         </CardHeader>
         <CardContent className="px-0">
           <Suspense fallback={<Skeleton className="mx-4 h-32" />}>
-            <RecentBookings stats={statsPromise} />
+            <RecentBookingsSection stats={statsPromise} />
           </Suspense>
         </CardContent>
       </Card>
@@ -197,11 +190,11 @@ async function StatCards({
         subtitle="Awaiting decision"
       />
       <StatCard
-        label="Approved today"
-        value={stats ? String(stats.approvedToday) : "—"}
+        label="Today's bookings"
+        value={stats ? String(stats.todayTotal) : "—"}
         icon={CalendarCheck}
-        href="/admin/bookings?status=Approved"
-        subtitle="Approved today"
+        href="/admin/bookings"
+        subtitle="Any status today"
       />
     </div>
   );
@@ -218,57 +211,19 @@ async function MiniRevenueChart({
   return <RevenueChartLoader days={days} months={months} mode="mini" />;
 }
 
-async function RecentBookings({ stats: statsPromise }: { stats: Promise<DashboardStats | null> }) {
+async function RecentBookingsSection({ stats: statsPromise }: { stats: Promise<DashboardStats | null> }) {
   const stats = await statsPromise;
 
   if (!stats || stats.recentBookings.length === 0) {
     return (
-      <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
-        {stats ? "No bookings yet." : "Database not configured."}
+      <div className="flex h-32 flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
+        <CalendarX2 className="size-6 opacity-50" />
+        <span>{stats ? "No bookings yet." : "Database not configured."}</span>
       </div>
     );
   }
 
-  return (
-    <Table>
-      <TableHeader>
-        <TableRow className="bg-muted/50 hover:bg-muted/50">
-          <TableHead className="px-4">Name</TableHead>
-          <TableHead className="px-4">Courts</TableHead>
-          <TableHead className="px-4">Date</TableHead>
-          <TableHead className="px-4">Total</TableHead>
-          <TableHead className="px-4">Status</TableHead>
-          <TableHead className="px-4"></TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {stats.recentBookings.map((b) => (
-          <TableRow key={b.id}>
-            <TableCell className="px-4 font-medium">{b.fullName}</TableCell>
-            <TableCell className="px-4 text-muted-foreground">{b.courts || "—"}</TableCell>
-            <TableCell className="px-4 text-muted-foreground">{b.date}</TableCell>
-            <TableCell className="px-4 font-medium">
-              ₱{Number(b.total).toLocaleString("en-PH", {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
-            </TableCell>
-            <TableCell className="px-4">
-              <BookingStatusBadge status={b.status} />
-            </TableCell>
-            <TableCell className="px-4">
-              <Link
-                href="/admin/bookings"
-                className="text-sm text-muted-foreground hover:text-foreground"
-              >
-                View all
-              </Link>
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  );
+  return <RecentBookingsTable rows={stats.recentBookings} />;
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────
