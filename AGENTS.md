@@ -6,7 +6,7 @@ Single-package Next.js 16 app (npm, `package-lock.json`). No workspaces, no CI. 
 
 - `npm run dev` / `npm run build` (`next build`) / `npm start`
 - `npx tsc --noEmit` — the only static check (`strict`, `noEmit`, `@/*` → `./src/*`)
-- `npm test` — `node --test test/*.test.ts` (Node ≥ 22.6 strips TS types itself; no runner, no build step). `test/register-loader.mjs` + `test/ts-resolve-loader.mjs` resolve the extensionless imports and the `@/` alias, which plain Node cannot.
+- `npm test` — `node --test --import ./test/register-loader.mjs "test/*.test.ts"` (Node ≥ 22.6 strips TS types itself; no runner, no build step). Single test: `node --test --import ./test/register-loader.mjs test/<name>.test.ts`. `test/register-loader.mjs` + `test/ts-resolve-loader.mjs` resolve the extensionless imports and the `@/` alias, which plain Node cannot.
 - Seed: `node scripts/seed-production.mjs` — idempotent courts/hours only, writes `scripts/seed-production.result.json`. Hand-parses `.env` (quotes stripped, no expansion); Next auto-loads `.env` for the app but the seed does not use `dotenv`.
 - No ESLint/Prettier/vitest/jest/playwright config. Don't add tooling without asking.
 
@@ -17,7 +17,7 @@ Single-package Next.js 16 app (npm, `package-lock.json`). No workspaces, no CI. 
    1. `drizzle/*.sql` (the Drizzle-generated migrations — tables, indexes, RLS helper objects). These are generated files; do not edit them.
    2. `supabase/proof-bucket.sql` — private `proofs` bucket.
    3. `supabase/audit-rls.sql` — RLS default-deny, no-update/no-delete; service_role bypass.
-   4. **`supabase/rpc-functions.sql`** — the five RPCs **and** `holds_court_slot_unique_idx`. This file is the source of truth for anything Drizzle cannot express (`booking_slots_no_overlap_idx` is generated; the holds uniqueness is declared in `schema.ts` but applied here). Re-running it is safe (`CREATE OR REPLACE`, `IF NOT EXISTS`) — it also drops the now-redundant non-unique `holds_court_slot_idx`.
+   4. **`supabase/rpc-functions.sql`** — the four RPCs **and** `holds_court_slot_unique_idx`. This file is the source of truth for anything Drizzle cannot express (`booking_slots_no_overlap_idx` is generated; the holds uniqueness is declared in `schema.ts` but applied here). Re-running it is safe (`CREATE OR REPLACE`, `IF NOT EXISTS`) — it also drops the now-redundant non-unique `holds_court_slot_idx`.
 3. Run the seed, then `npm run dev` / `npm run build`.
 4. Deploy (Vercel primary): set Vercel Production env (`NEXT_PUBLIC_SUPABASE_*`, `SUPABASE_SERVICE_ROLE_KEY`, `GMAIL_USER/GMAIL_APP_PASSWORD`, `MAIL_FROM` real domain, `APP_URL` https prod domain, `CRON_SECRET` same secret for `vercel.json` crons), do NOT set `SMTP_HOST` on Vercel (Gmail path). Build command `npm run build` (default).
 
@@ -25,7 +25,7 @@ Single-package Next.js 16 app (npm, `package-lock.json`). No workspaces, no CI. 
 
 ## Architecture
 
-- Entrypoints: `src/app/layout.tsx` (Geist + `Toaster` from `@/components/ui/sonner`), `src/app/page.tsx` (public booking, `force-dynamic`, `FALLBACK_COURTS=[]` on DB miss), `src/app/{admin,login,register,track/[token]}/page.tsx`, ~25 `src/app/api/**/route.ts` (incl. `src/app/api/cron/*` wired via `vercel.json`), `src/proxy.ts`, `src/instrumentation.ts`, legacy fallback `netlify/functions/{outbox,retention,keepalive}.mts` (Vercel ignores `netlify/`).
+- Entrypoints: `src/app/layout.tsx` (Geist + `Toaster` from `@/components/ui/sonner`), `src/app/page.tsx` (public booking, `force-dynamic`, `FALLBACK_COURTS=[]` on DB miss), `src/app/{admin,login,register,track/[token]}/page.tsx`, ~34 `src/app/api/**/route.ts` (incl. `src/app/api/cron/*` wired via `vercel.json`), `src/proxy.ts`, `src/instrumentation.ts`, legacy fallback `netlify/functions/{outbox,retention,keepalive}.mts` (Vercel ignores `netlify/`).
 - Auth: Next 16 **proxy** (`src/proxy.ts`, not `middleware.ts`). Uses `@supabase/ssr` `getClaims()` only — never `getSession()`. Gates `/admin/:path*`, redirects to `/login`. The proxy only proves *a* user is logged in; admin role is enforced per-route by `requireAdmin()` (`src/lib/admin/session.ts`). The proxy also applies per-IP rate limits to the unauthenticated write routes (`/api/holds`, `/api/submit`, `/api/proofs/upload-url`) — an in-memory, per-process counter, so the effective limit is `limit × instances`.
 - DB: **`@supabase/supabase-js` HTTP client only** — no TCP pool, no Drizzle runtime. `getDb()` in `src/db/client.ts` is a service-role singleton that throws `NOT_CONFIGURED` without env so `next build` passes. `src/db/schema.ts` (13 tables) is a **Drizzle definition used for types only** (`.$inferSelect`); no query runs through it. Every transactional path is a PostgRPC in `supabase/rpc-functions.sql`:
   - `rpc_submit_booking(...)` — the 18-step submit transaction (idempotency keys, lazy hold expiry, `FOR UPDATE` holds, clash + proof-reuse checks, inserts, outbox rows, audit row).
