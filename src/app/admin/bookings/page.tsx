@@ -1,17 +1,31 @@
 import { getDb } from "@/db/client";
-import { listBookings } from "@/lib/admin/bookings";
+import { BOOKING_STATUSES, listBookings } from "@/lib/admin/bookings";
 import { requireAdmin } from "@/lib/admin/session";
 import PageHeader from "@/components/admin/page-header";
 import BookingsTable from "./bookings-table";
 
 export const dynamic = "force-dynamic";
 
-// Full client-side table: load the whole list in one pass. listBookings pages
-// internally at 500 rows/request, so 500 is the largest single-page fetch.
-const FETCH_LIMIT = 500;
+function first(v: string | string[] | undefined): string {
+  return Array.isArray(v) ? (v[0] ?? "") : (v ?? "");
+}
 
-export default async function BookingsPage() {
+export default async function BookingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   await requireAdmin();
+  const sp = await searchParams;
+
+  const q = first(sp.q).slice(0, 100);
+  const rawStatus = first(sp.status);
+  const status = (BOOKING_STATUSES as readonly string[]).includes(rawStatus)
+    ? rawStatus
+    : "all";
+  const from = first(sp.from).slice(0, 10);
+  const to = first(sp.to).slice(0, 10);
+  const requestedPage = Math.max(1, Number.parseInt(first(sp.page), 10) || 1);
 
   let db;
   try {
@@ -25,16 +39,15 @@ export default async function BookingsPage() {
     );
   }
 
-  let rows: Awaited<ReturnType<typeof listBookings>>["rows"];
+  let result: Awaited<ReturnType<typeof listBookings>>;
   try {
-    ({ rows } = await listBookings(db, {
-      q: "",
-      status: "all",
-      from: "",
-      to: "",
-      page: 1,
-      limit: FETCH_LIMIT,
-    }));
+    result = await listBookings(db, {
+      q,
+      status,
+      from,
+      to,
+      page: requestedPage,
+    });
   } catch (err) {
     console.error("[bookings] listBookings failed:", err);
     return (
@@ -47,10 +60,17 @@ export default async function BookingsPage() {
     );
   }
 
+  const { rows, page, totalPages } = result;
+
   return (
     <div className="space-y-5">
       <PageHeader title="Bookings" />
-      <BookingsTable rows={rows} />
+      <BookingsTable
+        rows={rows}
+        page={page}
+        pageCount={totalPages}
+        filters={{ q, status, from, to }}
+      />
     </div>
   );
 }

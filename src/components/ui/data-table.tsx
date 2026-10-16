@@ -11,8 +11,10 @@ import {
   useReactTable,
   type ColumnDef,
   type ColumnFiltersState,
+  type PaginationState,
   type SortingState,
   type Table as TanstackTable,
+  type Updater,
   type VisibilityState,
 } from "@tanstack/react-table"
 import {
@@ -85,12 +87,26 @@ export function DataTable<TData, TValue>({
   searchKey,
   placeholder = "Filter…",
   pageSize = 10,
+  manualPagination = false,
+  pageCount,
+  pageIndex = 0,
+  onPageChange,
+  searchValue,
+  onSearchChange,
 }: {
   columns: ColumnDef<TData, TValue>[]
   data: TData[]
   searchKey?: string
   placeholder?: string
   pageSize?: number
+  /** Server-side pagination: pass pageCount/pageIndex/onPageChange with it. */
+  manualPagination?: boolean
+  pageCount?: number
+  pageIndex?: number
+  onPageChange?: (pageIndex: number) => void
+  /** Controlled search (fired on every change); the parent owns server filtering. */
+  searchValue?: string
+  onSearchChange?: (value: string) => void
 }) {
   const [search, setSearch] = React.useState("")
   const [sorting, setSorting] = React.useState<SortingState>([])
@@ -100,21 +116,43 @@ export function DataTable<TData, TValue>({
   const [columnVisibility, setColumnVisibility] =
     React.useState<VisibilityState>({})
 
+  const onPaginationChange = React.useCallback(
+    (updater: Updater<PaginationState>) => {
+      const current = { pageIndex, pageSize }
+      const next =
+        typeof updater === "function" ? updater(current) : updater
+      onPageChange?.(next.pageIndex)
+    },
+    [onPageChange, pageIndex, pageSize]
+  )
+
   const table = useReactTable({
     data,
     columns,
     initialState: { pagination: { pageSize } },
-    state: { sorting, columnFilters, columnVisibility },
+    state: {
+      sorting,
+      columnFilters,
+      columnVisibility,
+      ...(manualPagination ? { pagination: { pageIndex, pageSize } } : {}),
+    },
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
+    onPaginationChange: manualPagination ? onPaginationChange : undefined,
+    manualPagination: manualPagination || undefined,
+    pageCount: manualPagination ? pageCount : undefined,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
+    getPaginationRowModel: manualPagination ? undefined : getPaginationRowModel(),
   })
 
   function onSearch(value: string) {
+    if (onSearchChange) {
+      onSearchChange(value)
+      return
+    }
     setSearch(value)
     if (searchKey) table.getColumn(searchKey)?.setFilterValue(value)
     else table.setGlobalFilter(value)
@@ -124,7 +162,7 @@ export function DataTable<TData, TValue>({
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <Input
-          value={search}
+          value={onSearchChange ? (searchValue ?? "") : search}
           onChange={(e) => onSearch(e.target.value)}
           placeholder={placeholder}
           className="max-w-xs"
