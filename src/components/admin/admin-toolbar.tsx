@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef } from "react";
 import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 /**
  * Jira-style table toolbar.
@@ -11,7 +12,7 @@ import { cn } from "@/lib/utils";
  *   <AdminToolbar action="/admin/bookings">
  *     <AdminToolbarSearch name="q" defaultValue={q} placeholder="Search…" />
  *     <AdminToolbarFilters>
- *       <AdminToolbarFilterButton name="status" value="Pending" active={status === "Pending"} label="Pending" />
+ *       <AdminToolbarChip name="status" value="Pending" active={status === "Pending"} label="Pending" />
  *       …
  *     </AdminToolbarFilters>
  *   </AdminToolbar>
@@ -42,7 +43,7 @@ export function AdminToolbar({
       method="get"
       action={action}
       className={cn(
-        "flex flex-wrap items-center gap-2 rounded-xl border border-line bg-white px-3 py-2.5",
+        "flex flex-wrap items-center gap-2 rounded-xl border bg-card px-3 py-2.5",
         className,
       )}
       {...props}
@@ -71,19 +72,16 @@ export function AdminToolbarSearch({
   placeholder = "Search…",
   hiddenParams = {},
 }: AdminToolbarSearchProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
-
   return (
     <div className="relative flex min-w-[180px] flex-1 items-center sm:max-w-xs">
-      <Search className="pointer-events-none absolute left-2.5 size-3.5 text-warm-muted" />
-      <input
-        ref={inputRef}
+      <Search className="pointer-events-none absolute left-2.5 z-10 size-3.5 text-muted-foreground" />
+      <Input
         type="search"
         name={name}
         defaultValue={defaultValue}
         placeholder={placeholder}
         autoComplete="off"
-        className="h-8 w-full rounded-lg border border-line bg-transparent pl-8 pr-7 text-sm text-ink placeholder:text-warm-muted/60 focus:outline-none focus:ring-2 focus:ring-flame/30"
+        className="pl-8"
       />
       {/* Hidden sibling params */}
       {Object.entries(hiddenParams).map(([k, v]) =>
@@ -111,8 +109,6 @@ interface AdminToolbarChipProps {
   /** Whether this chip is currently active */
   active: boolean;
   label: string;
-  /** Accent colour — defaults to the brand flame */
-  accent?: "flame" | "pine" | "error" | "muted";
   /** Extra dot badge count shown when active */
   count?: number;
 }
@@ -122,35 +118,24 @@ export function AdminToolbarChip({
   value,
   active,
   label,
-  accent = "flame",
   count,
 }: AdminToolbarChipProps) {
-  const accentActive: Record<string, string> = {
-    flame: "bg-flame text-white border-flame",
-    pine: "bg-pine text-white border-pine",
-    error: "bg-error text-white border-error",
-    muted: "bg-ink/10 text-ink border-ink/20",
-  };
-  const accentInactive =
-    "bg-white text-ink/70 border-line hover:border-ink/30 hover:bg-oat/60";
-
   return (
-    <button
+    <Button
       type="submit"
       name={name}
       value={value}
-      className={cn(
-        "inline-flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition-all",
-        active ? accentActive[accent] : accentInactive,
-      )}
+      size="sm"
+      variant={active ? "default" : "outline"}
+      className="rounded-full"
     >
       {label}
       {active && count !== undefined && (
-        <span className="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-white/25 px-1 text-[10px] font-bold leading-none">
+        <span className="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary-foreground/20 px-1 text-[10px] font-bold leading-none">
           {count}
         </span>
       )}
-    </button>
+    </Button>
   );
 }
 
@@ -164,19 +149,16 @@ interface AdminToolbarAllChipProps {
 
 export function AdminToolbarAllChip({ active, label = "All" }: AdminToolbarAllChipProps) {
   return (
-    <button
+    <Button
       type="submit"
       name="_all"
       value="1"
-      className={cn(
-        "inline-flex h-7 items-center rounded-full border px-3 text-xs font-semibold transition-all",
-        active
-          ? "bg-ink text-white border-ink"
-          : "bg-white text-ink/70 border-line hover:border-ink/30 hover:bg-oat/60",
-      )}
+      size="sm"
+      variant={active ? "default" : "outline"}
+      className="rounded-full"
     >
       {label}
-    </button>
+    </Button>
   );
 }
 
@@ -195,22 +177,19 @@ interface AdminActiveFiltersProps {
 export function AdminActiveFilters({ filters, clearAllHref }: AdminActiveFiltersProps) {
   if (filters.length === 0) return null;
   return (
-    <div className="flex flex-wrap items-center gap-2 text-xs text-warm-muted">
-      <span className="font-semibold text-ink/50">Filters:</span>
+    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+      <span className="font-semibold">Filters:</span>
       {filters.map((f) => (
         <a
           key={f.label}
           href={f.clearHref}
-          className="inline-flex items-center gap-1 rounded-full border border-line bg-oat px-2.5 py-0.5 font-semibold text-ink hover:bg-oat/80"
+          className="inline-flex items-center gap-1 rounded-full border bg-muted px-2.5 py-0.5 font-semibold text-foreground hover:bg-muted/70"
         >
           {f.label}
           <X className="size-3" />
         </a>
       ))}
-      <a
-        href={clearAllHref}
-        className="ml-1 font-semibold text-flame hover:underline"
-      >
+      <a href={clearAllHref} className="ml-1 font-semibold text-primary hover:underline">
         Clear all
       </a>
     </div>

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { SlidersHorizontal } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -144,34 +144,26 @@ export function AdminFilterDropdown({
   return (
     <div ref={containerRef} className="relative">
       {/* Trigger */}
-      <button
+      <Button
         type="button"
+        variant="outline"
+        size="sm"
         onClick={() => {
           setOpen((prev) => !prev);
           setValidationError(null);
         }}
-        className={cn(
-          "inline-flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition-all",
-          open
-            ? "bg-flame text-white border-flame"
-            : "bg-white text-ink/70 border-line hover:border-ink/30 hover:bg-oat/60",
-        )}
+        className="rounded-full"
         aria-expanded={open}
         aria-haspopup="dialog"
       >
         <SlidersHorizontal className="size-3.5" />
         {label}
         {count > 0 && (
-          <span
-            className={cn(
-              "flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[10px] font-bold leading-none",
-              open ? "bg-white/25 text-white" : "bg-flame text-white",
-            )}
-          >
+          <span className="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold leading-none text-primary-foreground">
             {count}
           </span>
         )}
-      </button>
+      </Button>
 
       {/* Floating panel */}
       {open && (
@@ -187,7 +179,7 @@ export function AdminFilterDropdown({
             zIndex: 50,
             minWidth: 280,
           }}
-          className="mt-1.5 rounded-xl border border-line bg-white shadow-lg"
+          className="mt-1.5 rounded-xl border bg-popover text-popover-foreground shadow-md"
         >
           {/* Focus-trap sentinel — top */}
           <span tabIndex={0} aria-hidden="true" className="sr-only" />
@@ -201,28 +193,20 @@ export function AdminFilterDropdown({
             {validationError && (
               <p
                 role="alert"
-                className="mx-4 -mt-1 text-xs font-medium text-error"
+                className="mx-4 -mt-1 text-xs font-medium text-destructive"
               >
                 {validationError}
               </p>
             )}
 
             {/* Footer */}
-            <div className="flex items-center justify-end gap-2 border-t border-line px-4 py-3">
-              <button
-                type="button"
-                onClick={handleReset}
-                className="inline-flex h-7 items-center rounded-lg border border-line bg-white px-3 text-xs font-semibold text-ink/70 transition-colors hover:bg-oat/60"
-              >
+            <div className="flex items-center justify-end gap-2 border-t px-4 py-3">
+              <Button type="button" variant="outline" size="sm" onClick={handleReset}>
                 Reset
-              </button>
-              <button
-                type="button"
-                onClick={handleApply}
-                className="inline-flex h-7 items-center rounded-lg bg-flame px-3 text-xs font-semibold text-white transition-colors hover:bg-flame-hover"
-              >
+              </Button>
+              <Button type="button" size="sm" onClick={handleApply}>
                 Apply
-              </button>
+              </Button>
             </div>
           </form>
 
@@ -245,7 +229,7 @@ export function FilterGroupSection({
 }) {
   return (
     <div className="space-y-2">
-      <p className="text-[11px] font-bold uppercase tracking-wider text-ink/40">
+      <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
         {title}
       </p>
       {children}

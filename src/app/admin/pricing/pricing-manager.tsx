@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Save, ChevronDown, ChevronUp } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -46,20 +47,10 @@ function sortKey(r: PricingRuleRow) {
 // ── sub-components ────────────────────────────────────────────────────────
 
 function DayTypePill({ dayType }: { dayType: string }) {
-  const styles: Record<string, string> = {
-    weekday: "bg-columbia/60 text-pine",
-    weekend: "bg-flame-light text-flame",
-    holiday: "bg-oat text-cocoa",
-  };
   return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide",
-        styles[dayType] ?? "bg-oat text-cocoa",
-      )}
-    >
+    <Badge variant={dayType === "weekday" ? "secondary" : "outline"}>
       {labelFor(dayType)}
-    </span>
+    </Badge>
   );
 }
 
@@ -80,44 +71,38 @@ function RuleRow({
   const isDirty = current.trim() !== rule.amount;
 
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-line bg-white px-4 py-3 transition-shadow hover:shadow-sm">
+    <div className="flex items-center gap-3 rounded-lg border bg-card px-4 py-3 text-card-foreground">
       {/* Labels */}
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5">
           <DayTypePill dayType={rule.dayType} />
-          <span className="text-xs text-warm-muted">{labelFor(rule.timeBand)}</span>
-          <span className="text-warm-muted/40">·</span>
-          <span className="text-xs font-medium text-ink capitalize">{labelFor(rule.itemType)}</span>
-          <span className="text-xs text-warm-muted">{labelFor(rule.unit)}</span>
+          <span className="text-xs text-muted-foreground">{labelFor(rule.timeBand)}</span>
+          <span className="text-xs font-medium capitalize">{labelFor(rule.itemType)}</span>
+          <span className="text-xs text-muted-foreground">{labelFor(rule.unit)}</span>
         </div>
       </div>
 
       {/* Amount input */}
-      <div className="flex items-center gap-2 shrink-0">
-        <span className="text-sm font-medium text-warm-muted">₱</span>
+      <div className="flex shrink-0 items-center gap-2">
+        <span className="text-sm font-medium text-muted-foreground">₱</span>
         <Input
           aria-label={`Rate for ${rule.courtName} ${rule.dayType} ${rule.timeBand} ${rule.itemType}`}
           value={current}
           inputMode="decimal"
           onChange={(e) => onChange(e.target.value)}
           className={cn(
-            "h-8 w-24 rounded-lg border-line text-sm font-semibold text-right tabular-nums transition-colors",
-            isDirty && "border-flame/50 bg-flame-light/50 ring-1 ring-flame/20",
+            "h-8 w-24 text-right font-semibold tabular-nums",
+            isDirty && "border-ring ring-1 ring-ring/30",
           )}
         />
         <Button
           size="sm"
           disabled={!isDirty || busy}
           onClick={onSave}
-          className={cn(
-            "h-8 rounded-lg px-3 text-xs font-bold transition-all",
-            isDirty
-              ? "bg-flame text-white hover:bg-flame-hover"
-              : "invisible",
-          )}
+          className={cn(!isDirty && "invisible")}
           aria-label="Save rate"
         >
-          {busy ? "…" : <Save className="size-3.5" />}
+          {busy ? "…" : <Save />}
         </Button>
       </div>
     </div>
@@ -154,30 +139,25 @@ function CourtCard({
   }).length;
 
   return (
-    <div className="overflow-hidden rounded-xl border border-line bg-parchment/40 shadow-sm">
+    <div className="overflow-hidden rounded-xl border bg-card text-card-foreground">
       {/* Card header */}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between px-5 py-4 text-left transition-colors hover:bg-oat/30"
+        className="flex w-full items-center justify-between px-5 py-4 text-left transition-colors hover:bg-muted/50"
         aria-expanded={open}
       >
         <div className="flex items-center gap-3">
           {/* Court icon */}
-          <div className={cn(
-            "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-sm font-bold",
-            isGlobal
-              ? "bg-pine/10 text-pine"
-              : "bg-flame-light text-flame",
-          )}>
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-sm font-medium">
             {isGlobal ? "🌐" : courtName.charAt(0).toUpperCase()}
           </div>
           <div>
-            <p className="text-sm font-bold text-ink">{courtName}</p>
-            <p className="text-xs text-warm-muted">
+            <p className="text-sm font-medium">{courtName}</p>
+            <p className="text-xs text-muted-foreground">
               {rules.length} rate{rules.length !== 1 ? "s" : ""}
               {dirtyCount > 0 && (
-                <span className="ml-2 font-semibold text-flame">
+                <span className="ml-2 font-medium text-foreground">
                   {dirtyCount} unsaved
                 </span>
               )}
@@ -185,15 +165,15 @@ function CourtCard({
           </div>
         </div>
         {open ? (
-          <ChevronUp className="size-4 text-warm-muted" />
+          <ChevronUp className="size-4 text-muted-foreground" />
         ) : (
-          <ChevronDown className="size-4 text-warm-muted" />
+          <ChevronDown className="size-4 text-muted-foreground" />
         )}
       </button>
 
       {/* Rule rows */}
       {open && (
-        <div className="space-y-2 border-t border-line px-4 pb-4 pt-3">
+        <div className="space-y-2 border-t px-4 py-4">
           {sortedRules.map((rule) => (
             <RuleRow
               key={rule.id}
@@ -277,7 +257,7 @@ export default function PricingManager({
 
   if (initial.length === 0) {
     return (
-      <div className="flex h-32 items-center justify-center rounded-xl border border-line bg-white text-sm text-warm-muted">
+      <div className="flex h-32 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
         No pricing rules found.
       </div>
     );
@@ -286,12 +266,12 @@ export default function PricingManager({
   return (
     <div className="space-y-4">
       {/* Legend */}
-      <div className="flex flex-wrap items-center gap-3 text-xs text-warm-muted">
+      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
         <span className="flex items-center gap-1">
-          <span className="inline-block h-2 w-2 rounded-full bg-pine/20" /> Global — applies to all courts unless overridden
+          <span className="inline-block size-2 rounded-full bg-muted-foreground/30" /> Global — applies to all courts unless overridden
         </span>
         <span className="flex items-center gap-1">
-          <span className="inline-block h-2 w-2 rounded-full bg-flame/30" /> Court-specific — overrides global for that court
+          <span className="inline-block size-2 rounded-full bg-muted-foreground/60" /> Court-specific — overrides global for that court
         </span>
       </div>
 

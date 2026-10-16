@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Copy, Link as LinkIcon, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 interface Invite {
@@ -85,30 +86,23 @@ export default function InviteManager({
   return (
     <div className="space-y-4">
       {/* Current user */}
-      <div className="flex items-center justify-between gap-4 rounded-xl bg-oat/60 px-4 py-3">
+      <div className="flex items-center justify-between gap-4 rounded-lg bg-muted px-4 py-3">
         <div>
-          {name ? (
-            <p className="text-sm font-semibold text-ink">{name}</p>
-          ) : null}
-          <p className="text-xs text-warm-muted">{email}</p>
+          {name ? <p className="text-sm font-medium">{name}</p> : null}
+          <p className="text-xs text-muted-foreground">{email}</p>
         </div>
       </div>
 
       {/* Generate */}
-      <Button
-        type="button"
-        onClick={generate}
-        disabled={busy}
-        className="h-9 rounded-lg bg-pine px-4 text-xs font-bold text-white hover:bg-pine/90"
-      >
-        <LinkIcon className="mr-1.5 size-3.5" />
+      <Button type="button" onClick={generate} disabled={busy}>
+        <LinkIcon />
         {busy ? "Generating…" : "Generate invite link"}
       </Button>
 
       {/* Generated link */}
       {link && (
-        <div className="flex items-center gap-2 rounded-xl border border-line bg-white p-3">
-          <code className="min-w-0 flex-1 truncate text-xs text-ink/70">
+        <div className="flex items-center gap-2 rounded-lg border bg-card p-3">
+          <code className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
             {link}
           </code>
           <Button
@@ -116,10 +110,10 @@ export default function InviteManager({
             variant="outline"
             size="icon-sm"
             onClick={copyLink}
-            className="h-7 w-7 shrink-0 rounded-lg border-line"
+            className="shrink-0"
             title="Copy link"
           >
-            <Copy className="size-3.5" />
+            <Copy />
           </Button>
         </div>
       )}
@@ -127,39 +121,33 @@ export default function InviteManager({
       {/* Existing invites */}
       {invites.length > 0 && (
         <div className="space-y-1.5">
-          <p className="text-xs font-bold uppercase tracking-wider text-ink/50">
+          <p className="text-xs font-medium text-muted-foreground">
             Existing invites
           </p>
-          <div className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-white">
+          <div className="divide-y overflow-hidden rounded-lg border bg-card">
             {invites.map((i) => (
               <div
                 key={i.tokenHash}
                 className="flex items-center justify-between gap-4 px-4 py-2.5"
               >
                 <div>
-                  <span
-                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold ${
-                      i.status === "used"
-                        ? "bg-oat text-warm-muted"
-                        : "bg-live text-pine"
-                    }`}
-                  >
+                  <Badge variant={i.status === "used" ? "secondary" : "default"}>
                     {i.status === "used" ? "Used" : "Pending"}
-                  </span>
-                  <span className="ml-2 text-xs text-warm-muted">
+                  </Badge>
+                  <span className="ml-2 text-xs text-muted-foreground">
                     {i.createdAt}
                   </span>
                 </div>
                 {i.status === "pending" && (
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="ghost"
                     size="icon-sm"
                     onClick={() => revoke(i.tokenHash)}
-                    className="h-7 w-7 shrink-0 rounded-lg border-line text-warm-muted hover:border-error/30 hover:bg-error/5 hover:text-error"
+                    className="shrink-0 text-muted-foreground hover:text-destructive"
                     title="Revoke invite"
                   >
-                    <Trash2 className="size-3.5" />
+                    <Trash2 />
                   </Button>
                 )}
               </div>

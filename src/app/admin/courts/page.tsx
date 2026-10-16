@@ -1,6 +1,5 @@
 import { getDb } from "@/db/client";
 import { listCourts } from "@/lib/admin/config";
-import PageHeader from "@/components/admin/page-header";
 import CourtsManager from "./courts-manager";
 
 export const dynamic = "force-dynamic";
@@ -12,8 +11,8 @@ export default async function CourtsPage() {
   } catch {
     return (
       <div className="space-y-6">
-        <PageHeader title="Courts" />
-        <p className="text-sm text-warm-muted">Database is not configured.</p>
+        <h1 className="text-2xl font-semibold tracking-tight">Courts</h1>
+        <p className="text-sm text-muted-foreground">Database is not configured.</p>
       </div>
     );
   }
@@ -25,8 +24,8 @@ export default async function CourtsPage() {
     console.error("[courts] data fetch failed:", err);
     return (
       <div className="space-y-6">
-        <PageHeader title="Courts" />
-        <p className="text-sm text-warm-muted">
+        <h1 className="text-2xl font-semibold tracking-tight">Courts</h1>
+        <p className="text-sm text-muted-foreground">
           Could not load data. Check your database connection and try again.
         </p>
       </div>
@@ -35,10 +34,12 @@ export default async function CourtsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Courts"
-        description="Inactive courts are hidden from booking but retain all history."
-      />
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Courts</h1>
+        <p className="text-sm text-muted-foreground">
+          Inactive courts are hidden from booking but retain all history.
+        </p>
+      </div>
       <CourtsManager initial={courts} />
     </div>
   );

@@ -4,7 +4,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { PlusCircle } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -76,61 +78,49 @@ export default function CourtsManager({ initial }: { initial: CourtRow[] }) {
   return (
     <div className="space-y-5">
       {/* Add form */}
-      <div className="rounded-xl border border-line bg-white p-4">
-        <p className="mb-3 text-sm font-bold text-ink">Add court</p>
-        <form onSubmit={addCourt} className="flex items-end gap-3">
-          <div className="flex-1 space-y-1">
-            <Label htmlFor="court-name" className="text-xs font-semibold text-ink/70">
-              Court name
-            </Label>
-            <Input
-              id="court-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              maxLength={100}
-              placeholder="e.g. Court 3"
-              className="h-9 rounded-lg border-line text-sm"
-            />
-          </div>
-          <Button
-            type="submit"
-            disabled={busy !== null}
-            className="h-9 shrink-0 rounded-lg bg-flame px-4 text-xs font-bold text-white hover:bg-flame-hover"
-          >
-            <PlusCircle className="mr-1.5 size-3.5" />
-            {busy === "add" ? "Adding…" : "Add court"}
-          </Button>
-        </form>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Add court</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={addCourt} className="flex items-end gap-3">
+            <div className="flex-1 space-y-2">
+              <Label htmlFor="court-name">Court name</Label>
+              <Input
+                id="court-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={100}
+                placeholder="e.g. Court 3"
+              />
+            </div>
+            <Button type="submit" disabled={busy !== null}>
+              <PlusCircle />
+              {busy === "add" ? "Adding…" : "Add court"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
 
       {/* Courts table */}
-      <div className="overflow-hidden rounded-xl border border-line bg-white">
+      <Card>
         {initial.length > 0 ? (
           <Table>
             <TableHeader>
-              <TableRow className="bg-oat/60 hover:bg-oat/60">
-                <TableHead className="text-xs font-bold text-ink/60">Name</TableHead>
-                <TableHead className="text-xs font-bold text-ink/60">Status</TableHead>
-                <TableHead className="text-xs font-bold text-ink/60">Action</TableHead>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {initial.map((c) => (
-                <TableRow key={c.id} className="border-line">
-                  <TableCell className="font-medium text-ink">{c.name}</TableCell>
+                <TableRow key={c.id}>
+                  <TableCell className="font-medium">{c.name}</TableCell>
                   <TableCell>
-                    <span
-                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold ${
-                        c.status === "active"
-                          ? "bg-live text-pine"
-                          : "bg-oat text-warm-muted"
-                      }`}
-                    >
-                      {c.status === "active" && (
-                        <span className="size-1.5 rounded-full bg-live-dot" aria-hidden />
-                      )}
+                    <Badge variant={c.status === "active" ? "default" : "secondary"}>
                       {c.status === "active" ? "Active" : "Inactive"}
-                    </span>
+                    </Badge>
                   </TableCell>
                   <TableCell>
                     <Button
@@ -138,11 +128,6 @@ export default function CourtsManager({ initial }: { initial: CourtRow[] }) {
                       size="sm"
                       disabled={busy !== null}
                       onClick={() => flip(c)}
-                      className={`h-7 rounded-lg border-line text-xs font-semibold ${
-                        c.status === "active"
-                          ? "hover:border-error/30 hover:bg-error/5 hover:text-error"
-                          : "hover:border-pine/30 hover:bg-pine/5 hover:text-pine"
-                      }`}
                     >
                       {busy === c.id
                         ? "Saving…"
@@ -156,11 +141,11 @@ export default function CourtsManager({ initial }: { initial: CourtRow[] }) {
             </TableBody>
           </Table>
         ) : (
-          <div className="flex h-24 items-center justify-center text-sm text-warm-muted">
+          <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
             No courts yet. Add one above.
           </div>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

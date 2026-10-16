@@ -15,6 +15,14 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import type { BookingDetail } from "@/lib/admin/bookings";
 
@@ -37,11 +45,17 @@ function statusVariant(
 export default function BookingActions({ booking }: { booking: BookingDetail }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [decision, setDecision] = useState<"approve" | "reject" | null>(null);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
   const [proofUrl, setProofUrl] = useState<string | null>(null);
   const [proofFailed, setProofFailed] = useState(false);
   const pending = booking.status === "Pending";
+
+  function closeDecision() {
+    setDecision(null);
+    setReason("");
+  }
 
   async function decide(kind: "approve" | "reject") {
     if (kind === "reject" && !reason.trim()) {
@@ -71,6 +85,7 @@ export default function BookingActions({ booking }: { booking: BookingDetail }) 
             ? "Booking approved."
             : "Booking rejected.",
       );
+      closeDecision();
       setOpen(false);
       router.refresh();
     } catch {
@@ -105,13 +120,8 @@ export default function BookingActions({ booking }: { booking: BookingDetail }) 
 
   return (
     <div className="flex items-center gap-1.5">
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={openDrawer}
-        className="h-7 rounded-lg border-line px-2.5 text-xs font-semibold"
-      >
-        <Eye className="mr-1 size-3.5" /> View
+      <Button variant="outline" size="sm" onClick={openDrawer}>
+        <Eye className="size-3.5" /> View
       </Button>
 
       <Button
@@ -119,7 +129,6 @@ export default function BookingActions({ booking }: { booking: BookingDetail }) 
         size="icon-sm"
         onClick={copyTrackingLink}
         title="Copy tracking link"
-        className="h-7 w-7 rounded-lg border-line"
       >
         <Copy className="size-3.5" />
       </Button>
@@ -131,7 +140,6 @@ export default function BookingActions({ booking }: { booking: BookingDetail }) 
           disabled={busy !== null}
           onClick={() => decide("approve")}
           title="Quick approve"
-          className="h-7 w-7 rounded-lg border-line text-pine hover:bg-pine/5 hover:text-pine"
         >
           <Check className="size-3.5" />
         </Button>
@@ -139,18 +147,18 @@ export default function BookingActions({ booking }: { booking: BookingDetail }) 
 
       {/* Detail sheet */}
       <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent className="flex w-full flex-col gap-0 overflow-y-auto border-line bg-parchment p-0 sm:max-w-md">
-          <SheetHeader className="border-b border-line bg-white px-5 py-4">
+        <SheetContent className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-md">
+          <SheetHeader className="border-b px-5 py-4">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <SheetTitle className="text-base font-extrabold text-ink">
+                <SheetTitle className="text-base font-semibold">
                   {booking.fullName}
                 </SheetTitle>
-                <SheetDescription className="mt-0.5 text-xs text-warm-muted">
+                <SheetDescription className="mt-0.5 text-xs">
                   {booking.email} · {booking.phone}
                 </SheetDescription>
               </div>
-              <Badge variant={statusVariant(booking.status)} className="mt-0.5 shrink-0 text-[11px]">
+              <Badge variant={statusVariant(booking.status)} className="mt-0.5 shrink-0">
                 {booking.status}
               </Badge>
             </div>
@@ -158,7 +166,7 @@ export default function BookingActions({ booking }: { booking: BookingDetail }) 
 
           <div className="flex-1 space-y-4 px-5 py-5">
             {/* Booking details */}
-            <div className="rounded-xl border border-line bg-white p-4 space-y-2">
+            <div className="space-y-2 rounded-xl border p-4">
               <DetailRow label="Courts" value={booking.courts || "—"} />
               <DetailRow label="Date" value={booking.date} />
               <DetailRow label="Slots" value={booking.slotLabels.join(", ") || "—"} />
@@ -179,10 +187,10 @@ export default function BookingActions({ booking }: { booking: BookingDetail }) 
 
             {/* Payment proof */}
             <div>
-              <p className="mb-2 text-xs font-bold text-ink/60 uppercase tracking-wider">
+              <p className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 Payment proof
               </p>
-              <div className="overflow-hidden rounded-xl border border-line bg-white">
+              <div className="overflow-hidden rounded-xl border">
                 {proofUrl ? (
                   <a href={proofUrl} target="_blank" rel="noreferrer" className="block">
                     <img
@@ -192,7 +200,7 @@ export default function BookingActions({ booking }: { booking: BookingDetail }) 
                     />
                   </a>
                 ) : proofFailed || !booking.proofPath ? (
-                  <p className="px-4 py-6 text-center text-sm text-warm-muted">
+                  <p className="px-4 py-6 text-center text-sm text-muted-foreground">
                     Proof unavailable.
                   </p>
                 ) : (
@@ -205,77 +213,98 @@ export default function BookingActions({ booking }: { booking: BookingDetail }) 
 
             {/* Actions */}
             <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={copyTrackingLink}
-                className="h-8 rounded-lg border-line text-xs font-semibold"
-              >
-                <Copy className="mr-1.5 size-3.5" /> Copy tracking link
+              <Button variant="outline" size="sm" onClick={copyTrackingLink}>
+                <Copy className="size-3.5" /> Copy tracking link
               </Button>
             </div>
 
             {pending && (
-              <div className="space-y-3 rounded-xl border border-line bg-white p-4">
-                <p className="text-xs font-bold text-ink">Decision</p>
-
+              <div className="flex flex-wrap gap-2">
                 <Button
                   size="sm"
                   disabled={busy !== null}
-                  onClick={() => decide("approve")}
-                  className="h-8 w-full rounded-lg bg-pine text-xs font-bold text-white hover:bg-pine/90"
+                  onClick={() => setDecision("approve")}
                 >
-                  {busy === "approve" ? (
-                    <span className="flex items-center gap-1.5">
-                      <LoadingAnimation size="compact" label="Approving" />
-                      Approving…
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1.5">
-                      <Check className="size-3.5" /> Approve
-                    </span>
-                  )}
+                  <Check className="size-3.5" /> Approve
                 </Button>
-
-                <div className="space-y-1.5">
-                  <Label
-                    htmlFor={`reason-${booking.id}`}
-                    className="text-xs font-semibold text-ink/70"
-                  >
-                    Rejection reason (required)
-                  </Label>
-                  <Input
-                    id={`reason-${booking.id}`}
-                    value={reason}
-                    onChange={(e) => setReason(e.target.value)}
-                    placeholder="Reason for rejection…"
-                    className="h-9 rounded-lg border-line text-sm"
-                  />
-                </div>
-
                 <Button
-                  size="sm"
                   variant="destructive"
+                  size="sm"
                   disabled={busy !== null}
-                  onClick={() => decide("reject")}
-                  className="h-8 w-full rounded-lg text-xs font-bold"
+                  onClick={() => setDecision("reject")}
                 >
-                  {busy === "reject" ? (
-                    <span className="flex items-center gap-1.5">
-                      <LoadingAnimation size="compact" label="Rejecting" />
-                      Rejecting…
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1.5">
-                      <X className="size-3.5" /> Reject
-                    </span>
-                  )}
+                  <X className="size-3.5" /> Reject
                 </Button>
               </div>
             )}
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* Approve / reject confirmation dialog */}
+      <Dialog
+        open={decision !== null}
+        onOpenChange={(o) => {
+          if (!o && busy === null) closeDecision();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {decision === "reject" ? "Reject booking" : "Approve booking"}
+            </DialogTitle>
+            <DialogDescription>
+              {decision === "reject"
+                ? "This rejects the booking and emails the customer. A reason is required."
+                : "This approves the booking and emails the customer."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {decision === "reject" && (
+            <div className="space-y-1.5">
+              <Label htmlFor={`reason-${booking.id}`}>
+                Rejection reason (required)
+              </Label>
+              <Input
+                id={`reason-${booking.id}`}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="Reason for rejection…"
+              />
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={busy !== null}
+              onClick={closeDecision}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant={decision === "reject" ? "destructive" : "default"}
+              disabled={busy !== null}
+              onClick={() => decision && decide(decision)}
+            >
+              {busy !== null ? (
+                <span className="flex items-center gap-1.5">
+                  <LoadingAnimation size="compact" label="Saving" />
+                  {decision === "reject" ? "Rejecting…" : "Approving…"}
+                </span>
+              ) : decision === "reject" ? (
+                <span className="flex items-center gap-1.5">
+                  <X className="size-3.5" /> Reject
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5">
+                  <Check className="size-3.5" /> Approve
+                </span>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -291,8 +320,12 @@ function DetailRow({
 }) {
   return (
     <div className="flex items-start justify-between gap-4 text-sm">
-      <span className="shrink-0 text-warm-muted">{label}</span>
-      <span className={`text-right ${bold ? "font-bold text-ink" : "text-ink/80"}`}>
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      <span
+        className={
+          bold ? "text-right font-semibold" : "text-right text-muted-foreground"
+        }
+      >
         {value}
       </span>
     </div>

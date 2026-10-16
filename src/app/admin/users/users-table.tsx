@@ -52,7 +52,7 @@ export default function UsersTable({
 
   if (users.length === 0) {
     return (
-      <div className="flex h-32 items-center justify-center text-sm text-warm-muted">
+      <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
         No admin users found.
       </div>
     );
@@ -61,17 +61,11 @@ export default function UsersTable({
   return (
     <Table>
       <TableHeader>
-        <TableRow className="border-b border-line bg-oat/40 hover:bg-oat/40">
-          <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">
-            Name
-          </TableHead>
-          <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">
-            Email
-          </TableHead>
-          <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">
-            Status
-          </TableHead>
-          <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50" />
+        <TableRow>
+          <TableHead className="px-4">Name</TableHead>
+          <TableHead className="px-4">Email</TableHead>
+          <TableHead className="px-4">Status</TableHead>
+          <TableHead className="px-4" />
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -79,21 +73,15 @@ export default function UsersTable({
           const isSelf = user.id === actorId;
           const active = user.status === "active";
           return (
-            <TableRow
-              key={user.id}
-              className="border-b border-line/60 transition-colors hover:bg-oat/20"
-            >
-              <TableCell className="px-4 py-3 font-medium text-ink">
+            <TableRow key={user.id}>
+              <TableCell className="px-4 py-3 font-medium">
                 {user.name ?? "—"}
               </TableCell>
-              <TableCell className="px-4 py-3 text-sm text-ink/70">
+              <TableCell className="px-4 py-3 text-muted-foreground">
                 {user.email}
               </TableCell>
               <TableCell className="px-4 py-3">
-                <Badge
-                  variant={active ? "default" : "secondary"}
-                  className="text-[11px]"
-                >
+                <Badge variant={active ? "default" : "secondary"}>
                   {active ? "Active" : "Deactivated"}
                 </Badge>
               </TableCell>
@@ -107,7 +95,6 @@ export default function UsersTable({
                     onClick={() =>
                       handleAction(user.id, active ? "deactivate" : "reactivate")
                     }
-                    className="rounded-lg border-line text-xs font-bold"
                   >
                     {active ? "Deactivate" : "Reactivate"}
                   </Button>

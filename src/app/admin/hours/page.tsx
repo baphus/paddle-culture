@@ -1,6 +1,5 @@
 import { getDb } from "@/db/client";
 import { listClosures, listCourts, listHours } from "@/lib/admin/config";
-import PageHeader from "@/components/admin/page-header";
 import HoursManager from "./hours-manager";
 
 export const dynamic = "force-dynamic";
@@ -12,8 +11,8 @@ export default async function HoursPage() {
   } catch {
     return (
       <div className="space-y-6">
-        <PageHeader title="Hours & Closures" />
-        <p className="text-sm text-warm-muted">Database is not configured.</p>
+        <h1 className="text-2xl font-semibold tracking-tight">Hours &amp; Closures</h1>
+        <p className="text-sm text-muted-foreground">Database is not configured.</p>
       </div>
     );
   }
@@ -31,8 +30,8 @@ export default async function HoursPage() {
     console.error("[hours] data fetch failed:", err);
     return (
       <div className="space-y-6">
-        <PageHeader title="Hours & Closures" />
-        <p className="text-sm text-warm-muted">
+        <h1 className="text-2xl font-semibold tracking-tight">Hours &amp; Closures</h1>
+        <p className="text-sm text-muted-foreground">
           Could not load data. Check your database connection and try again.
         </p>
       </div>
@@ -41,10 +40,13 @@ export default async function HoursPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Hours & Closures"
-        description="A court with zero hours rows is treated as open all day. Closures always override hours."
-      />
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Hours &amp; Closures</h1>
+        <p className="text-sm text-muted-foreground">
+          A court with zero hours rows is treated as open all day. Closures always
+          override hours.
+        </p>
+      </div>
       <HoursManager initialHours={hours} initialClosures={closures} courts={courts} />
     </div>
   );

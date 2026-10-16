@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 /**
  * Jira-style numbered pagination.
@@ -39,7 +40,7 @@ export default function AdminPagination({
       )}
     >
       {/* Left: result count */}
-      <p className="text-warm-muted">
+      <p className="text-muted-foreground">
         {total !== undefined
           ? `${total.toLocaleString()} result${total === 1 ? "" : "s"}`
           : `Page ${page} of ${totalPages}`}
@@ -62,7 +63,7 @@ export default function AdminPagination({
           entry === "gap" ? (
             <span
               key={`gap-${i}`}
-              className="flex h-7 w-7 items-center justify-center text-warm-muted"
+              className="flex h-7 w-7 items-center justify-center text-muted-foreground"
             >
               <MoreHorizontal className="size-3.5" />
             </span>
@@ -140,30 +141,25 @@ function PaginationLink({
   children,
   ...rest
 }: PaginationLinkProps) {
-  const base =
-    "inline-flex h-7 min-w-[1.75rem] items-center justify-center gap-0.5 rounded-md border px-1.5 font-semibold transition-all";
-  const activeStyle = "bg-flame border-flame text-white cursor-default";
-  const normalStyle =
-    "bg-white border-line text-ink/70 hover:bg-oat hover:border-ink/20";
-  const disabledStyle =
-    "bg-white border-line text-ink/30 cursor-not-allowed pointer-events-none";
-
-  const cls = cn(
-    base,
-    active ? activeStyle : disabled ? disabledStyle : normalStyle,
-  );
+  const variant = active ? "default" : disabled ? "ghost" : "outline";
+  const cls = "h-7 min-w-7 px-1.5";
 
   if (!href || disabled || active) {
     return (
-      <span className={cls} {...rest}>
+      <Button variant={variant} className={cls} disabled={disabled} {...rest}>
         {children}
-      </span>
+      </Button>
     );
   }
 
   return (
-    <Link href={href} className={cls} {...rest}>
+    <Button
+      variant={variant}
+      className={cls}
+      render={<Link href={href} />}
+      {...rest}
+    >
       {children}
-    </Link>
+    </Button>
   );
 }

@@ -9,7 +9,7 @@ import {
   weekStartManila,
 } from "@/lib/admin/calendar";
 import CalendarView from "@/components/admin/calendar-view";
-import PageHeader from "@/components/admin/page-header";
+import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export const dynamic = "force-dynamic";
@@ -76,13 +76,15 @@ export default async function CalendarPage({
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Booking Calendar"
-        description="All bookings by slot date (Manila time)."
-      />
+      <header>
+        <h1 className="text-2xl font-semibold tracking-tight">Booking Calendar</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          All bookings by slot date (Manila time).
+        </p>
+      </header>
 
-      <div className="overflow-hidden rounded-xl border border-line bg-white">
-        <Suspense fallback={<Skeleton className="h-[520px] bg-oat/60" />}>
+      <Card className="gap-0 overflow-hidden py-0">
+        <Suspense fallback={<Skeleton className="h-[520px]" />}>
           <CalendarBody
             events={eventsPromise}
             year={year}
@@ -93,7 +95,7 @@ export default async function CalendarPage({
             weekStart={weekStart}
           />
         </Suspense>
-      </div>
+      </Card>
     </div>
   );
 }

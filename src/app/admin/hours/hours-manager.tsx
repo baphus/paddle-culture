@@ -12,7 +12,9 @@ import {
   ChevronUp,
   Globe,
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
@@ -80,7 +82,7 @@ function isPast(endAt: string): boolean {
 }
 
 const selectClass =
-  "h-9 w-full rounded-lg border border-line bg-white px-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-flame/30";
+  "h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
 // ── Hours section ─────────────────────────────────────────────────────────
 
@@ -106,57 +108,50 @@ function DayCell({
   return (
     <div
       className={cn(
-        "flex flex-col gap-2 rounded-xl border p-3",
-        isToday ? "border-flame/40 bg-flame-light/30" : "border-line bg-white",
+        "flex flex-col gap-2 rounded-lg border p-3",
+        isToday && "border-ring/50 bg-accent/40",
       )}
     >
       {/* Day label */}
       <div className="flex items-center justify-between">
-        <span
-          className={cn(
-            "text-xs font-bold uppercase tracking-wider",
-            isToday ? "text-flame" : "text-ink/50",
-          )}
-        >
+        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
           {dayLabel.slice(0, 3)}
         </span>
         {isToday && (
-          <span className="rounded-full bg-flame/10 px-1.5 py-0.5 text-[10px] font-bold text-flame">
+          <Badge variant="secondary" className="text-[10px]">
             Today
-          </span>
+          </Badge>
         )}
       </div>
 
       {/* Hour rows */}
       {rows.length === 0 ? (
-        <p className="text-[11px] text-warm-muted/70 italic">Open all day</p>
+        <p className="text-[11px] text-muted-foreground italic">Open all day</p>
       ) : (
         rows.map((h) => (
           <div
             key={h.id}
-            className="group flex items-start justify-between gap-1 rounded-lg bg-oat/60 px-2 py-1.5"
+            className="group flex items-start justify-between gap-1 rounded-md bg-muted px-2 py-1.5"
           >
             <div className="min-w-0">
-              <p className="text-[11px] font-semibold text-ink leading-tight truncate">
+              <p className="text-[11px] font-medium leading-tight truncate">
                 {h.courtName === "All courts (global)" ? "All courts" : h.courtName}
               </p>
-              <p className="text-[11px] text-warm-muted tabular-nums">
+              <p className="text-[11px] text-muted-foreground tabular-nums">
                 {fmt12(h.openTime)} – {fmt12(h.closeTime)}
               </p>
             </div>
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-xs"
               disabled={busy !== null}
               onClick={() => onDelete(h.id)}
               title="Remove this hours row"
-              className="mt-0.5 shrink-0 rounded p-0.5 text-warm-muted/40 opacity-0 transition-all group-hover:opacity-100 hover:bg-error/10 hover:text-error focus:opacity-100"
+              className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
             >
-              {busy === h.id ? (
-                <span className="text-[10px]">…</span>
-              ) : (
-                <Trash2 className="size-3" />
-              )}
-            </button>
+              {busy === h.id ? <span className="text-[10px]">…</span> : <Trash2 />}
+            </Button>
           </div>
         ))
       )}
@@ -231,22 +226,17 @@ function HoursSection({
       {/* Section header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Clock className="size-4 text-flame" />
-          <h2 className="text-sm font-bold text-ink">Operating Hours</h2>
+          <Clock className="size-4 text-muted-foreground" />
+          <h2 className="text-sm font-semibold">Operating Hours</h2>
         </div>
-        <Button
-          type="button"
-          size="sm"
-          onClick={() => setShowForm((v) => !v)}
-          className="h-8 rounded-lg bg-flame px-3 text-xs font-bold text-white hover:bg-flame-hover"
-        >
-          <PlusCircle className="mr-1.5 size-3.5" />
+        <Button type="button" size="sm" onClick={() => setShowForm((v) => !v)}>
+          <PlusCircle />
           Add row
         </Button>
       </div>
 
       {/* Info callout */}
-      <div className="flex items-start gap-2 rounded-lg border border-columbia/60 bg-columbia/20 px-3 py-2.5 text-xs text-pine">
+      <div className="flex items-start gap-2 rounded-lg border bg-muted/50 px-3 py-2.5 text-xs text-muted-foreground">
         <Globe className="mt-0.5 size-3.5 shrink-0" />
         <p>
           A court with <strong>no rows on a day</strong> is treated as open all day.
@@ -256,42 +246,46 @@ function HoursSection({
 
       {/* Add form (collapsed by default) */}
       {showForm && (
-        <div className="rounded-xl border border-flame/20 bg-flame-light/20 p-4">
-          <p className="mb-3 text-xs font-bold text-ink">New hours row</p>
-          <form onSubmit={(e) => void addRow(e)}>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="space-y-1">
-                <Label htmlFor="h-court" className="text-xs font-semibold text-ink/70">Court</Label>
-                <select id="h-court" value={hCourt} onChange={(e) => setHCourt(e.target.value)} className={selectClass}>
-                  <option value="">All courts (global)</option>
-                  {courts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+        <Card>
+          <CardHeader>
+            <CardTitle>New hours row</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={(e) => void addRow(e)}>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="space-y-2">
+                  <Label htmlFor="h-court">Court</Label>
+                  <select id="h-court" value={hCourt} onChange={(e) => setHCourt(e.target.value)} className={selectClass}>
+                    <option value="">All courts (global)</option>
+                    {courts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="h-day">Day</Label>
+                  <select id="h-day" value={hDay} onChange={(e) => setHDay(e.target.value)} className={selectClass}>
+                    {DAY_NAMES.map((d, i) => <option key={d} value={i}>{d}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="h-open">Open (24h)</Label>
+                  <Input id="h-open" value={hOpen} onChange={(e) => setHOpen(e.target.value)} placeholder="06:00" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="h-close">Close (24h)</Label>
+                  <Input id="h-close" value={hClose} onChange={(e) => setHClose(e.target.value)} placeholder="03:00" />
+                </div>
               </div>
-              <div className="space-y-1">
-                <Label htmlFor="h-day" className="text-xs font-semibold text-ink/70">Day</Label>
-                <select id="h-day" value={hDay} onChange={(e) => setHDay(e.target.value)} className={selectClass}>
-                  {DAY_NAMES.map((d, i) => <option key={d} value={i}>{d}</option>)}
-                </select>
+              <div className="mt-3 flex gap-2">
+                <Button type="submit" disabled={busy !== null}>
+                  {busy === "add" ? "Adding…" : "Add"}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
+                  Cancel
+                </Button>
               </div>
-              <div className="space-y-1">
-                <Label htmlFor="h-open" className="text-xs font-semibold text-ink/70">Open (24h)</Label>
-                <Input id="h-open" value={hOpen} onChange={(e) => setHOpen(e.target.value)} placeholder="06:00" className="h-9 rounded-lg border-line text-sm" />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="h-close" className="text-xs font-semibold text-ink/70">Close (24h)</Label>
-                <Input id="h-close" value={hClose} onChange={(e) => setHClose(e.target.value)} placeholder="03:00" className="h-9 rounded-lg border-line text-sm" />
-              </div>
-            </div>
-            <div className="mt-3 flex gap-2">
-              <Button type="submit" disabled={busy !== null} className="h-8 rounded-lg bg-flame px-4 text-xs font-bold text-white hover:bg-flame-hover">
-                {busy === "add" ? "Adding…" : "Add"}
-              </Button>
-              <Button type="button" variant="outline" onClick={() => setShowForm(false)} className="h-8 rounded-lg border-line text-xs text-warm-muted hover:text-ink">
-                Cancel
-              </Button>
-            </div>
-          </form>
-        </div>
+            </form>
+          </CardContent>
+        </Card>
       )}
 
       {/* 7-day grid */}
@@ -330,63 +324,46 @@ function ClosureCard({
   return (
     <div
       className={cn(
-        "flex gap-3 rounded-xl border p-4 transition-opacity",
-        past ? "opacity-50" : "",
-        isGlobal
-          ? "border-l-4 border-l-cocoa border-line bg-white"
-          : "border-l-4 border-l-flame border-line bg-white",
+        "flex gap-3 rounded-lg border bg-card p-4 text-card-foreground transition-opacity",
+        past && "opacity-50",
       )}
     >
       {/* Left: icon */}
-      <div className={cn(
-        "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sm",
-        isGlobal ? "bg-cocoa/10" : "bg-flame-light",
-      )}>
-        <CalendarX className={cn("size-4", isGlobal ? "text-cocoa" : "text-flame")} />
+      <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+        <CalendarX className="size-4" />
       </div>
 
       {/* Center: info */}
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <p className="text-sm font-bold text-ink">
+          <p className="text-sm font-medium">
             {isGlobal ? "All courts" : closure.courtName}
           </p>
-          <span className={cn(
-            "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",
-            isGlobal ? "bg-cocoa/10 text-cocoa" : "bg-flame-light text-flame",
-          )}>
-            {isGlobal ? "Global" : "Court"}
-          </span>
-          {past && (
-            <span className="rounded-full bg-oat px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-warm-muted">
-              Past
-            </span>
-          )}
+          <Badge variant="secondary">{isGlobal ? "Global" : "Court"}</Badge>
+          {past && <Badge variant="outline">Past</Badge>}
         </div>
-        <p className="mt-0.5 text-xs font-semibold text-ink/80">{date}</p>
-        <p className="text-xs text-warm-muted">{time}</p>
+        <p className="mt-0.5 text-xs font-medium">{date}</p>
+        <p className="text-xs text-muted-foreground">{time}</p>
         {closure.reason && (
-          <p className="mt-1 text-xs text-warm-muted italic">"{closure.reason}"</p>
+          <p className="mt-1 text-xs text-muted-foreground italic">"{closure.reason}"</p>
         )}
         {closure.by && (
-          <p className="mt-0.5 text-[11px] text-warm-muted/60">by {closure.by}</p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground/70">by {closure.by}</p>
         )}
       </div>
 
       {/* Right: delete */}
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="icon-sm"
         disabled={busy !== null}
         onClick={() => onDelete(closure.id)}
         title="Remove closure"
-        className="self-start rounded-lg p-1.5 text-warm-muted/50 transition-colors hover:bg-error/10 hover:text-error focus:bg-error/10 focus:text-error"
+        className="self-start text-muted-foreground hover:text-destructive"
       >
-        {busy === closure.id ? (
-          <span className="text-xs">…</span>
-        ) : (
-          <Trash2 className="size-4" />
-        )}
-      </button>
+        {busy === closure.id ? <span className="text-xs">…</span> : <Trash2 />}
+      </Button>
     </div>
   );
 }
@@ -455,27 +432,20 @@ function ClosuresSection({
       {/* Section header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <CalendarX className="size-4 text-flame" />
-          <h2 className="text-sm font-bold text-ink">Closures</h2>
+          <CalendarX className="size-4 text-muted-foreground" />
+          <h2 className="text-sm font-semibold">Closures</h2>
           {upcoming.length > 0 && (
-            <span className="rounded-full bg-flame/10 px-2 py-0.5 text-[11px] font-bold text-flame">
-              {upcoming.length} upcoming
-            </span>
+            <Badge variant="secondary">{upcoming.length} upcoming</Badge>
           )}
         </div>
-        <Button
-          type="button"
-          size="sm"
-          onClick={() => setShowForm((v) => !v)}
-          className="h-8 rounded-lg bg-flame px-3 text-xs font-bold text-white hover:bg-flame-hover"
-        >
-          <PlusCircle className="mr-1.5 size-3.5" />
+        <Button type="button" size="sm" onClick={() => setShowForm((v) => !v)}>
+          <PlusCircle />
           Add closure
         </Button>
       </div>
 
       {/* Info callout */}
-      <div className="flex items-start gap-2 rounded-lg border border-surface-dim/60 bg-surface-dim/20 px-3 py-2.5 text-xs text-cocoa">
+      <div className="flex items-start gap-2 rounded-lg border bg-muted/50 px-3 py-2.5 text-xs text-muted-foreground">
         <CalendarX className="mt-0.5 size-3.5 shrink-0" />
         <p>
           Closures <strong>always override hours</strong>. A global closure blocks all courts;
@@ -485,60 +455,64 @@ function ClosuresSection({
 
       {/* Add form */}
       {showForm && (
-        <div className="rounded-xl border border-flame/20 bg-flame-light/20 p-4">
-          <p className="mb-3 text-xs font-bold text-ink">New closure</p>
-          <form onSubmit={(e) => void addClosure(e)}>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <div className="space-y-1">
-                <Label htmlFor="c-scope" className="text-xs font-semibold text-ink/70">Scope</Label>
-                <select id="c-scope" value={cScope} onChange={(e) => setCScope(e.target.value as "global" | "court")} className={selectClass}>
-                  <option value="global">All courts</option>
-                  <option value="court">One court</option>
-                </select>
-              </div>
-              {cScope === "court" && (
-                <div className="space-y-1">
-                  <Label htmlFor="c-court" className="text-xs font-semibold text-ink/70">Court</Label>
-                  <select id="c-court" value={cCourt} onChange={(e) => setCCourt(e.target.value)} className={selectClass}>
-                    <option value="">— pick one —</option>
-                    {courts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        <Card>
+          <CardHeader>
+            <CardTitle>New closure</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={(e) => void addClosure(e)}>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="space-y-2">
+                  <Label htmlFor="c-scope">Scope</Label>
+                  <select id="c-scope" value={cScope} onChange={(e) => setCScope(e.target.value as "global" | "court")} className={selectClass}>
+                    <option value="global">All courts</option>
+                    <option value="court">One court</option>
                   </select>
                 </div>
-              )}
-              <div className="space-y-1">
-                <Label htmlFor="c-start" className="text-xs font-semibold text-ink/70">Start</Label>
-                <Input id="c-start" type="datetime-local" value={cStart} onChange={(e) => setCStart(e.target.value)} className="h-9 rounded-lg border-line text-sm" />
+                {cScope === "court" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="c-court">Court</Label>
+                    <select id="c-court" value={cCourt} onChange={(e) => setCCourt(e.target.value)} className={selectClass}>
+                      <option value="">— pick one —</option>
+                      {courts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label htmlFor="c-start">Start</Label>
+                  <Input id="c-start" type="datetime-local" value={cStart} onChange={(e) => setCStart(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="c-end">End</Label>
+                  <Input id="c-end" type="datetime-local" value={cEnd} onChange={(e) => setCEnd(e.target.value)} />
+                </div>
+                <div className="space-y-2 sm:col-span-2 lg:col-span-1">
+                  <Label htmlFor="c-reason">Reason (optional)</Label>
+                  <Input id="c-reason" value={cReason} onChange={(e) => setCReason(e.target.value)} maxLength={500} placeholder="e.g. Maintenance" />
+                </div>
               </div>
-              <div className="space-y-1">
-                <Label htmlFor="c-end" className="text-xs font-semibold text-ink/70">End</Label>
-                <Input id="c-end" type="datetime-local" value={cEnd} onChange={(e) => setCEnd(e.target.value)} className="h-9 rounded-lg border-line text-sm" />
+              <div className="mt-3 flex gap-2">
+                <Button type="submit" disabled={busy !== null}>
+                  {busy === "add" ? "Adding…" : "Add closure"}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
+                  Cancel
+                </Button>
               </div>
-              <div className="space-y-1 sm:col-span-2 lg:col-span-1">
-                <Label htmlFor="c-reason" className="text-xs font-semibold text-ink/70">Reason (optional)</Label>
-                <Input id="c-reason" value={cReason} onChange={(e) => setCReason(e.target.value)} maxLength={500} placeholder="e.g. Maintenance" className="h-9 rounded-lg border-line text-sm" />
-              </div>
-            </div>
-            <div className="mt-3 flex gap-2">
-              <Button type="submit" disabled={busy !== null} className="h-8 rounded-lg bg-flame px-4 text-xs font-bold text-white hover:bg-flame-hover">
-                {busy === "add" ? "Adding…" : "Add closure"}
-              </Button>
-              <Button type="button" variant="outline" onClick={() => setShowForm(false)} className="h-8 rounded-lg border-line text-xs text-warm-muted hover:text-ink">
-                Cancel
-              </Button>
-            </div>
-          </form>
-        </div>
+            </form>
+          </CardContent>
+        </Card>
       )}
 
       {/* Upcoming closures */}
       {upcoming.length === 0 && past.length === 0 ? (
-        <div className="flex h-24 items-center justify-center rounded-xl border border-dashed border-line text-sm text-warm-muted">
+        <div className="flex h-24 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
           No closures scheduled — courts follow regular hours.
         </div>
       ) : (
         <div className="space-y-2">
           {upcoming.length === 0 ? (
-            <p className="text-xs text-warm-muted">No upcoming closures.</p>
+            <p className="text-xs text-muted-foreground">No upcoming closures.</p>
           ) : (
             upcoming.map((c) => (
               <ClosureCard key={c.id} closure={c} busy={busy} onDelete={deleteClosure} />
@@ -548,14 +522,16 @@ function ClosuresSection({
           {/* Past closures toggle */}
           {past.length > 0 && (
             <div className="pt-1">
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 onClick={() => setShowPast((v) => !v)}
-                className="flex items-center gap-1.5 text-xs text-warm-muted hover:text-ink transition-colors"
+                className="text-muted-foreground"
               >
-                {showPast ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                {showPast ? <ChevronUp /> : <ChevronDown />}
                 {showPast ? "Hide" : "Show"} {past.length} past closure{past.length !== 1 ? "s" : ""}
-              </button>
+              </Button>
               {showPast && (
                 <div className="mt-2 space-y-2">
                   {past.map((c) => (
@@ -585,7 +561,7 @@ export default function HoursManager({
   return (
     <div className="space-y-10">
       <HoursSection initialHours={initialHours} courts={courts} />
-      <div className="border-t border-line" />
+      <div className="border-t" />
       <ClosuresSection initialClosures={initialClosures} courts={courts} />
     </div>
   );

@@ -1,4 +1,3 @@
-import PageHeader from "@/components/admin/page-header";
 import { listAdminUsers } from "@/lib/admin/users";
 import { requireAdmin } from "@/lib/admin/session";
 import InviteManager from "../invite-manager";
@@ -20,15 +19,17 @@ export default async function UsersPage() {
 
   return (
     <div className="space-y-8">
-      <PageHeader
-        title="Users"
-        description="Manage admin accounts and invitations."
-      />
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Users</h1>
+        <p className="text-sm text-muted-foreground">
+          Manage admin accounts and invitations.
+        </p>
+      </div>
 
       {/* Admin accounts */}
-      <section className="overflow-hidden rounded-xl border border-line bg-white">
+      <section className="overflow-hidden rounded-xl border bg-card text-card-foreground">
         {failed ? (
-          <div className="flex h-32 items-center justify-center px-4 text-center text-sm text-warm-muted">
+          <div className="flex h-32 items-center justify-center px-4 text-center text-sm text-muted-foreground">
             Could not load admin users. Check your connection and try again.
           </div>
         ) : (
@@ -38,8 +39,8 @@ export default async function UsersPage() {
 
       {/* Invitations */}
       <section>
-        <h2 className="mb-4 text-sm font-bold text-ink">Invitations</h2>
-        <div className="rounded-xl border border-line bg-white p-5">
+        <h2 className="mb-4 text-sm font-semibold">Invitations</h2>
+        <div className="rounded-xl border bg-card p-5 text-card-foreground">
           <InviteManager email={session.email} name={session.name} />
         </div>
       </section>

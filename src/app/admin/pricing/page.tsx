@@ -1,6 +1,5 @@
 import { getDb } from "@/db/client";
 import { listPricingRules } from "@/lib/admin/config";
-import PageHeader from "@/components/admin/page-header";
 import PricingManager from "./pricing-manager";
 
 export const dynamic = "force-dynamic";
@@ -12,8 +11,8 @@ export default async function PricingPage() {
   } catch {
     return (
       <div className="space-y-6">
-        <PageHeader title="Pricing" />
-        <p className="text-sm text-warm-muted">Database is not configured.</p>
+        <h1 className="text-2xl font-semibold tracking-tight">Pricing</h1>
+        <p className="text-sm text-muted-foreground">Database is not configured.</p>
       </div>
     );
   }
@@ -25,8 +24,8 @@ export default async function PricingPage() {
     console.error("[pricing] data fetch failed:", err);
     return (
       <div className="space-y-6">
-        <PageHeader title="Pricing" />
-        <p className="text-sm text-warm-muted">
+        <h1 className="text-2xl font-semibold tracking-tight">Pricing</h1>
+        <p className="text-sm text-muted-foreground">
           Could not load data. Check your database connection and try again.
         </p>
       </div>
@@ -35,10 +34,13 @@ export default async function PricingPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Pricing"
-        description="Edit rates only — court / day-type / time-band vocabulary is fixed. Every change is audit-logged."
-      />
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Pricing</h1>
+        <p className="text-sm text-muted-foreground">
+          Edit rates only — court / day-type / time-band vocabulary is fixed. Every
+          change is audit-logged.
+        </p>
+      </div>
       <PricingManager initial={rules} />
     </div>
   );

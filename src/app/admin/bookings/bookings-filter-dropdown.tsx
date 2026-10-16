@@ -70,10 +70,7 @@ export default function BookingsFilterDropdown({
       <FilterGroupSection title="Date Range">
         <div className="flex flex-col gap-2">
           <div className="space-y-0.5">
-            <Label
-              htmlFor="filter-from"
-              className="text-[11px] font-semibold text-ink/50"
-            >
+            <Label htmlFor="filter-from" className="text-[11px] font-semibold">
               From
             </Label>
             <Input
@@ -81,14 +78,11 @@ export default function BookingsFilterDropdown({
               name="from"
               type="date"
               defaultValue={from}
-              className="h-8 rounded-lg border-line text-sm w-full"
+              className="w-full"
             />
           </div>
           <div className="space-y-0.5">
-            <Label
-              htmlFor="filter-to"
-              className="text-[11px] font-semibold text-ink/50"
-            >
+            <Label htmlFor="filter-to" className="text-[11px] font-semibold">
               To
             </Label>
             <Input
@@ -96,7 +90,7 @@ export default function BookingsFilterDropdown({
               name="to"
               type="date"
               defaultValue={to}
-              className="h-8 rounded-lg border-line text-sm w-full"
+              className="w-full"
             />
           </div>
         </div>

@@ -1,3 +1,5 @@
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -51,23 +53,13 @@ function formatAt(dateStr: string): string {
   });
 }
 
-function actionAccent(action: string): "flame" | "pine" | "error" | "muted" {
-  if (action === "approve") return "pine";
-  if (action === "reject") return "error";
-  if (action === "delete") return "error";
-  if (action === "create") return "flame";
-  return "muted";
-}
-
-function actionClass(action: string): string {
-  const map: Record<string, string> = {
-    approve: "bg-live text-pine",
-    create: "bg-flame-light text-flame",
-    reject: "bg-surface-dim text-error",
-    delete: "bg-surface-dim text-error",
-    update: "bg-oat text-cocoa",
-  };
-  return map[action] ?? "bg-oat text-ink";
+function actionVariant(
+  action: string,
+): "default" | "secondary" | "destructive" | "outline" {
+  if (action === "approve") return "default";
+  if (action === "create") return "secondary";
+  if (action === "reject" || action === "delete") return "destructive";
+  return "outline";
 }
 
 function pageHref(q: string, action: string, page: number): string {
@@ -99,7 +91,7 @@ export default async function AuditPage({
     return (
       <div className="space-y-6">
         <PageHeader title="Audit Log" />
-        <p className="text-sm text-warm-muted">Database is not configured.</p>
+        <p className="text-sm text-muted-foreground">Database is not configured.</p>
       </div>
     );
   }
@@ -173,103 +165,81 @@ export default async function AuditPage({
               value={a}
               active={action === a}
               label={a.charAt(0).toUpperCase() + a.slice(1)}
-              accent={actionAccent(a)}
             />
           ))}
         </AdminToolbarFilters>
       </AdminToolbar>
 
       {/* ── Table ─────────────────────────────────────────────────────── */}
-      <div className="overflow-hidden rounded-xl border border-line bg-white">
-        <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-          <p className="text-xs font-semibold text-ink/50">
+      <Card className="gap-0 py-0">
+        <div className="flex items-center justify-between border-b px-4 py-2.5">
+          <p className="text-xs font-semibold text-muted-foreground">
             {total > 0
               ? `${total.toLocaleString()} event${total === 1 ? "" : "s"}`
               : "No events found"}
           </p>
           {total > 0 && (
-            <p className="text-xs text-warm-muted">
+            <p className="text-xs text-muted-foreground">
               Page {safePage} of {totalPages}
             </p>
           )}
         </div>
 
         {(rows ?? []).length > 0 ? (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-oat/40 hover:bg-oat/40 border-b border-line">
-                  <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">
-                    Time (Manila)
-                  </TableHead>
-                  <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">
-                    Actor
-                  </TableHead>
-                  <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">
-                    Action
-                  </TableHead>
-                  <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">
-                    Entity
-                  </TableHead>
-                  <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">
-                    Entity ID
-                  </TableHead>
-                  <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">
-                    Before
-                  </TableHead>
-                  <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">
-                    After
-                  </TableHead>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="px-4">Time (Manila)</TableHead>
+                <TableHead className="px-4">Actor</TableHead>
+                <TableHead className="px-4">Action</TableHead>
+                <TableHead className="px-4">Entity</TableHead>
+                <TableHead className="px-4">Entity ID</TableHead>
+                <TableHead className="px-4">Before</TableHead>
+                <TableHead className="px-4">After</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(rows as AuditRow[]).map((r) => (
+                <TableRow key={r.id} className="align-top">
+                  <TableCell className="px-4 py-3 text-xs text-muted-foreground">
+                    {formatAt(r.at)}
+                  </TableCell>
+                  <TableCell className="max-w-[120px] truncate px-4 py-3 text-xs text-muted-foreground">
+                    {r.actor}
+                  </TableCell>
+                  <TableCell className="px-4 py-3">
+                    <Badge variant={actionVariant(r.action)}>
+                      {r.action}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-xs text-muted-foreground">
+                    {r.entity}
+                  </TableCell>
+                  <TableCell className="max-w-[80px] truncate px-4 py-3 font-mono text-xs text-muted-foreground">
+                    {r.entity_id}
+                  </TableCell>
+                  <TableCell className="max-w-[200px] px-4 py-3 text-xs text-muted-foreground">
+                    <span className="block whitespace-pre-wrap break-words">
+                      {summarize(r.before)}
+                    </span>
+                  </TableCell>
+                  <TableCell className="max-w-[200px] px-4 py-3 text-xs text-muted-foreground">
+                    <span className="block whitespace-pre-wrap break-words">
+                      {summarize(r.after)}
+                    </span>
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(rows as AuditRow[]).map((r) => (
-                  <TableRow
-                    key={r.id}
-                    className="border-b border-line/60 align-top transition-colors hover:bg-oat/20"
-                  >
-                    <TableCell className="px-4 py-3 whitespace-nowrap text-xs text-ink/70">
-                      {formatAt(r.at)}
-                    </TableCell>
-                    <TableCell className="px-4 py-3 max-w-[120px] truncate text-xs text-ink/80">
-                      {r.actor}
-                    </TableCell>
-                    <TableCell className="px-4 py-3">
-                      <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold ${actionClass(r.action)}`}
-                      >
-                        {r.action}
-                      </span>
-                    </TableCell>
-                    <TableCell className="px-4 py-3 text-xs text-ink/70">
-                      {r.entity}
-                    </TableCell>
-                    <TableCell className="px-4 py-3 max-w-[80px] truncate font-mono text-xs text-warm-muted">
-                      {r.entity_id}
-                    </TableCell>
-                    <TableCell className="px-4 py-3 max-w-[200px] text-xs text-warm-muted">
-                      <span className="block whitespace-pre-wrap break-words">
-                        {summarize(r.before)}
-                      </span>
-                    </TableCell>
-                    <TableCell className="px-4 py-3 max-w-[200px] text-xs text-warm-muted">
-                      <span className="block whitespace-pre-wrap break-words">
-                        {summarize(r.after)}
-                      </span>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+              ))}
+            </TableBody>
+          </Table>
         ) : (
-          <div className="flex h-32 items-center justify-center text-sm text-warm-muted">
+          <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
             {total === 0 && !q && action === "all"
               ? "No audit events yet."
               : "No events match your filters."}
           </div>
         )}
-      </div>
+      </Card>
 
       {/* ── Pagination ────────────────────────────────────────────────── */}
       <AdminPagination

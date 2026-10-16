@@ -16,6 +16,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { getDb } from "@/db/client";
 import { MANILA_TZ } from "@/lib/booking/constants";
 import {
@@ -23,7 +30,6 @@ import {
   revenueByDay,
   revenueByMonth,
 } from "@/lib/admin/bookings";
-import PageHeader from "@/components/admin/page-header";
 
 export const dynamic = "force-dynamic";
 
@@ -84,8 +90,8 @@ export default async function RevenuePage({
   } catch {
     return (
       <div className="space-y-6">
-        <PageHeader title="Revenue" />
-        <p className="text-sm text-warm-muted">Database is not configured.</p>
+        <h1 className="text-2xl font-semibold tracking-tight">Revenue</h1>
+        <p className="text-sm text-muted-foreground">Database is not configured.</p>
       </div>
     );
   }
@@ -97,20 +103,22 @@ export default async function RevenuePage({
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        title="Revenue"
-        description="Approved bookings only — counted on earliest slot date (Manila time)."
-      />
+      <header>
+        <h1 className="text-2xl font-semibold tracking-tight">Revenue</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Approved bookings only — counted on earliest slot date (Manila time).
+        </p>
+      </header>
 
       <Suspense
         fallback={
           <div className="space-y-5">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {[0, 1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-[86px] rounded-xl bg-oat/60" />
+                <Skeleton key={i} className="h-[86px]" />
               ))}
             </div>
-            <Skeleton className="h-56 rounded-xl bg-oat/60" />
+            <Skeleton className="h-56" />
           </div>
         }
       >
@@ -118,10 +126,11 @@ export default async function RevenuePage({
       </Suspense>
 
       {/* ── Date filter toolbar ───────────────────────────────────────── */}
-      <div className="rounded-xl border border-line bg-white px-4 py-3">
+      <Card className="py-0">
+        <CardContent className="py-3">
         {/* Row 1: quick-range chips */}
         <div className="flex flex-wrap items-center gap-2">
-          <span className="mr-1 flex items-center gap-1.5 text-xs font-semibold text-ink/50">
+          <span className="mr-1 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
             <CalendarDays className="size-3.5" />
             Range
           </span>
@@ -154,7 +163,7 @@ export default async function RevenuePage({
           {(fromStr || toStr) && (
             <Link
               href="/admin/revenue"
-              className="ml-auto flex items-center gap-1 text-xs font-semibold text-warm-muted hover:text-ink"
+              className="ml-auto flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground"
             >
               <X className="size-3.5" /> Clear
             </Link>
@@ -165,13 +174,13 @@ export default async function RevenuePage({
         <form
           method="get"
           action="/admin/revenue"
-          className="mt-3 flex flex-wrap items-end gap-3 border-t border-line pt-3"
+          className="mt-3 flex flex-wrap items-end gap-3 border-t border-border pt-3"
         >
-          <span className="text-[11px] font-semibold text-ink/40 uppercase tracking-wider self-end pb-2">
+          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider self-end pb-2">
             Custom
           </span>
           <div className="space-y-0.5">
-            <Label htmlFor="from" className="text-[11px] font-semibold text-ink/50">
+            <Label htmlFor="from" className="text-[11px] font-semibold text-muted-foreground">
               From
             </Label>
             <Input
@@ -179,11 +188,11 @@ export default async function RevenuePage({
               name="from"
               type="date"
               defaultValue={fromStr}
-              className="h-8 w-36 rounded-lg border-line text-sm"
+              className="w-36"
             />
           </div>
           <div className="space-y-0.5">
-            <Label htmlFor="to" className="text-[11px] font-semibold text-ink/50">
+            <Label htmlFor="to" className="text-[11px] font-semibold text-muted-foreground">
               To
             </Label>
             <Input
@@ -191,19 +200,15 @@ export default async function RevenuePage({
               name="to"
               type="date"
               defaultValue={toStr}
-              className="h-8 w-36 rounded-lg border-line text-sm"
+              className="w-36"
             />
           </div>
-          <Button
-            type="submit"
-            className="h-8 rounded-lg bg-flame px-4 text-xs font-bold text-white hover:bg-flame-hover"
-          >
-            Apply
-          </Button>
+          <Button type="submit">Apply</Button>
         </form>
-      </div>
+        </CardContent>
+      </Card>
 
-      <Suspense fallback={<Skeleton className="h-64 rounded-xl bg-oat/60" />}>
+      <Suspense fallback={<Skeleton className="h-64" />}>
         <RevenueTables days={daysPromise} months={monthsPromise} />
       </Suspense>
     </div>
@@ -240,19 +245,16 @@ async function RevenueSummary({
           label="Total (filtered)"
           value={formatPesosFromCents(totalCents)}
           sub={`${totalBookings} booking${totalBookings !== 1 ? "s" : ""}`}
-          accent="flame"
         />
         <KpiCard
           label="Avg per active day"
           value={avgPerDay > 0 ? formatPesosFromCents(avgPerDay) : "—"}
           sub={activeDayCount + " days with revenue"}
-          accent="pine"
         />
         <KpiCard
           label="Peak day"
           value={peakDay ? formatPesosFromCents(peakDay.revenueCents) : "—"}
           sub={peakDay?.date ?? "—"}
-          accent="pine"
         />
         <KpiCard
           label="All-time months"
@@ -262,14 +264,21 @@ async function RevenueSummary({
               ? `${months[months.length - 1]!.month} → ${months[0]!.month}`
               : "No data yet"
           }
-          accent="muted"
         />
       </div>
 
       {/* ── Chart ─────────────────────────────────────────────────────── */}
-      <div className="rounded-xl border border-line bg-white p-5">
-        <RevenueChartLoader days={days} months={months} mode="full" />
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Revenue</CardTitle>
+          <CardDescription>
+            Approved bookings over the selected range.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <RevenueChartLoader days={days} months={months} mode="full" />
+        </CardContent>
+      </Card>
     </>
   );
 }
@@ -289,30 +298,28 @@ async function RevenueTables({
   return (
     <>
       {/* ── Daily breakdown table ─────────────────────────────────────── */}
-      <div className="overflow-hidden rounded-xl border border-line bg-white">
-        <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-          <p className="text-xs font-bold uppercase tracking-wide text-ink/50">
-            Daily breakdown
-          </p>
-          <p className="text-xs text-warm-muted">
+      <Card className="gap-0 overflow-hidden py-0">
+        <CardHeader className="border-b">
+          <CardTitle className="text-sm">Daily breakdown</CardTitle>
+          <CardDescription>
             {days.length} day{days.length !== 1 ? "s" : ""}
-          </p>
-        </div>
+          </CardDescription>
+        </CardHeader>
         {days.length > 0 ? (
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
-                <TableRow className="bg-oat/40 hover:bg-oat/40 border-b border-line">
-                  <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">
+                <TableRow>
+                  <TableHead className="px-4">
                     Date (Manila)
                   </TableHead>
-                  <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">
+                  <TableHead className="px-4">
                     Bookings
                   </TableHead>
-                  <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">
+                  <TableHead className="px-4">
                     Revenue
                   </TableHead>
-                  <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">
+                  <TableHead className="px-4">
                     % of total
                   </TableHead>
                 </TableRow>
@@ -323,18 +330,18 @@ async function RevenueTables({
                   .map((d) => (
                     <TableRow
                       key={d.date}
-                      className="border-b border-line/60 transition-colors hover:bg-oat/20"
+                      className="transition-colors"
                     >
-                      <TableCell className="px-4 py-3 font-medium text-ink">
+                      <TableCell className="px-4 py-3 font-medium text-foreground">
                         {d.date}
                       </TableCell>
-                      <TableCell className="px-4 py-3 text-sm text-ink/70">
+                      <TableCell className="px-4 py-3 text-sm text-muted-foreground">
                         {d.bookings}
                       </TableCell>
-                      <TableCell className="px-4 py-3 text-sm font-semibold text-ink">
+                      <TableCell className="px-4 py-3 text-sm font-semibold">
                         {formatPesosFromCents(d.revenueCents)}
                       </TableCell>
-                      <TableCell className="px-4 py-3 text-sm text-ink/60">
+                      <TableCell className="px-4 py-3 text-sm text-muted-foreground">
                         {totalCents > 0
                           ? `${((d.revenueCents / totalCents) * 100).toFixed(1)}%`
                           : "—"}
@@ -345,31 +352,29 @@ async function RevenueTables({
             </Table>
           </div>
         ) : (
-          <div className="flex h-24 items-center justify-center text-sm text-warm-muted">
+          <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
             No approved bookings in this date range.
           </div>
         )}
-      </div>
+      </Card>
 
       {/* ── Monthly breakdown table ───────────────────────────────────── */}
       {months.length > 0 && (
-        <div className="overflow-hidden rounded-xl border border-line bg-white">
-          <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-            <p className="text-xs font-bold uppercase tracking-wide text-ink/50">
-              All-time monthly breakdown
-            </p>
-          </div>
+        <Card className="gap-0 overflow-hidden py-0">
+          <CardHeader className="border-b">
+            <CardTitle className="text-sm">All-time monthly breakdown</CardTitle>
+          </CardHeader>
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
-                <TableRow className="bg-oat/40 hover:bg-oat/40 border-b border-line">
-                  <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">
+                <TableRow>
+                  <TableHead className="px-4">
                     Month
                   </TableHead>
-                  <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">
+                  <TableHead className="px-4">
                     Bookings
                   </TableHead>
-                  <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">
+                  <TableHead className="px-4">
                     Revenue
                   </TableHead>
                 </TableRow>
@@ -378,18 +383,18 @@ async function RevenueTables({
                 {months.map((m) => (
                   <TableRow
                     key={m.month}
-                    className="border-b border-line/60 transition-colors hover:bg-oat/20"
+                    className="transition-colors"
                   >
-                    <TableCell className="px-4 py-3 font-medium text-ink">
+                    <TableCell className="px-4 py-3 font-medium text-foreground">
                       {new Date(m.month + "-15").toLocaleString("en-PH", {
                         month: "long",
                         year: "numeric",
                       })}
                     </TableCell>
-                    <TableCell className="px-4 py-3 text-sm text-ink/70">
+                    <TableCell className="px-4 py-3 text-sm text-muted-foreground">
                       {m.bookings}
                     </TableCell>
-                    <TableCell className="px-4 py-3 text-sm font-semibold text-ink">
+                    <TableCell className="px-4 py-3 text-sm font-semibold">
                       {formatPesosFromCents(m.revenueCents)}
                     </TableCell>
                   </TableRow>
@@ -397,7 +402,7 @@ async function RevenueTables({
               </TableBody>
             </Table>
           </div>
-        </div>
+        </Card>
       )}
     </>
   );
@@ -412,41 +417,27 @@ function format(d: Date): string {
 
 function chipClass(active: boolean): string {
   return [
-    "inline-flex h-7 items-center rounded-full border px-3 text-xs font-semibold transition-all",
+    "inline-flex h-7 items-center rounded-full border px-3 text-xs font-semibold transition-colors",
     active
-      ? "bg-flame border-flame text-white"
-      : "bg-white border-line text-ink/70 hover:border-ink/30 hover:bg-oat/60",
+      ? "bg-primary border-primary text-primary-foreground"
+      : "bg-background border-border text-muted-foreground hover:bg-muted",
   ].join(" ");
 }
 
 // ─── KPI card ─────────────────────────────────────────────────────────────────
 
-function KpiCard({
-  label,
-  value,
-  sub,
-  accent,
-}: {
-  label: string;
-  value: string;
-  sub: string;
-  accent: "flame" | "pine" | "muted";
-}) {
-  const valueClass =
-    accent === "flame"
-      ? "text-flame"
-      : accent === "pine"
-        ? "text-pine"
-        : "text-ink";
+function KpiCard({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
-    <div className="rounded-xl border border-line bg-white p-4">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-warm-muted">
-        {label}
-      </p>
-      <p className={`mt-1 text-xl font-black tracking-tight ${valueClass}`}>
-        {value}
-      </p>
-      <p className="mt-0.5 text-[11px] text-warm-muted">{sub}</p>
-    </div>
+    <Card>
+      <CardHeader>
+        <CardDescription className="text-xs font-medium uppercase tracking-wider">
+          {label}
+        </CardDescription>
+        <CardTitle className="text-2xl tabular-nums">{value}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="text-xs text-muted-foreground">{sub}</p>
+      </CardContent>
+    </Card>
   );
 }

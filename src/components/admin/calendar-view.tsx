@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { LoadingAnimation } from "@/components/ui/loading-animation";
 import {
   Sheet,
@@ -50,13 +51,13 @@ const DAY_NAMES_MINI = ["S", "M", "T", "W", "T", "F", "S"];
 function eventColors(status: string) {
   switch (status) {
     case "Approved":
-      return { pill: "bg-pine/10 text-pine border-pine/20", dot: "bg-pine" };
+      return { pill: "bg-primary/10 text-primary border-primary/20", dot: "bg-primary" };
     case "Pending":
-      return { pill: "bg-flame/10 text-flame border-flame/20", dot: "bg-flame" };
+      return { pill: "bg-accent text-accent-foreground border-border", dot: "bg-accent-foreground" };
     case "Rejected":
-      return { pill: "bg-error/10 text-error border-error/20", dot: "bg-error" };
+      return { pill: "bg-destructive/10 text-destructive border-destructive/20", dot: "bg-destructive" };
     default:
-      return { pill: "bg-oat text-ink/60 border-line", dot: "bg-warm-muted" };
+      return { pill: "bg-muted text-muted-foreground border-border", dot: "bg-muted-foreground" };
   }
 }
 
@@ -222,7 +223,7 @@ export default function CalendarView({
     return (
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between px-1 pb-1">
-          <h2 className="text-sm font-extrabold tracking-tight text-ink">
+          <h2 className="text-sm font-extrabold tracking-tight text-foreground">
             {MONTH_NAMES[month - 1]} {year}
           </h2>
           <div className="flex items-center gap-1">
@@ -234,7 +235,7 @@ export default function CalendarView({
                 navigate({ view: "monthly", y: String(y2), m: String(m2) });
               }}
               aria-label="Previous month"
-              className="grid size-6 place-items-center rounded-lg border border-line bg-white text-ink hover:bg-oat"
+              className="grid size-6 place-items-center rounded-lg border border-border bg-background text-foreground hover:bg-muted"
             >
               <ChevronLeft className="size-3" aria-hidden />
             </button>
@@ -246,7 +247,7 @@ export default function CalendarView({
                 navigate({ view: "monthly", y: String(y2), m: String(m2) });
               }}
               aria-label="Next month"
-              className="grid size-6 place-items-center rounded-lg border border-line bg-white text-ink hover:bg-oat"
+              className="grid size-6 place-items-center rounded-lg border border-border bg-background text-foreground hover:bg-muted"
             >
               <ChevronRight className="size-3" aria-hidden />
             </button>
@@ -254,7 +255,7 @@ export default function CalendarView({
         </div>
         <div className="grid grid-cols-7">
           {DAY_NAMES_MINI.map((d, i) => (
-            <div key={i} className="py-1 text-center text-[9px] font-bold uppercase tracking-wider text-warm-muted">
+            <div key={i} className="py-1 text-center text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
               {d}
             </div>
           ))}
@@ -272,20 +273,20 @@ export default function CalendarView({
                 onClick={() => dayEvents.length > 0 && navigate({ view: "daily", date: cell.date })}
                 className={cn(
                   "relative flex flex-col items-center py-1 text-[11px] font-semibold transition-colors",
-                  cell.inMonth ? "text-ink" : "text-ink/25",
-                  dayEvents.length > 0 ? "cursor-pointer hover:bg-oat rounded-lg" : "cursor-default",
+                  cell.inMonth ? "text-foreground" : "text-foreground/25",
+                  dayEvents.length > 0 ? "cursor-pointer hover:bg-muted rounded-lg" : "cursor-default",
                 )}
               >
                 <span className={cn(
                   "flex size-5 items-center justify-center rounded-full text-[11px] font-bold leading-none",
-                  isToday ? "bg-flame text-white" : "",
+                  isToday ? "bg-primary text-primary-foreground" : "",
                 )}>
                   {Number(cell.date.slice(8, 10))}
                 </span>
                 {dayEvents.length > 0 && (
                   <span className={cn(
                     "mt-0.5 size-1 rounded-full",
-                    hasPending ? "bg-flame" : hasApproved ? "bg-pine" : "bg-error",
+                    hasPending ? "bg-accent-foreground" : hasApproved ? "bg-primary" : "bg-destructive",
                   )} />
                 )}
               </button>
@@ -300,7 +301,7 @@ export default function CalendarView({
   return (
     <>
       {/* ── Top bar ──────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
         {/* Period label + nav */}
         <div className="flex items-center gap-2">
           {/* Prev */}
@@ -318,13 +319,13 @@ export default function CalendarView({
                 navigate({ view: "daily", date: addDays(anchorDate, -1) });
               }
             }}
-            className="grid size-8 place-items-center rounded-lg border border-line bg-white text-ink hover:bg-oat"
+            className="grid size-8 place-items-center rounded-lg border border-border bg-background text-foreground hover:bg-muted"
           >
             <ChevronLeft className="size-4" aria-hidden />
           </button>
 
           {/* Label */}
-          <h2 className="text-base font-extrabold tracking-tight text-ink">
+          <h2 className="text-base font-extrabold tracking-tight text-foreground">
             {view === "monthly"
               ? `${MONTH_NAMES[month - 1]} ${year}`
               : view === "weekly"
@@ -347,13 +348,13 @@ export default function CalendarView({
                 navigate({ view: "daily", date: addDays(anchorDate, 1) });
               }
             }}
-            className="grid size-8 place-items-center rounded-lg border border-line bg-white text-ink hover:bg-oat"
+            className="grid size-8 place-items-center rounded-lg border border-border bg-background text-foreground hover:bg-muted"
           >
             <ChevronRight className="size-4" aria-hidden />
           </button>
 
           {/* Booking count badge */}
-          <span className="rounded-full bg-oat px-2 py-0.5 text-[11px] font-semibold text-warm-muted">
+          <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
             {events.length} booking{events.length !== 1 ? "s" : ""}
           </span>
         </div>
@@ -372,13 +373,13 @@ export default function CalendarView({
                 navigate({ view: "daily", date: today });
               }
             }}
-            className="rounded-lg border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink hover:bg-oat"
+            className="rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-muted"
           >
             Today
           </button>
 
           {/* View toggle */}
-          <div className="flex rounded-lg border border-line bg-oat p-0.5">
+          <div className="flex rounded-lg border border-border bg-muted p-0.5">
             {(["daily", "weekly", "monthly"] as ViewMode[]).map((v) => (
               <button
                 key={v}
@@ -387,8 +388,8 @@ export default function CalendarView({
                 className={cn(
                   "rounded-md px-2.5 py-1 text-xs font-semibold capitalize transition-colors",
                   view === v
-                    ? "bg-white text-ink shadow-sm"
-                    : "text-warm-muted hover:text-ink",
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
                 )}
               >
                 {v}
@@ -428,11 +429,11 @@ export default function CalendarView({
       )}
 
       {/* ── Legend ───────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-4 border-t border-line px-4 py-2.5">
+      <div className="flex flex-wrap items-center gap-4 border-t border-border px-4 py-2.5">
         {(["Approved", "Pending", "Rejected"] as const).map((s) => {
           const c = eventColors(s);
           return (
-            <span key={s} className="flex items-center gap-1.5 text-[11px] font-semibold text-ink/70">
+            <span key={s} className="flex items-center gap-1.5 text-[11px] font-semibold text-foreground/70">
               <span className={cn("size-2 rounded-full", c.dot)} aria-hidden />
               {s}
             </span>
@@ -445,7 +446,7 @@ export default function CalendarView({
         open={dayPanelDate !== null}
         onOpenChange={(o) => { if (!o) setDayPanelDate(null); }}
       >
-        <SheetContent className="flex w-full flex-col gap-0 overflow-y-auto border-line bg-parchment p-0 sm:max-w-sm">
+        <SheetContent className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-sm">
           {dayPanelDate && (
             <DayPanel
               date={dayPanelDate}
@@ -463,7 +464,7 @@ export default function CalendarView({
         open={detailBooking !== null || detailLoading}
         onOpenChange={(o) => { if (!o) { setDetailBooking(null); setDetailLoading(false); } }}
       >
-        <SheetContent className="flex w-full flex-col gap-0 overflow-y-auto border-line bg-parchment p-0 sm:max-w-md">
+        <SheetContent className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-md">
           {detailLoading && (
             <div className="flex flex-1 items-center justify-center py-20">
               <LoadingAnimation label="Loading booking" />
@@ -506,7 +507,7 @@ function MonthlyView({
         {DAY_NAMES_SHORT.map((d, i) => (
           <div
             key={i}
-            className="border-b border-line py-2 text-center text-[11px] font-bold uppercase tracking-wider text-warm-muted"
+            className="border-b border-border py-2 text-center text-[11px] font-bold uppercase tracking-wider text-muted-foreground"
           >
             {d}
           </div>
@@ -528,18 +529,18 @@ function MonthlyView({
               type="button"
               onClick={() => onDayClick(cell.date)}
               className={cn(
-                "group min-h-[90px] border-b border-r border-line p-1.5 text-left transition-colors",
+                "group min-h-[90px] border-b border-r border-border p-1.5 text-left transition-colors",
                 isLastRow && "border-b-0",
                 (idx + 1) % 7 === 0 && "border-r-0",
-                !cell.inMonth && "bg-oat/30",
-                dayEvents.length > 0 ? "cursor-pointer hover:bg-oat/50" : "cursor-default",
+                !cell.inMonth && "bg-muted/30",
+                dayEvents.length > 0 ? "cursor-pointer hover:bg-muted/50" : "cursor-default",
               )}
             >
               {/* Date number */}
               <div className="mb-1 flex justify-end">
                 <span className={cn(
                   "flex size-6 items-center justify-center rounded-full text-[12px] font-bold leading-none",
-                  isToday ? "bg-flame text-white" : cell.inMonth ? "text-ink" : "text-ink/30",
+                  isToday ? "bg-primary text-primary-foreground" : cell.inMonth ? "text-foreground" : "text-foreground/30",
                 )}>
                   {Number(cell.date.slice(8, 10))}
                 </span>
@@ -550,9 +551,9 @@ function MonthlyView({
                 <div className="flex items-center gap-1 px-0.5">
                   <span className={cn(
                     "size-1.5 shrink-0 rounded-full",
-                    hasPending ? "bg-flame" : hasApproved ? "bg-pine" : "bg-error",
+                    hasPending ? "bg-accent-foreground" : hasApproved ? "bg-primary" : "bg-destructive",
                   )} />
-                  <span className="text-[11px] font-semibold text-ink/70 leading-tight">
+                  <span className="text-[11px] font-semibold text-foreground/70 leading-tight">
                     {dayEvents.length} booking{dayEvents.length !== 1 ? "s" : ""}
                   </span>
                 </div>
@@ -583,7 +584,7 @@ function WeeklyView({
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
   return (
-    <div className="grid grid-cols-7 divide-x divide-line">
+    <div className="grid grid-cols-7 divide-x divide-border">
       {days.map((date, col) => {
         const dayEvents = byDate.get(date) ?? [];
         const isToday = date === today;
@@ -595,11 +596,11 @@ function WeeklyView({
             {/* Header row */}
             <div
               className={cn(
-                "border-b border-line px-2 py-2 text-center",
-                isToday && "bg-flame/5",
+                "border-b border-border px-2 py-2 text-center",
+                isToday && "bg-primary/5",
               )}
             >
-              <p className="text-[11px] font-bold uppercase tracking-wider text-warm-muted">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
                 {dowLabel}
               </p>
               <button
@@ -608,8 +609,8 @@ function WeeklyView({
                 className={cn(
                   "mx-auto mt-0.5 flex size-7 items-center justify-center rounded-full text-sm font-extrabold leading-none transition-colors",
                   isToday
-                    ? "bg-flame text-white"
-                    : "text-ink hover:bg-oat",
+                    ? "bg-primary text-primary-foreground"
+                    : "text-foreground hover:bg-muted",
                 )}
               >
                 {dd}
@@ -619,7 +620,7 @@ function WeeklyView({
             {/* Events */}
             <div className="flex flex-1 flex-col gap-1 p-1.5">
               {dayEvents.length === 0 && (
-                <p className="mt-3 text-center text-[10px] text-ink/25">—</p>
+                <p className="mt-3 text-center text-[10px] text-foreground/25">—</p>
               )}
               {dayEvents.map((ev) => {
                 const c = eventColors(ev.status);
@@ -644,7 +645,7 @@ function WeeklyView({
                 <button
                   type="button"
                   onClick={() => onDayClick(date)}
-                  className="mt-auto w-full rounded-lg py-1 text-center text-[10px] font-semibold text-warm-muted hover:bg-oat/60"
+                  className="mt-auto w-full rounded-lg py-1 text-center text-[10px] font-semibold text-muted-foreground hover:bg-muted/60"
                 >
                   View all →
                 </button>
@@ -677,7 +678,7 @@ function DailyView({
   return (
     <div className="px-4 py-4">
       {dayEvents.length === 0 ? (
-        <p className="py-12 text-center text-sm text-warm-muted">
+        <p className="py-12 text-center text-sm text-muted-foreground">
           No bookings on this day.
         </p>
       ) : (
@@ -697,7 +698,7 @@ function DailyView({
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-bold text-ink">{ev.fullName}</p>
+                    <p className="truncate text-sm font-bold text-foreground">{ev.fullName}</p>
                     <p className="mt-0.5 text-[11px] font-medium opacity-80">
                       {ev.courts}
                     </p>
@@ -712,7 +713,7 @@ function DailyView({
                     )}>
                       {ev.status}
                     </span>
-                    <span className="text-xs font-bold text-ink">{pesos(ev.total)}</span>
+                    <span className="text-xs font-bold text-foreground">{pesos(ev.total)}</span>
                   </div>
                 </div>
               </button>
@@ -755,16 +756,16 @@ function DayPanel({
 
   return (
     <>
-      <SheetHeader className="border-b border-line bg-white px-5 py-4">
-        <SheetTitle className="text-base font-extrabold text-ink">{label}</SheetTitle>
-        <SheetDescription className="mt-0.5 text-xs text-warm-muted">
+      <SheetHeader className="border-b px-5 py-4">
+        <SheetTitle>{label}</SheetTitle>
+        <SheetDescription>
           {events.length} booking{events.length !== 1 ? "s" : ""} on this day
         </SheetDescription>
       </SheetHeader>
 
       <div className="flex-1 space-y-2 px-4 py-4">
         {events.length === 0 && (
-          <p className="py-12 text-center text-sm text-warm-muted">No bookings on this day.</p>
+          <p className="py-12 text-center text-sm text-muted-foreground">No bookings on this day.</p>
         )}
         {events.map((ev) => {
           const c = eventColors(ev.status);
@@ -776,15 +777,15 @@ function DayPanel({
               disabled={loadingId !== null}
               onClick={() => handleOpen(ev.id)}
               className={cn(
-                "w-full rounded-xl border bg-white p-3 text-left transition-all hover:shadow-sm disabled:opacity-60",
-                "border-line",
+                "w-full rounded-xl border bg-background p-3 text-left transition-all hover:shadow-sm disabled:opacity-60",
+                "border-border",
               )}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-ink">{ev.fullName}</p>
-                  <p className="mt-0.5 text-xs text-warm-muted">{ev.courts}</p>
-                  <p className="mt-1 text-xs font-medium text-ink/70">
+                  <p className="truncate text-sm font-bold text-foreground">{ev.fullName}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{ev.courts}</p>
+                  <p className="mt-1 text-xs font-medium text-foreground/70">
                     {formatConsecutiveSlots(ev.slotStarts)}
                   </p>
                 </div>
@@ -795,7 +796,7 @@ function DayPanel({
                   )}>
                     {ev.status}
                   </span>
-                  <span className="text-xs font-bold text-ink">{pesos(ev.total)}</span>
+                  <span className="text-xs font-bold text-foreground">{pesos(ev.total)}</span>
                   {isLoading && <LoadingAnimation size="compact" label="Loading" />}
                 </div>
               </div>
@@ -894,13 +895,13 @@ function BookingDetailSheet({
 
   return (
     <>
-      <SheetHeader className="border-b border-line bg-white px-5 py-4">
+      <SheetHeader className="border-b px-5 py-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <SheetTitle className="text-base font-extrabold text-ink">
+            <SheetTitle>
               {booking.fullName}
             </SheetTitle>
-            <SheetDescription className="mt-0.5 text-xs text-warm-muted">
+            <SheetDescription>
               {booking.email} · {booking.phone}
             </SheetDescription>
           </div>
@@ -912,7 +913,8 @@ function BookingDetailSheet({
 
       <div className="flex-1 space-y-4 px-5 py-5">
         {/* Booking details */}
-        <div className="rounded-xl border border-line bg-white p-4 space-y-2">
+        <Card>
+          <CardContent className="space-y-2">
           <DetailRow label="Courts" value={booking.courts || "—"} />
           <DetailRow label="Date" value={booking.date} />
           <DetailRow
@@ -932,20 +934,21 @@ function BookingDetailSheet({
           {booking.rejectReason && (
             <DetailRow label="Reject reason" value={booking.rejectReason} />
           )}
-        </div>
+          </CardContent>
+        </Card>
 
         {/* Payment proof */}
         <div>
-          <p className="mb-2 text-xs font-bold text-ink/60 uppercase tracking-wider">
+          <p className="mb-2 text-xs font-bold text-foreground/60 uppercase tracking-wider">
             Payment proof
           </p>
-          <div className="overflow-hidden rounded-xl border border-line bg-white">
+          <Card className="gap-0 overflow-hidden py-0">
             {proofUrl ? (
               <a href={proofUrl} target="_blank" rel="noreferrer" className="block">
                 <img src={proofUrl} alt="Payment proof" className="w-full object-contain" />
               </a>
             ) : proofFailed || !booking.proofPath ? (
-              <p className="px-4 py-6 text-center text-sm text-warm-muted">
+              <p className="px-4 py-6 text-center text-sm text-muted-foreground">
                 Proof unavailable.
               </p>
             ) : (
@@ -953,7 +956,7 @@ function BookingDetailSheet({
                 <LoadingAnimation label="Loading payment proof" />
               </div>
             )}
-          </div>
+          </Card>
         </div>
 
         {/* Copy tracking link */}
@@ -962,7 +965,6 @@ function BookingDetailSheet({
             variant="outline"
             size="sm"
             onClick={copyTrackingLink}
-            className="h-8 rounded-lg border-line text-xs font-semibold"
           >
             <Copy className="mr-1.5 size-3.5" /> Copy tracking link
           </Button>
@@ -970,14 +972,15 @@ function BookingDetailSheet({
 
         {/* Decision actions */}
         {pending && (
-          <div className="space-y-3 rounded-xl border border-line bg-white p-4">
-            <p className="text-xs font-bold text-ink">Decision</p>
+          <Card>
+            <CardContent className="space-y-3">
+            <p className="text-xs font-bold text-foreground">Decision</p>
 
             <Button
               size="sm"
               disabled={busy !== null}
               onClick={() => decide("approve")}
-              className="h-8 w-full rounded-lg bg-pine text-xs font-bold text-white hover:bg-pine/90"
+              className="w-full"
             >
               {busy === "approve" ? (
                 <span className="flex items-center gap-1.5">
@@ -994,7 +997,7 @@ function BookingDetailSheet({
             <div className="space-y-1.5">
               <Label
                 htmlFor={`cal-reason-${booking.id}`}
-                className="text-xs font-semibold text-ink/70"
+                className="text-xs text-muted-foreground"
               >
                 Rejection reason (required)
               </Label>
@@ -1003,7 +1006,7 @@ function BookingDetailSheet({
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 placeholder="Reason for rejection…"
-                className="h-9 rounded-lg border-line text-sm"
+                className="h-9"
               />
             </div>
 
@@ -1012,7 +1015,7 @@ function BookingDetailSheet({
               variant="destructive"
               disabled={busy !== null}
               onClick={() => decide("reject")}
-              className="h-8 w-full rounded-lg text-xs font-bold"
+              className="w-full"
             >
               {busy === "reject" ? (
                 <span className="flex items-center gap-1.5">
@@ -1025,7 +1028,8 @@ function BookingDetailSheet({
                 </span>
               )}
             </Button>
-          </div>
+            </CardContent>
+          </Card>
         )}
       </div>
     </>
@@ -1045,8 +1049,8 @@ function DetailRow({
 }) {
   return (
     <div className="flex items-start justify-between gap-4 text-sm">
-      <span className="shrink-0 text-warm-muted">{label}</span>
-      <span className={`text-right ${bold ? "font-bold text-ink" : "text-ink/80"}`}>
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      <span className={`text-right ${bold ? "font-bold text-foreground" : "text-foreground/80"}`}>
         {value}
       </span>
     </div>
