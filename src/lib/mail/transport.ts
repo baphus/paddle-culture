@@ -27,6 +27,9 @@ export function getTransport(): Transporter {
       host: smtpHost,
       port,
       secure,
+      pool: true,
+      maxConnections: 3,
+      maxMessages: 50,
       ...(user && pass ? { auth: { user, pass } } : {}),
     });
   }
@@ -40,6 +43,9 @@ export function getTransport(): Transporter {
     host: "smtp.gmail.com",
     port: 587,
     secure: false,
+    pool: true,
+    maxConnections: 3,
+    maxMessages: 50,
     auth: { user, pass },
   });
 }

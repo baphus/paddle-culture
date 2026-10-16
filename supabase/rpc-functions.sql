@@ -425,3 +425,23 @@ DROP INDEX IF EXISTS holds_court_slot_idx;
 --   WHERE a.ctid < b.ctid
 --     AND a.court_id = b.court_id
 --     AND a.slot_start = b.slot_start;
+
+
+-- ===========================================================================
+-- 6. holds_expires_at_idx + payment_proofs_path_idx — the two full scans
+--
+-- holds_expires_at_idx:  the unique index above cannot answer an expiry scan
+-- (expires_at is not in it), so both purge paths read the whole holds table:
+-- rpc_delete_expired_holds (DELETE ... WHERE expires_at < p_cutoff) and the
+-- lazy-expiry step in rpc_submit_booking (DELETE ... WHERE expires_at <= now()).
+--
+-- payment_proofs_path_idx:  the proof-reuse check in rpc_submit_booking
+-- (SELECT 1 FROM payment_proofs WHERE path = p_proof_path FOR UPDATE) had no
+-- index on path; the table's only index is the booking_id PK.
+--
+-- Both are plain, non-unique: they only have to find rows, and neither column
+-- carries a uniqueness rule (many holds share an expiry; path is unique only
+-- as a side effect of one proof per booking_id PK).
+-- ===========================================================================
+CREATE INDEX IF NOT EXISTS holds_expires_at_idx ON holds (expires_at);
+CREATE INDEX IF NOT EXISTS payment_proofs_path_idx ON payment_proofs (path);

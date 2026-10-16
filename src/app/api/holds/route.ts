@@ -77,8 +77,12 @@ export async function POST(request: Request) {
       else byDate.set(d, [s]);
     }
     const openByPair = new Map<string, boolean>();
-    for (const [date] of byDate) {
-      const avail = await getAvailability(db, { date, courtIds });
+    // getAvailability takes one date, no range param: fire the per-date reads
+    // together so the 4 round-trips per date overlap instead of chaining.
+    const availability = await Promise.all(
+      [...byDate.keys()].map((date) => getAvailability(db, { date, courtIds })),
+    );
+    for (const avail of availability) {
       for (const court of avail) {
         for (const s of court.slots) {
           openByPair.set(`${court.courtId}|${new Date(s.start).getTime()}`, s.bookable);

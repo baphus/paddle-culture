@@ -30,6 +30,7 @@ import {
 import { FALLBACK_RATES, peso, type DisplayRates } from "@/lib/pricing-display";
 import Image from "next/image";
 import LandingImage from "@/components/landing/landing-image";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
 interface AvailabilitySlot {
   index: number;
@@ -114,8 +115,8 @@ export interface Step1DateTimeProps {
   }) => void;
 }
 
-// Panel order: 0=Date, 1=Courts, 2=TimeGrid, 3=Equipment
-type Panel = 0 | 1 | 2 | 3;
+// Panel order: 0=Date, 1=TimeGrid, 2=Equipment
+type Panel = 0 | 1 | 2;
 
 export default function Step1DateTime({
   initialCourts,
@@ -139,9 +140,7 @@ export default function Step1DateTime({
   const [courtIds, setCourtIds] = useState<string[]>(() =>
     initialCourtIds && initialCourtIds.length > 0
       ? initialCourtIds
-      : initialCourts.length > 0
-        ? [initialCourts[0].id]
-        : [],
+      : initialCourts.map((c) => c.id),
   );
   const [rates, setRates] = useState<DisplayRates>(initialRates);
   const [selectedDate, setSelectedDate] = useState<string | null>(initialSelectedDate ?? null);
@@ -163,12 +162,12 @@ export default function Step1DateTime({
   const [paddleQty, setPaddleQty] = useState<number>(initialPaddleQty);
   const [ball, setBall] = useState<boolean>(initialBall);
 
-  // Panel: 0=Date, 1=Courts, 2=TimeGrid, 3=Equipment
+  // Panel: 0=Date, 1=TimeGrid, 2=Equipment
   const [panel, setPanel] = useState<Panel>(() => {
-    if (initialSelectedDate && (initialCourtIds?.length ?? 0) > 0) return 2;
     if (initialSelectedDate) return 1;
     return 0;
   });
+  const [previewCourtId, setPreviewCourtId] = useState<string | null>(null);
   const panelHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const selectedRef = useRef<string[]>([]);
   selectedRef.current = selected;
@@ -196,7 +195,7 @@ export default function Step1DateTime({
           setCourtIds((prev) =>
             prev.length > 0
               ? prev.filter((id) => b.courts!.some((c) => c.id === id))
-              : [b.courts![0].id],
+              : b.courts!.map((c) => c.id),
           );
         }
       })
@@ -305,9 +304,8 @@ export default function Step1DateTime({
 
   function goPanel(p: Panel) {
     if (p === 1 && !selectedDate) { toast.error("Pick a play date first."); return; }
-    if (p === 2 && !selectedDate) { toast.error("Pick a play date first."); return; }
-    if (p === 2 && courtIds.length === 0) { toast.error("Choose at least one court first."); return; }
-    if (p === 3 && selected.length === 0) { toast.error("Pick at least 1 time slot first."); return; }
+    if (p === 2 && selected.length === 0) { toast.error("Pick at least 1 time slot first."); return; }
+    if (p === 1) setCourtIds(courts.map((c) => c.id));
     setPanel(p);
   }
 
@@ -426,7 +424,7 @@ export default function Step1DateTime({
       };
       setHold(holdState);
       toast.success("Slots held — add equipment or continue to details.");
-      setPanel(3);
+      setPanel(2);
     } catch {
       toast.error("Could not hold those slots. Check your connection and retry.");
     } finally {
@@ -465,7 +463,7 @@ export default function Step1DateTime({
   function pickDate(dateStr: string, stayOnTimeGrid = false) {
     if (dateStr < tomorrowStr || dateStr > maxStr) return;
     if (dateStr === selectedDate) {
-      if (!stayOnTimeGrid) setPanel(1);
+      if (!stayOnTimeGrid) { setCourtIds(courts.map((c) => c.id)); setPanel(1); }
       return;
     }
     const freshGrid = slotsForDate(dateStr).map((s) => s.start.toISOString());
@@ -486,7 +484,7 @@ export default function Step1DateTime({
     setSelectedDate(dateStr);
     setAvail(null);
     setView(partsOf(dateStr));
-    if (!stayOnTimeGrid) setPanel(1);
+    if (!stayOnTimeGrid) { setCourtIds(courts.map((c) => c.id)); setPanel(1); }
   }
 
   // Shift selected date by +/- days — stay on the time grid
@@ -534,19 +532,48 @@ export default function Step1DateTime({
 
   // ── Render ─────────────────────────────────────────────────────────
 
-  // Panel 2 (time grid) is fullscreen — rendered separately from the card wrapper
-  if (panel === 2) {
+  // Panel 1 (time grid) is fullscreen — rendered separately from the card wrapper
+  if (panel === 1) {
+    const previewCourt = previewCourtId ? courts.find((c) => c.id === previewCourtId) ?? null : null;
+    const previewIndex = previewCourt ? courts.findIndex((c) => c.id === previewCourt.id) : 0;
     return (
       <div className="flex flex-col">
+        <Dialog open={previewCourt !== null} onOpenChange={(open) => { if (!open) setPreviewCourtId(null); }}>
+          {previewCourt && (
+            <DialogContent className="max-w-lg overflow-hidden p-0">
+              <div className="relative">
+                <LandingImage
+                  src={`/images/court-${(previewIndex % 2) + 1}.jpg`}
+                  alt={`${previewCourt.name} court`}
+                  label={`${previewCourt.name} photo`}
+                  className="aspect-[16/10]"
+                  imgClassName="object-cover"
+                />
+                <span className="absolute top-3 left-3 inline-flex items-center rounded-full bg-pine px-3 py-1 text-[11px] font-bold text-white shadow">
+                  Covered
+                </span>
+                <span className="absolute right-3 bottom-3 inline-flex items-center rounded-full bg-flame px-3 py-1 text-[11px] font-bold whitespace-nowrap text-white shadow">
+                  Starts from {peso(rates.morning)}/hr
+                </span>
+              </div>
+              <div className="p-5">
+                <DialogTitle className="text-lg font-extrabold text-ink">{previewCourt.name}</DialogTitle>
+                <p className="mt-1 text-sm font-semibold text-warm-muted">
+                  {peso(rates.morning)}/hr day · {peso(rates.evening)}/hr evening
+                </p>
+              </div>
+            </DialogContent>
+          )}
+        </Dialog>
         {/* Sticky top bar */}
         <div className="sticky top-0 z-20 bg-cream border-b border-line-warm/60 shadow-sm">
           <div className="flex items-center justify-between gap-3 px-4 py-3">
             <button
               type="button"
-              onClick={() => setPanel(1)}
+              onClick={() => setPanel(0)}
               className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-1 rounded-xl border border-line-warm/60 bg-white px-3 text-sm font-bold text-pine transition-all hover:bg-oat"
             >
-              <ArrowLeft className="size-4" aria-hidden /> Courts
+              <ArrowLeft className="size-4" aria-hidden /> Back
             </button>
 
             {/* Date navigator */}
@@ -655,8 +682,13 @@ export default function Step1DateTime({
                         scope="col"
                         className="py-3 px-2 text-center text-xs font-extrabold text-ink"
                       >
-                        <div className="flex flex-col items-center gap-1">
-                          <div className="size-8 rounded-lg overflow-hidden border border-line-warm/60 bg-oat">
+                        <button
+                          type="button"
+                          onClick={() => setPreviewCourtId(court.id)}
+                          aria-label={`Preview ${court.name}`}
+                          className="mx-auto flex min-h-[44px] min-w-[44px] flex-col items-center gap-1 rounded-lg px-1 transition-colors hover:bg-oat/60 focus-visible:outline-2 focus-visible:outline-flame"
+                        >
+                          <div className="size-8 rounded-lg overflow-hidden border border-line-warm/60 bg-oat pointer-events-none">
                             <LandingImage
                               src={`/images/court-${(courts.findIndex((c) => c.id === court.id) % 2) + 1}.jpg`}
                               alt={court.name}
@@ -665,8 +697,8 @@ export default function Step1DateTime({
                               imgClassName="object-cover"
                             />
                           </div>
-                          <span className="leading-tight max-w-[72px] truncate">{court.name}</span>
-                        </div>
+                          <span className="leading-tight max-w-[72px] truncate underline decoration-dotted underline-offset-2">{court.name}</span>
+                        </button>
                       </th>
                     ))}
                 </tr>
@@ -793,7 +825,7 @@ export default function Step1DateTime({
     );
   }
 
-  // ── Panels 0, 1, 3 (card layout) ──────────────────────────────────
+  // ── Panels 0, 2 (card layout) ──────────────────────────────────
   return (
     <div className="bg-cream border border-line-warm/60 rounded-2xl p-5 sm:p-7 shadow-sm">
       {/* Stepper header */}
@@ -802,15 +834,15 @@ export default function Step1DateTime({
           <h1
             className="text-xl font-extrabold tracking-tight text-ink sm:text-2xl"
           >
-            {panel === 0
-              ? "Pick a date"
-              : panel === 1
-                ? "Choose your courts"
-                : "Optional equipment"}
+            {panel === 2
+              ? "Optional equipment"
+              : panel === 0
+                ? "Pick a date"
+                : "Pick your times"}
           </h1>
           {/* Step dots */}
           <nav aria-label="Booking steps" className="flex shrink-0 items-center gap-1.5">
-            {([0, 1, 2, 3] as const).map((i) => (
+            {([0, 1, 2] as const).map((i) => (
               <button
                 key={i}
                 type="button"
@@ -818,9 +850,8 @@ export default function Step1DateTime({
                 aria-current={panel === i ? "step" : undefined}
                 aria-label={
                   i === 0 ? "Step 1: pick a date" :
-                  i === 1 ? "Step 2: choose courts" :
-                  i === 2 ? "Step 3: pick times" :
-                  "Step 4: equipment"
+                  i === 1 ? "Step 2: pick times" :
+                  "Step 3: equipment"
                 }
                 className={cn(
                   "inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 rounded-full px-2.5 text-xs font-bold transition-all",
@@ -838,7 +869,7 @@ export default function Step1DateTime({
                   {i + 1}
                 </span>
                 <span className="hidden sm:inline">
-                  {i === 0 ? "Date" : i === 1 ? "Courts" : i === 2 ? "Time" : "Gear"}
+                  {i === 0 ? "Date" : i === 1 ? "Time" : "Gear"}
                 </span>
               </button>
             ))}
@@ -848,23 +879,23 @@ export default function Step1DateTime({
           className="mt-3 h-1.5 overflow-hidden rounded-full bg-oat"
           role="progressbar"
           aria-valuemin={1}
-          aria-valuemax={4}
+          aria-valuemax={3}
           aria-valuenow={panel + 1}
           aria-label="Booking progress"
         >
           <div
             className={cn(
               "h-full rounded-full bg-flame transition-all",
-              panel === 0 ? "w-1/4" : panel === 1 ? "w-2/4" : "w-full",
+              panel === 0 ? "w-1/3" : panel === 2 ? "w-full" : "w-2/3",
             )}
           />
         </div>
         <p className="mt-2 text-xs text-warm-muted sm:text-sm">
-          {panel === 0
-            ? "Select an available date to begin booking."
-            : panel === 1
-              ? "Select every court you need — only slots open on all courts will appear."
-              : "Optional: add paddles or a ball set to your booking."}
+          {panel === 2
+            ? "Optional: add paddles or a ball set to your booking."
+            : panel === 0
+              ? "Select an available date to begin booking."
+              : "Tap a cell to pick a time under the court you want."}
         </p>
       </div>
 
@@ -997,89 +1028,8 @@ export default function Step1DateTime({
           </div>
         )}
 
-        {/* ── Panel 1: Court Selection ── */}
-        {panel === 1 && (
-          <div className="animate-rise motion-reduce:animate-none">
-            <h2
-              ref={panelHeadingRef}
-              tabIndex={-1}
-              className="mb-1 text-base font-extrabold tracking-tight text-ink outline-none sm:text-lg"
-            >
-              {courts.length === 1 ? "Your court" : "Choose your courts"}
-            </h2>
-            {selectedDate && (
-              <p className="mb-4 text-xs font-semibold text-warm-muted">
-                {dateLabel} · Tap a court to select it.
-              </p>
-            )}
-            {courts.length === 0 ? (
-              <p className="mt-5 rounded-xl border border-line-warm/60 bg-white p-4 text-sm text-warm-muted">
-                No courts listed right now — check back soon.
-              </p>
-            ) : (
-              <div className="grid gap-4 sm:grid-cols-2">
-                {courts.map((court, index) => {
-                  const isSelected = courtIds.includes(court.id);
-                  return (
-                    <button
-                      key={court.id}
-                      type="button"
-                      aria-pressed={isSelected}
-                      onClick={() => {
-                        if (hold) return;
-                        setCourtIds((current) =>
-                          current.includes(court.id)
-                            ? current.filter((id) => id !== court.id)
-                            : [...current, court.id],
-                        );
-                        // Clear selections for any court being removed
-                        setSelected((prev) =>
-                          courtIds.includes(court.id)
-                            ? prev.filter((pair) => !pair.startsWith(`${court.id}|`))
-                            : prev,
-                        );
-                        setAvail(null);
-                      }}
-                      className={cn(
-                        "overflow-hidden rounded-2xl border-2 bg-white text-left shadow-sm transition-all hover:-translate-y-0.5",
-                        isSelected
-                          ? "border-flame ring-2 ring-flame/20"
-                          : "border-line-warm/60 hover:border-flame/50",
-                      )}
-                    >
-                      <LandingImage
-                        src={`/images/court-${(index % 2) + 1}.jpg`}
-                        alt={`${court.name} court`}
-                        label={`${court.name} photo`}
-                        className="aspect-[16/8]"
-                        imgClassName="object-cover"
-                      />
-                      <span className="flex items-center justify-between gap-3 p-4">
-                        <span>
-                          <span className="block text-base font-extrabold text-ink">{court.name}</span>
-                          <span className="mt-0.5 block text-xs font-semibold text-warm-muted">
-                            {peso(rates.morning)}/hr day · {peso(rates.evening)}/hr evening
-                          </span>
-                        </span>
-                        <span
-                          className={cn(
-                            "grid size-7 shrink-0 place-items-center rounded-full border",
-                            isSelected ? "border-flame bg-flame text-white" : "border-line-warm text-transparent",
-                          )}
-                        >
-                          {isSelected && <Check className="size-4" />}
-                        </span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── Panel 3: Equipment ── */}
-        {panel === 3 && (
+        {/* ── Panel 2: Equipment ── */}
+        {panel === 2 && (
           <div className="animate-rise motion-reduce:animate-none">
             <h2
               ref={panelHeadingRef}
@@ -1213,22 +1163,11 @@ export default function Step1DateTime({
             disabled={!selectedDate}
             className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-flame px-5 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
           >
-            Choose courts <ArrowRight className="size-4" aria-hidden />
-          </button>
-        )}
-
-        {panel === 1 && (
-          <button
-            type="button"
-            onClick={() => goPanel(2)}
-            disabled={courtIds.length === 0}
-            className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-flame px-5 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
-          >
             Pick times <ArrowRight className="size-4" aria-hidden />
           </button>
         )}
 
-        {panel === 3 && (
+        {panel === 2 && (
           <button
             type="button"
             onClick={() => {
