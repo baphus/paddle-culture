@@ -152,19 +152,29 @@ export async function listBookings(
       .lt("booking_slots.slot_start", hi);
   }
 
-  const { count, error: countError } = await countQuery;
-  if (countError) throw new Error(countError.message);
-  const total = count ?? 0;
   const pageSize = params.limit ?? BOOKINGS_PAGE_SIZE;
+  const requestedPage = Math.max(1, params.page);
+
+  const [countResult, dataResult] = await Promise.all([
+    countQuery,
+    dataQuery.range((requestedPage - 1) * pageSize, requestedPage * pageSize - 1),
+  ]);
+  if (countResult.error) throw new Error(countResult.error.message);
+  const total = countResult.count ?? 0;
   const totalPages = Math.ceil(total / pageSize);
   if (total === 0) return { rows: [], page: 1, totalPages: 0, total: 0 };
+  if (dataResult.error) throw new Error(dataResult.error.message);
 
-  const page = Math.min(Math.max(1, params.page), totalPages);
-  const offset = (page - 1) * pageSize;
+  const page = Math.min(requestedPage, totalPages);
 
-  const { data: bookingRows, error: dataError } = await dataQuery
-    .range(offset, offset + pageSize - 1);
-  if (dataError) throw new Error(dataError.message);
+  // Out-of-range request: the parallel read fetched the wrong slice, so re-read the clamped page.
+  let bookingRows = dataResult.data;
+  if (page !== requestedPage) {
+    const offset = (page - 1) * pageSize;
+    const { data, error } = await dataQuery.range(offset, offset + pageSize - 1);
+    if (error) throw new Error(error.message);
+    bookingRows = data;
+  }
 
   const ids = (bookingRows ?? []).map((b: { id: string }) => b.id);
   if (ids.length === 0) return { rows: [], page, totalPages, total };

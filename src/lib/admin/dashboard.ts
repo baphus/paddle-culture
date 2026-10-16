@@ -31,7 +31,7 @@ export async function getDashboardStats(db: Db): Promise<DashboardStats> {
   const tomorrowStart = addDays(todayStart, 1);
 
   // Run these reads in parallel
-  const [pendingResult, approvedResult, todaySlotsResult] = await Promise.all([
+  const [pendingResult, approvedResult, todaySlotsResult, recentResult] = await Promise.all([
     db
       .from("bookings")
       .select("id", { count: "exact", head: true })
@@ -46,6 +46,7 @@ export async function getDashboardStats(db: Db): Promise<DashboardStats> {
       .gte("slot_start", todayStart.toISOString())
       .lt("slot_start", tomorrowStart.toISOString())
       .limit(2000),
+    listBookings(db, { q: "", status: "all", from: "", to: "", page: 1, limit: 8 }),
   ]);
 
   const pending = pendingResult.count ?? 0;
@@ -78,14 +79,7 @@ export async function getDashboardStats(db: Db): Promise<DashboardStats> {
     );
   }
 
-  const { rows: recentBookings } = await listBookings(db, {
-    q: "",
-    status: "all",
-    from: "",
-    to: "",
-    page: 1,
-    limit: 8,
-  });
+  const { rows: recentBookings } = recentResult;
 
   return {
     pending,

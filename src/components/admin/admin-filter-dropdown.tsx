@@ -9,6 +9,13 @@ import { Label } from "@/components/ui/label";
 // Re-exported so callers can import both from the same path
 export { Input, Label };
 
+// One `mousedown` listener shared by every open dropdown, so N panels don't
+// stack N document listeners.
+const outsideHandlers = new Set<(e: MouseEvent) => void>();
+function onDocumentMouseDown(e: MouseEvent) {
+  for (const handler of outsideHandlers) handler(e);
+}
+
 // ── Props ─────────────────────────────────────────────────────────────────
 
 export interface AdminFilterDropdownProps {
@@ -86,8 +93,16 @@ export function AdminFilterDropdown({
       }
     }
 
-    document.addEventListener("mousedown", onMouseDown);
-    return () => document.removeEventListener("mousedown", onMouseDown);
+    outsideHandlers.add(onMouseDown);
+    if (outsideHandlers.size === 1) {
+      document.addEventListener("mousedown", onDocumentMouseDown);
+    }
+    return () => {
+      outsideHandlers.delete(onMouseDown);
+      if (outsideHandlers.size === 0) {
+        document.removeEventListener("mousedown", onDocumentMouseDown);
+      }
+    };
   }, [open]);
 
   // ── Apply ───────────────────────────────────────────────────────────────

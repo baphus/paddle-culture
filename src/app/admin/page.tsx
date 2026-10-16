@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { TZDate } from "@date-fns/tz";
 import { addDays, subDays } from "date-fns";
@@ -11,6 +12,7 @@ import {
   Settings,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -21,7 +23,7 @@ import {
 } from "@/components/ui/table";
 import { getDb } from "@/db/client";
 import { requireAdmin } from "@/lib/admin/session";
-import { getDashboardStats } from "@/lib/admin/dashboard";
+import { getDashboardStats, type DashboardStats } from "@/lib/admin/dashboard";
 import { getCalendarBookings, manilaDateToday, manilaYearMonth } from "@/lib/admin/calendar";
 import { formatPesosFromCents, revenueByDay, revenueByMonth } from "@/lib/admin/bookings";
 import PageHeader from "@/components/admin/page-header";
@@ -39,45 +41,41 @@ function statusVariant(
   return "outline";
 }
 
+// DB not configured or query failure → empty fallback keeps the skeleton UI rendering
+function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return fn().catch(() => fallback);
+  } catch {
+    return Promise.resolve(fallback);
+  }
+}
+
+type DayArr = Awaited<ReturnType<typeof revenueByDay>>["days"];
+type MonthArr = Awaited<ReturnType<typeof revenueByMonth>>["months"];
+type CalEvents = Awaited<ReturnType<typeof getCalendarBookings>>;
+
 export default async function AdminPage() {
   const session = await requireAdmin();
 
-  let stats = null;
-  try {
-    const db = getDb();
-    stats = await getDashboardStats(db);
-  } catch {
-    // DB not configured — show skeleton UI
-  }
-
   const { year: calYear, month: calMonth } = manilaYearMonth();
   const today = manilaDateToday();
-  let calEvents: Awaited<ReturnType<typeof getCalendarBookings>> = [];
-  try {
-    const db = getDb();
-    calEvents = await getCalendarBookings(db, calYear, calMonth);
-  } catch {
-    // silently empty
-  }
+  const todayStart = new TZDate(`${manilaDateToday()}T00:00:00`, "Asia/Manila") as unknown as Date;
 
-  // Mini revenue chart data — last 30 days daily + all-time monthly
-  type DayArr = Awaited<ReturnType<typeof revenueByDay>>["days"];
-  type MonthArr = Awaited<ReturnType<typeof revenueByMonth>>["months"];
-  let chartDays: DayArr = [];
-  let chartMonths: MonthArr = [];
-  try {
-    const db = getDb();
-    const { addDays, subDays } = await import("date-fns");
-    const todayStart = new TZDate(`${manilaDateToday()}T00:00:00`, "Asia/Manila") as unknown as Date;
-    const [daily, monthly] = await Promise.all([
-      revenueByDay(db, { from: subDays(todayStart, 29), to: addDays(todayStart, 1) }),
-      revenueByMonth(db),
-    ]);
-    chartDays = daily.days;
-    chartMonths = monthly.months;
-  } catch {
-    // silently empty
-  }
+  // Queries start here, but nothing awaits them yet: the shell below paints
+  // immediately and each section streams in behind its own Suspense boundary.
+  const statsPromise = safe(() => getDashboardStats(getDb()), null);
+  const calendarPromise = safe(
+    () => getCalendarBookings(getDb(), calYear, calMonth),
+    [] as CalEvents,
+  );
+  const chartDaysPromise = safe(
+    // Mini revenue chart data — last 30 days daily
+    async () =>
+      (await revenueByDay(getDb(), { from: subDays(todayStart, 29), to: addDays(todayStart, 1) })).days,
+    [] as DayArr,
+  );
+  // all-time monthly
+  const chartMonthsPromise = safe(async () => (await revenueByMonth(getDb())).months, [] as MonthArr);
 
   return (
     <div className="space-y-8">
@@ -87,36 +85,17 @@ export default async function AdminPage() {
       />
 
       {/* Stat cards */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Pending review"
-          value={stats ? String(stats.pending) : "—"}
-          icon={Clock}
-          accent={stats && stats.pending > 0 ? "flame" : "muted"}
-          href="/admin/bookings?status=Pending"
-        />
-        <StatCard
-          label="Approved today"
-          value={stats ? String(stats.approvedToday) : "—"}
-          icon={CalendarCheck}
-          accent="pine"
-          href="/admin/bookings?status=Approved"
-        />
-        <StatCard
-          label="Revenue today"
-          value={stats ? formatPesosFromCents(stats.revenueToday) : "—"}
-          icon={DollarSign}
-          accent="pine"
-          href="/admin/revenue"
-        />
-        <StatCard
-          label="All-time approved"
-          value={stats ? stats.totalApproved.toLocaleString() : "—"}
-          icon={BarChart2}
-          accent="muted"
-          href="/admin/revenue"
-        />
-      </div>
+      <Suspense
+        fallback={
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {[0, 1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-[74px] rounded-xl bg-oat/60" />
+            ))}
+          </div>
+        }
+      >
+        <StatCards stats={statsPromise} />
+      </Suspense>
 
       {/* Mini revenue chart */}
       <section>
@@ -130,7 +109,9 @@ export default async function AdminPage() {
           </Link>
         </div>
         <div className="rounded-xl border border-line bg-white p-4">
-          <RevenueChartLoader days={chartDays} months={chartMonths} mode="mini" />
+          <Suspense fallback={<Skeleton className="h-52 bg-oat/60" />}>
+            <MiniRevenueChart days={chartDaysPromise} months={chartMonthsPromise} />
+          </Suspense>
         </div>
       </section>
 
@@ -147,56 +128,9 @@ export default async function AdminPage() {
         </div>
 
         <div className="overflow-hidden rounded-xl border border-line bg-white">
-          {stats && stats.recentBookings.length > 0 ? (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-oat/40 hover:bg-oat/40 border-b border-line">
-                    <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">Name</TableHead>
-                    <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">Courts</TableHead>
-                    <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">Date</TableHead>
-                    <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">Total</TableHead>
-                    <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">Status</TableHead>
-                    <TableHead className="px-4"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {stats.recentBookings.map((b) => (
-                    <TableRow key={b.id} className="border-b border-line/60 transition-colors hover:bg-oat/20">
-                      <TableCell className="px-4 py-3 font-medium text-ink">
-                        {b.fullName}
-                      </TableCell>
-                      <TableCell className="px-4 py-3 text-sm text-ink/70">{b.courts || "—"}</TableCell>
-                      <TableCell className="px-4 py-3 text-sm text-ink/70">{b.date}</TableCell>
-                      <TableCell className="px-4 py-3 text-sm font-semibold text-ink">
-                        ₱{Number(b.total).toLocaleString("en-PH", {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </TableCell>
-                      <TableCell className="px-4 py-3">
-                        <Badge variant={statusVariant(b.status)} className="text-[11px]">
-                          {b.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="px-4 py-3">
-                        <Link
-                          href="/admin/bookings"
-                          className="text-xs font-semibold text-flame hover:underline"
-                        >
-                          View all
-                        </Link>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          ) : (
-            <div className="flex h-32 items-center justify-center text-sm text-warm-muted">
-              {stats ? "No bookings yet." : "Database not configured."}
-            </div>
-          )}
+          <Suspense fallback={<Skeleton className="h-32 bg-oat/60" />}>
+            <RecentBookings stats={statsPromise} />
+          </Suspense>
         </div>
       </section>
 
@@ -212,13 +146,14 @@ export default async function AdminPage() {
           </Link>
         </div>
         <div className="overflow-hidden rounded-xl border border-line bg-white px-3 pb-3 pt-2">
-          <CalendarView
-            events={calEvents}
-            year={calYear}
-            month={calMonth}
-            today={today}
-            mode="mini"
-          />
+          <Suspense fallback={<Skeleton className="h-80 bg-oat/60" />}>
+            <MiniCalendar
+              events={calendarPromise}
+              year={calYear}
+              month={calMonth}
+              today={today}
+            />
+          </Suspense>
         </div>
       </section>
 
@@ -235,6 +170,131 @@ export default async function AdminPage() {
         </div>
       </section>
     </div>
+  );
+}
+
+// ─── streamed sections ───────────────────────────────────────────────────────
+
+async function StatCards({ stats: statsPromise }: { stats: Promise<DashboardStats | null> }) {
+  const stats = await statsPromise;
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <StatCard
+        label="Pending review"
+        value={stats ? String(stats.pending) : "—"}
+        icon={Clock}
+        accent={stats && stats.pending > 0 ? "flame" : "muted"}
+        href="/admin/bookings?status=Pending"
+      />
+      <StatCard
+        label="Approved today"
+        value={stats ? String(stats.approvedToday) : "—"}
+        icon={CalendarCheck}
+        accent="pine"
+        href="/admin/bookings?status=Approved"
+      />
+      <StatCard
+        label="Revenue today"
+        value={stats ? formatPesosFromCents(stats.revenueToday) : "—"}
+        icon={DollarSign}
+        accent="pine"
+        href="/admin/revenue"
+      />
+      <StatCard
+        label="All-time approved"
+        value={stats ? stats.totalApproved.toLocaleString() : "—"}
+        icon={BarChart2}
+        accent="muted"
+        href="/admin/revenue"
+      />
+    </div>
+  );
+}
+
+async function MiniRevenueChart({
+  days: daysPromise,
+  months: monthsPromise,
+}: {
+  days: Promise<DayArr>;
+  months: Promise<MonthArr>;
+}) {
+  const [days, months] = await Promise.all([daysPromise, monthsPromise]);
+  return <RevenueChartLoader days={days} months={months} mode="mini" />;
+}
+
+async function RecentBookings({ stats: statsPromise }: { stats: Promise<DashboardStats | null> }) {
+  const stats = await statsPromise;
+
+  if (!stats || stats.recentBookings.length === 0) {
+    return (
+      <div className="flex h-32 items-center justify-center text-sm text-warm-muted">
+        {stats ? "No bookings yet." : "Database not configured."}
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-oat/40 hover:bg-oat/40 border-b border-line">
+            <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">Name</TableHead>
+            <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">Courts</TableHead>
+            <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">Date</TableHead>
+            <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">Total</TableHead>
+            <TableHead className="px-4 text-xs font-bold uppercase tracking-wide text-ink/50">Status</TableHead>
+            <TableHead className="px-4"></TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {stats.recentBookings.map((b) => (
+            <TableRow key={b.id} className="border-b border-line/60 transition-colors hover:bg-oat/20">
+              <TableCell className="px-4 py-3 font-medium text-ink">
+                {b.fullName}
+              </TableCell>
+              <TableCell className="px-4 py-3 text-sm text-ink/70">{b.courts || "—"}</TableCell>
+              <TableCell className="px-4 py-3 text-sm text-ink/70">{b.date}</TableCell>
+              <TableCell className="px-4 py-3 text-sm font-semibold text-ink">
+                ₱{Number(b.total).toLocaleString("en-PH", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </TableCell>
+              <TableCell className="px-4 py-3">
+                <Badge variant={statusVariant(b.status)} className="text-[11px]">
+                  {b.status}
+                </Badge>
+              </TableCell>
+              <TableCell className="px-4 py-3">
+                <Link
+                  href="/admin/bookings"
+                  className="text-xs font-semibold text-flame hover:underline"
+                >
+                  View all
+                </Link>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+async function MiniCalendar({
+  events: eventsPromise,
+  year,
+  month,
+  today,
+}: {
+  events: Promise<CalEvents>;
+  year: number;
+  month: number;
+  today: string;
+}) {
+  const events = await eventsPromise;
+  return (
+    <CalendarView events={events} year={year} month={month} today={today} mode="mini" />
   );
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
   Calendar,
   ChevronDown,
@@ -38,32 +38,77 @@ export interface SummaryData {
   holdDeadlineMs: number | null;
 }
 
-// ---- hold countdown hook ----------------------------------------------------
+// ---- hold countdown ---------------------------------------------------------
+// Module-level store so the desktop panel and mobile sheet share one 500ms
+// timer + value instead of running an interval each.
 
-function useHoldCountdown(deadlineMs: number | null): {
+interface Countdown {
   remaining: number;
   urgent: boolean;
   label: string;
-} {
-  const [remaining, setRemaining] = useState(() =>
-    deadlineMs !== null ? Math.max(0, deadlineMs - Date.now()) : 0,
-  );
+}
 
-  useEffect(() => {
-    if (deadlineMs === null) {
-      setRemaining(0);
-      return;
-    }
-    setRemaining(Math.max(0, deadlineMs - Date.now()));
-    const id = setInterval(() => {
-      setRemaining(Math.max(0, deadlineMs - Date.now()));
+let currentDeadline: number | null = null;
+let countdownTimer: ReturnType<typeof setInterval> | null = null;
+const countdownListeners = new Set<() => void>();
+let countdownSnap: Countdown = { remaining: 0, urgent: false, label: "" };
+
+function readCountdown(deadlineMs: number | null): Countdown {
+  const remaining = deadlineMs === null ? 0 : Math.max(0, deadlineMs - Date.now());
+  return {
+    remaining,
+    urgent: deadlineMs !== null && remaining < 120_000,
+    label: deadlineMs !== null ? formatCountdown(remaining) : "",
+  };
+}
+
+function emitCountdown() {
+  for (const listener of countdownListeners) listener();
+}
+
+function setHoldDeadline(deadlineMs: number | null) {
+  if (deadlineMs === currentDeadline) return;
+  currentDeadline = deadlineMs;
+  if (countdownTimer !== null) {
+    clearInterval(countdownTimer);
+    countdownTimer = null;
+  }
+  countdownSnap = readCountdown(deadlineMs);
+  if (deadlineMs !== null) {
+    countdownTimer = setInterval(() => {
+      const next = readCountdown(currentDeadline);
+      if (next.remaining === countdownSnap.remaining) return;
+      countdownSnap = next;
+      emitCountdown();
     }, 500);
-    return () => clearInterval(id);
-  }, [deadlineMs]);
+  }
+  emitCountdown();
+}
 
-  const urgent = deadlineMs !== null && remaining < 120_000;
-  const label = deadlineMs !== null ? formatCountdown(remaining) : "";
-  return { remaining, urgent, label };
+function subscribeHoldCountdown(listener: () => void) {
+  countdownListeners.add(listener);
+  return () => {
+    countdownListeners.delete(listener);
+    // Reset when the last consumer leaves so a remount re-arms the shared timer.
+    if (countdownListeners.size === 0) {
+      currentDeadline = null;
+      if (countdownTimer !== null) {
+        clearInterval(countdownTimer);
+        countdownTimer = null;
+      }
+    }
+  };
+}
+
+function useHoldCountdown(deadlineMs: number | null): Countdown {
+  useEffect(() => {
+    setHoldDeadline(deadlineMs);
+  }, [deadlineMs]);
+  return useSyncExternalStore(
+    subscribeHoldCountdown,
+    () => countdownSnap,
+    () => countdownSnap,
+  );
 }
 
 // ---- helpers ----------------------------------------------------------------
@@ -85,7 +130,7 @@ function computeBreakdown(
   rangeLabel: string;
   durationLabel: string;
 } {
-  const sorted = [...selectedSlots].sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+  const sorted = [...selectedSlots].sort();
   let dayCount = 0;
   let nightCount = 0;
   for (const iso of sorted) {
@@ -129,8 +174,10 @@ function computeBreakdown(
 
 export function BookingSummaryDesktop({ data }: { data: SummaryData }) {
   const { selectedDate, selectedSlots, courtNames, rates, paddleQty, ball, isHeld, holdDeadlineMs } = data;
-  const { courtTotal, paddleTotal, ballTotal, total, breakdown, rangeLabel, durationLabel } =
-    computeBreakdown(selectedSlots, courtNames.length, rates, paddleQty, ball);
+  const { courtTotal, paddleTotal, ballTotal, total, breakdown, rangeLabel, durationLabel } = useMemo(
+    () => computeBreakdown(selectedSlots, courtNames.length, rates, paddleQty, ball),
+    [selectedSlots, courtNames, rates, paddleQty, ball],
+  );
 
   const { urgent, label: countdownLabel } = useHoldCountdown(holdDeadlineMs);
 
@@ -351,8 +398,10 @@ export function BookingSummaryMobile({ data }: { data: SummaryData }) {
   const [open, setOpen] = useState(false);
   const { selectedDate, selectedSlots, courtNames, rates, paddleQty, ball, isHeld, holdDeadlineMs } = data;
 
-  const { courtTotal, paddleTotal, ballTotal, total, breakdown, rangeLabel, durationLabel } =
-    computeBreakdown(selectedSlots, courtNames.length, rates, paddleQty, ball);
+  const { courtTotal, paddleTotal, ballTotal, total, breakdown, rangeLabel, durationLabel } = useMemo(
+    () => computeBreakdown(selectedSlots, courtNames.length, rates, paddleQty, ball),
+    [selectedSlots, courtNames, rates, paddleQty, ball],
+  );
 
   const { urgent, label: countdownLabel } = useHoldCountdown(holdDeadlineMs);
 

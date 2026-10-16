@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   BadgeCheck,
@@ -22,11 +23,36 @@ export default function Hero({
 }: {
   rates?: DisplayRates;
 }) {
+  // The 3D bundle is heavy, so it stays unmounted until the canvas slot is in
+  // view (above-the-fold desktops report intersecting right away on hydration).
+  // Hover/focus only warms the chunk so the mount is instant when it happens.
+  const slotRef = useRef<HTMLDivElement>(null);
+  const [show3d, setShow3d] = useState(false);
+
+  useEffect(() => {
+    const el = slotRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry.isIntersecting) return;
+        setShow3d(true);
+        io.disconnect();
+      },
+      { rootMargin: "200px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  const preload3d = () => void import("./hero-3d");
+
   return (
     <section
       id="top"
       className="relative scroll-mt-20 overflow-x-clip pt-16"
       aria-labelledby="hero-heading"
+      onPointerEnter={preload3d}
+      onFocus={preload3d}
     >
       {/* Full-bleed cover photo */}
       <LandingImage
@@ -188,8 +214,8 @@ export default function Hero({
               3D CANVAS
               z-10 means paddle + ball render OVER the bubble
               ========================================================== */}
-          <div className="relative z-10 h-72 w-full sm:h-96 lg:h-[520px]">
-            <Hero3D />
+          <div ref={slotRef} className="relative z-10 h-72 w-full sm:h-96 lg:h-[520px]">
+            {show3d ? <Hero3D /> : null}
           </div>
         </div>
       </div>

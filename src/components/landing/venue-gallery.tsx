@@ -52,12 +52,15 @@ export default function VenueGallery() {
   const [saved, setSaved] = useState<boolean[]>(Array(SLIDES.length).fill(false));
   const [transitioning, setTransitioning] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const goTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const go = useCallback(
     (next: number) => {
       if (transitioning || next === current) return;
       setTransitioning(true);
-      setTimeout(() => {
+      // Clear any in-flight slide timer so rapid clicks can't overlap.
+      if (goTimeoutRef.current) clearTimeout(goTimeoutRef.current);
+      goTimeoutRef.current = setTimeout(() => {
         setCurrent(next);
         setTransitioning(false);
       }, 220);

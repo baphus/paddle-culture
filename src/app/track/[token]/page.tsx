@@ -60,17 +60,18 @@ export default async function TrackPage({
     tracking_code: string;
   };
 
-  const { data: slotData } = await db
-    .from("booking_slots")
-    .select("slot_start,courts(name)")
-    .eq("booking_id", booking.id)
-    .order("slot_start", { ascending: true });
-
-  const { data: rentalData } = await db
-    .from("booking_rentals")
-    .select("paddle_qty,paddle_hours,ball_fee")
-    .eq("booking_id", booking.id)
-    .single();
+  const [{ data: slotData }, { data: rentalData }] = await Promise.all([
+    db
+      .from("booking_slots")
+      .select("slot_start,courts(name)")
+      .eq("booking_id", booking.id)
+      .order("slot_start", { ascending: true }),
+    db
+      .from("booking_rentals")
+      .select("paddle_qty,paddle_hours,ball_fee")
+      .eq("booking_id", booking.id)
+      .single(),
+  ]);
 
   const [url, rates] = await Promise.all([
     absoluteBookingUrl(token),

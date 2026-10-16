@@ -1,6 +1,8 @@
+import { Suspense } from "react";
 import { getDb } from "@/db/client";
 import { FALLBACK_COURTS, type CourtOption } from "@/lib/courts";
 import { FALLBACK_RATES, getDisplayRates, type DisplayRates } from "@/lib/pricing-display";
+import { Skeleton } from "@/components/ui/skeleton";
 import Header from "@/components/landing/header";
 import Footer from "@/components/landing/footer";
 import BookingFlow from "@/components/booking/booking-flow";
@@ -39,8 +41,12 @@ async function loadRates(): Promise<DisplayRates> {
   }
 }
 
-export default async function BookPage() {
-  const [initialCourts, initialRates] = await Promise.all([loadCourts(), loadRates()]);
+export default function BookPage() {
+  // Both reads start here without being awaited, so the header + copy shell
+  // streams first and the booking UI follows once courts/rates land.
+  const courtsPromise = loadCourts();
+  const ratesPromise = loadRates();
+
   return (
     <>
       <Header />
@@ -54,10 +60,31 @@ export default async function BookPage() {
               Reserve your court online with instant 10-minute hold protection. Day ₱150/hr · Night ₱200/hr. No account needed.
             </p>
           </div>
-          <BookingFlow initialCourts={initialCourts} initialRates={initialRates} />
+          <Suspense fallback={<Skeleton className="h-[520px] rounded-xl bg-oat/60" />}>
+            <BookingArea courts={courtsPromise} rates={ratesPromise} />
+          </Suspense>
         </div>
       </main>
-      <Footer rates={initialRates} />
+      <Suspense
+        fallback={<div className="h-64 border-t border-line bg-oat/60" aria-hidden />}
+      >
+        <SiteFooter rates={ratesPromise} />
+      </Suspense>
     </>
   );
+}
+
+async function BookingArea({
+  courts,
+  rates,
+}: {
+  courts: Promise<CourtOption[]>;
+  rates: Promise<DisplayRates>;
+}) {
+  const [initialCourts, initialRates] = await Promise.all([courts, rates]);
+  return <BookingFlow initialCourts={initialCourts} initialRates={initialRates} />;
+}
+
+async function SiteFooter({ rates }: { rates: Promise<DisplayRates> }) {
+  return <Footer rates={await rates} />;
 }

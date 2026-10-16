@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, Check, Copy, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -175,12 +175,15 @@ export default function CalendarView({
   const [detailLoading, setDetailLoading] = useState(false);
 
   // Index events by date
-  const byDate = new Map<string, CalendarEvent[]>();
-  for (const ev of events) {
-    const list = byDate.get(ev.date) ?? [];
-    list.push(ev);
-    byDate.set(ev.date, list);
-  }
+  const byDate = useMemo(() => {
+    const map = new Map<string, CalendarEvent[]>();
+    for (const ev of events) {
+      const list = map.get(ev.date) ?? [];
+      list.push(ev);
+      map.set(ev.date, list);
+    }
+    return map;
+  }, [events]);
 
   function navigate(params: Record<string, string>) {
     const sp = new URLSearchParams(params);
@@ -277,7 +280,7 @@ export default function CalendarView({
                   "flex size-5 items-center justify-center rounded-full text-[11px] font-bold leading-none",
                   isToday ? "bg-flame text-white" : "",
                 )}>
-                  {new Date(cell.date + "T12:00:00Z").getUTCDate()}
+                  {Number(cell.date.slice(8, 10))}
                 </span>
                 {dayEvents.length > 0 && (
                   <span className={cn(
@@ -538,7 +541,7 @@ function MonthlyView({
                   "flex size-6 items-center justify-center rounded-full text-[12px] font-bold leading-none",
                   isToday ? "bg-flame text-white" : cell.inMonth ? "text-ink" : "text-ink/30",
                 )}>
-                  {new Date(cell.date + "T12:00:00Z").getUTCDate()}
+                  {Number(cell.date.slice(8, 10))}
                 </span>
               </div>
 

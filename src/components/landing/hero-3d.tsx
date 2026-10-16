@@ -1,7 +1,38 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import * as THREE from "three";
+import {
+  BackSide,
+  Box3,
+  BoxGeometry,
+  BufferGeometry,
+  CanvasTexture,
+  Color,
+  CylinderGeometry,
+  DataTexture,
+  DirectionalLight,
+  Group,
+  HemisphereLight,
+  Material,
+  MathUtils,
+  Matrix4,
+  Mesh,
+  MeshBasicMaterial,
+  MeshStandardMaterial,
+  MeshToonMaterial,
+  NearestFilter,
+  NoToneMapping,
+  Object3D,
+  PerspectiveCamera,
+  PlaneGeometry,
+  Quaternion,
+  RGBAFormat,
+  Scene,
+  ShaderMaterial,
+  SphereGeometry,
+  Vector3,
+  WebGLRenderer,
+} from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import {
   mergeVertices,
@@ -21,8 +52,8 @@ const CONTACT_Y = 1.4; // typical contact height
 const AREA = { x: 0.8, z: 0.55 }; // half-extent of where contacts can land
 const MAX_TILT = 0.7; // max face tilt from horizontal (rad)
 const SQUASH = 0.07; // ball impact squash amount (keep small)
-const SHADOW_OFFSET = new THREE.Vector3(0.16, 0, 0.1); // drop-shadow direction
-const CAM_TARGET = new THREE.Vector3(0, 2.05, 0);
+const SHADOW_OFFSET = new Vector3(0.16, 0, 0.1); // drop-shadow direction
+const CAM_TARGET = new Vector3(0, 2.05, 0);
 const BLEED = { x: 0.3, top: 0.45, bottom: 0.1 }; // canvas bleed past layout box
 
 /* ---- Cartoon look ---- */
@@ -70,16 +101,16 @@ const pickKind = (prev: Kind | null): Kind => {
 };
 
 interface Hit {
-  P: THREE.Vector3; // contact point (ball center)
+  P: Vector3; // contact point (ball center)
   T: number; // flight time to the NEXT hit
   kind: Kind;
   psi: number; // paddle heading offset
   beta: number; // wind-back amount before the next swing
-  spinAxis: THREE.Vector3; // unit spin axis after this hit
+  spinAxis: Vector3; // unit spin axis after this hit
   spinSpeed: number; // rad/s
-  vin: THREE.Vector3; // ball velocity arriving at this hit
-  vel?: THREE.Vector3; // cached launch velocity toward the next hit
-  pose?: { q: THREE.Quaternion; pos: THREE.Vector3 };
+  vin: Vector3; // ball velocity arriving at this hit
+  vel?: Vector3; // cached launch velocity toward the next hit
+  pose?: { q: Quaternion; pos: Vector3 };
 }
 
 /**
@@ -106,16 +137,16 @@ export default function Hero3D() {
     const dprCap = Math.min(window.devicePixelRatio || 1, lowEnd ? 1.25 : 2);
     const pixelBudget = lowEnd ? PIXEL_BUDGET_LOW : PIXEL_BUDGET;
 
-    const renderer = new THREE.WebGLRenderer({
+    const renderer = new WebGLRenderer({
       canvas,
       alpha: true,
       antialias: !lowEnd,
       powerPreference: "default",
     });
-    renderer.toneMapping = THREE.NoToneMapping; // flat, vivid colors
+    renderer.toneMapping = NoToneMapping; // flat, vivid colors
 
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 50);
+    const scene = new Scene();
+    const camera = new PerspectiveCamera(30, 1, 0.1, 50);
 
     // ---- Camera director ----
     const cam = { ...CAM_PRESETS[0] };
@@ -136,8 +167,8 @@ export default function Hero3D() {
     placeCamera(0);
 
     // Lighting: bright and simple; toon bands come from the gradient map
-    scene.add(new THREE.HemisphereLight(0xffffff, 0xc8d2e8, 1.2));
-    const key = new THREE.DirectionalLight(0xffffff, 1.6);
+    scene.add(new HemisphereLight(0xffffff, 0xc8d2e8, 1.2));
+    const key = new DirectionalLight(0xffffff, 1.6);
     key.position.set(3, 7, 4);
     scene.add(key);
 
@@ -148,25 +179,25 @@ export default function Hero3D() {
         return [b, b, b, 255];
       }),
     );
-    const gradientMap = new THREE.DataTexture(gradData, TOON_STEPS.length, 1, THREE.RGBAFormat);
-    gradientMap.minFilter = THREE.NearestFilter;
-    gradientMap.magFilter = THREE.NearestFilter;
+    const gradientMap = new DataTexture(gradData, TOON_STEPS.length, 1, RGBAFormat);
+    gradientMap.minFilter = NearestFilter;
+    gradientMap.magFilter = NearestFilter;
     gradientMap.generateMipmaps = false;
     gradientMap.needsUpdate = true;
 
-    const hulls: THREE.Mesh[] = [];
+    const hulls: Mesh[] = [];
     let outlinesOn = true;
     const setOutlines = (on: boolean) => {
       outlinesOn = on;
       for (const h of hulls) h.visible = on;
     };
 
-    const signedVolume = (g: THREE.BufferGeometry) => {
+    const signedVolume = (g: BufferGeometry) => {
       const p = g.attributes.position;
       const idx = g.index;
-      const a = new THREE.Vector3();
-      const b = new THREE.Vector3();
-      const c = new THREE.Vector3();
+      const a = new Vector3();
+      const b = new Vector3();
+      const c = new Vector3();
       const n = idx ? idx.count : p.count;
       let vol = 0;
       for (let i = 0; i < n; i += 3) {
@@ -179,11 +210,11 @@ export default function Hero3D() {
     };
 
     // Swap a model's materials for toon ones and add an inverted-hull outline.
-    const toonify = (root: THREE.Object3D, outlineWorld: number) => {
+    const toonify = (root: Object3D, outlineWorld: number) => {
       const scale = root.scale.x || 1;
-      const meshes: THREE.Mesh[] = [];
+      const meshes: Mesh[] = [];
       root.traverse((o) => {
-        if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh);
+        if ((o as Mesh).isMesh) meshes.push(o as Mesh);
       });
       for (const mesh of meshes) {
         // The GLBs ship without normals; give them creased ones so hard edges
@@ -191,9 +222,9 @@ export default function Hero3D() {
         if (!mesh.geometry.attributes.normal) {
           mesh.geometry = toCreasedNormals(mesh.geometry, 0.6);
         }
-        const old = mesh.material as THREE.MeshStandardMaterial;
-        mesh.material = new THREE.MeshToonMaterial({
-          color: old.color ? old.color.clone() : new THREE.Color(0xffffff),
+        const old = mesh.material as MeshStandardMaterial;
+        mesh.material = new MeshToonMaterial({
+          color: old.color ? old.color.clone() : new Color(0xffffff),
           map: old.map ?? null,
           gradientMap,
         });
@@ -217,19 +248,19 @@ export default function Hero3D() {
         }
         g.computeVertexNormals();
         g.computeBoundingBox();
-        const dims = g.boundingBox!.getSize(new THREE.Vector3());
+        const dims = g.boundingBox!.getSize(new Vector3());
         const thickness = Math.min(outlineWorld / scale, Math.max(dims.x, dims.y, dims.z) * 0.04);
 
-        const hull = new THREE.Mesh(
+        const hull = new Mesh(
           g,
-          new THREE.ShaderMaterial({
-            side: THREE.BackSide,
+          new ShaderMaterial({
+            side: BackSide,
             polygonOffset: true,
             polygonOffsetFactor: 4,
             polygonOffsetUnits: 4,
             uniforms: {
               uThick: { value: thickness },
-              uColor: { value: new THREE.Color(OUTLINE_COLOR) },
+              uColor: { value: new Color(OUTLINE_COLOR) },
             },
             vertexShader: `
               uniform float uThick;
@@ -258,12 +289,12 @@ export default function Hero3D() {
     grad.addColorStop(1, "rgba(0,0,0,0)");
     sctx.fillStyle = grad;
     sctx.fillRect(0, 0, 64, 64);
-    const shadowTex = new THREE.CanvasTexture(shadowCanvas);
-    const shadowGeo = new THREE.PlaneGeometry(1, 1);
+    const shadowTex = new CanvasTexture(shadowCanvas);
+    const shadowGeo = new PlaneGeometry(1, 1);
     const makeShadow = () => {
-      const m = new THREE.Mesh(
+      const m = new Mesh(
         shadowGeo,
-        new THREE.MeshBasicMaterial({
+        new MeshBasicMaterial({
           map: shadowTex,
           transparent: true,
           depthWrite: false,
@@ -279,19 +310,19 @@ export default function Hero3D() {
     const paddleShadow = makeShadow();
 
     // ---- Paddle: origin at the hand; face normal = local +Z, head = local +Y ----
-    const paddle = new THREE.Group();
+    const paddle = new Group();
     const HEAD_Y = (HEAD_FRAC - PIVOT_FRAC) * PADDLE_H;
 
-    const paddleFallback = new THREE.Group();
-    const fFace = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.46, 0.46, 0.06, 20),
-      new THREE.MeshToonMaterial({ color: 0xee6a24, gradientMap }),
+    const paddleFallback = new Group();
+    const fFace = new Mesh(
+      new CylinderGeometry(0.46, 0.46, 0.06, 20),
+      new MeshToonMaterial({ color: 0xee6a24, gradientMap }),
     );
     fFace.rotation.x = Math.PI / 2;
     fFace.position.y = HEAD_Y;
-    const fHandle = new THREE.Mesh(
-      new THREE.BoxGeometry(0.18, 1.0, 0.12),
-      new THREE.MeshToonMaterial({ color: 0x343a56, gradientMap }),
+    const fHandle = new Mesh(
+      new BoxGeometry(0.18, 1.0, 0.12),
+      new MeshToonMaterial({ color: 0x343a56, gradientMap }),
     );
     fHandle.position.y = 0.1;
     paddleFallback.add(fFace, fHandle);
@@ -301,11 +332,11 @@ export default function Hero3D() {
     // ---- Ball: rig (position/squash) > spin > mesh ----
     const BALL_R = BALL_D / 2;
     const FACE_OFFSET = BALL_R + 0.034; // ball center distance from face plane
-    const ballRig = new THREE.Group();
-    const ballSpin = new THREE.Group();
-    const ballFallback = new THREE.Mesh(
-      new THREE.SphereGeometry(BALL_R, 20, 20),
-      new THREE.MeshToonMaterial({ color: 0xc6f24e, gradientMap }),
+    const ballRig = new Group();
+    const ballSpin = new Group();
+    const ballFallback = new Mesh(
+      new SphereGeometry(BALL_R, 20, 20),
+      new MeshToonMaterial({ color: 0xc6f24e, gradientMap }),
     );
     ballSpin.add(ballFallback);
     ballRig.add(ballSpin);
@@ -319,22 +350,22 @@ export default function Hero3D() {
       if (loaded >= 2) perfStart = performance.now() + 1500;
     };
 
-    const fitPaddle = (model: THREE.Object3D) => {
-      const size = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
+    const fitPaddle = (model: Object3D) => {
+      const size = new Box3().setFromObject(model).getSize(new Vector3());
       if (size.y > 0) model.scale.setScalar(PADDLE_H / size.y);
-      const box = new THREE.Box3().setFromObject(model);
-      const s = box.getSize(new THREE.Vector3());
-      const c = box.getCenter(new THREE.Vector3());
+      const box = new Box3().setFromObject(model);
+      const s = box.getSize(new Vector3());
+      const c = box.getCenter(new Vector3());
       model.position.set(-c.x, -(box.min.y + PIVOT_FRAC * s.y), -c.z);
       toonify(model, OUTLINE_PADDLE);
       paddleFallback.visible = false;
       return model;
     };
-    const fitBall = (model: THREE.Object3D) => {
-      const size = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
+    const fitBall = (model: Object3D) => {
+      const size = new Box3().setFromObject(model).getSize(new Vector3());
       const maxDim = Math.max(size.x, size.y, size.z);
       if (maxDim > 0) model.scale.setScalar(BALL_D / maxDim);
-      const c = new THREE.Box3().setFromObject(model).getCenter(new THREE.Vector3());
+      const c = new Box3().setFromObject(model).getCenter(new Vector3());
       model.position.sub(c);
       toonify(model, OUTLINE_BALL);
       ballFallback.visible = false;
@@ -367,13 +398,13 @@ export default function Hero3D() {
     );
 
     // ================= Rally planner =================
-    const UP = new THREE.Vector3(0, 1, 0);
-    const HEAD_DIR = new THREE.Vector3(-0.87, 0, 0.5).normalize();
+    const UP = new Vector3(0, 1, 0);
+    const HEAD_DIR = new Vector3(-0.87, 0, 0.5).normalize();
     const hits: Hit[] = [];
     let lastKind: Kind | null = null;
 
     const velocity = (a: Hit, b: Hit) =>
-      new THREE.Vector3(
+      new Vector3(
         (b.P.x - a.P.x) / a.T,
         (b.P.y - a.P.y) / a.T - 0.5 * G * a.T,
         (b.P.z - a.P.z) / a.T,
@@ -384,13 +415,13 @@ export default function Hero3D() {
       lastKind = kind;
       const [t0, t1] = KIND_CFG[kind].t;
       const T = rand(t0, t1);
-      const P = new THREE.Vector3();
-      const prevP = prev?.P ?? new THREE.Vector3(0, CONTACT_Y, 0);
+      const P = new Vector3();
+      const prevP = prev?.P ?? new Vector3(0, CONTACT_Y, 0);
       if (kind === "dink") {
         P.set(
-          THREE.MathUtils.clamp(prevP.x + rand(-0.4, 0.4), -AREA.x, AREA.x),
+          MathUtils.clamp(prevP.x + rand(-0.4, 0.4), -AREA.x, AREA.x),
           0,
-          THREE.MathUtils.clamp(prevP.z + rand(-0.3, 0.3), -AREA.z, AREA.z),
+          MathUtils.clamp(prevP.z + rand(-0.3, 0.3), -AREA.z, AREA.z),
         );
       } else if (kind === "lob") {
         P.set(rand(-0.35, 0.35), 0, rand(-0.25, 0.25));
@@ -411,13 +442,13 @@ export default function Hero3D() {
         kind,
         psi,
         beta: rand(0.35, 1.0) * (kind === "lob" ? 1.15 : kind === "dink" ? 0.7 : 1),
-        spinAxis: new THREE.Vector3(rand(-1, 1), rand(-0.4, 0.4), rand(-1, 1)).normalize(),
+        spinAxis: new Vector3(rand(-1, 1), rand(-0.4, 0.4), rand(-1, 1)).normalize(),
         spinSpeed: rand(3, 11),
-        vin: new THREE.Vector3(rand(-0.3, 0.3), -2.5, rand(-0.3, 0.3)),
+        vin: new Vector3(rand(-0.3, 0.3), -2.5, rand(-0.3, 0.3)),
       };
       if (prev) {
         const v = velocity(prev, h);
-        h.vin = new THREE.Vector3(v.x, v.y + G * prev.T, v.z);
+        h.vin = new Vector3(v.x, v.y + G * prev.T, v.z);
       }
       return h;
     };
@@ -430,16 +461,16 @@ export default function Hero3D() {
         .negate()
         .add(vout.clone().normalize())
         .normalize();
-      const ang = Math.acos(THREE.MathUtils.clamp(n.y, -1, 1));
+      const ang = Math.acos(MathUtils.clamp(n.y, -1, 1));
       if (ang > MAX_TILT) {
-        const axis = new THREE.Vector3().crossVectors(n, UP).normalize();
+        const axis = new Vector3().crossVectors(n, UP).normalize();
         n.applyAxisAngle(axis, ang - MAX_TILT);
       }
       const hd = HEAD_DIR.clone().applyAxisAngle(UP, h.psi);
       const y = hd.clone().addScaledVector(n, -hd.dot(n)).normalize();
-      const x = new THREE.Vector3().crossVectors(y, n).normalize();
-      const q = new THREE.Quaternion().setFromRotationMatrix(
-        new THREE.Matrix4().makeBasis(x, y, n),
+      const x = new Vector3().crossVectors(y, n).normalize();
+      const q = new Quaternion().setFromRotationMatrix(
+        new Matrix4().makeBasis(x, y, n),
       );
       const pos = h.P.clone().addScaledVector(n, -FACE_OFFSET).addScaledVector(y, -HEAD_Y);
       h.pose = { q, pos };
@@ -459,16 +490,16 @@ export default function Hero3D() {
     let squash = 0;
     const spinAxis = hits[0].spinAxis.clone();
     let spinSpeed = hits[0].spinSpeed;
-    const qTmp = new THREE.Quaternion();
-    const qSwing = new THREE.Quaternion();
-    const qInv = new THREE.Quaternion();
-    const X_AXIS = new THREE.Vector3(1, 0, 0);
-    const Z_AXIS = new THREE.Vector3(0, 0, 1);
-    const posTmp = new THREE.Vector3();
-    const local = new THREE.Vector3();
-    const nWorld = new THREE.Vector3();
-    const headW = new THREE.Vector3();
-    const spinQ = new THREE.Quaternion();
+    const qTmp = new Quaternion();
+    const qSwing = new Quaternion();
+    const qInv = new Quaternion();
+    const X_AXIS = new Vector3(1, 0, 0);
+    const Z_AXIS = new Vector3(0, 0, 1);
+    const posTmp = new Vector3();
+    const local = new Vector3();
+    const nWorld = new Vector3();
+    const headW = new Vector3();
+    const spinQ = new Quaternion();
 
     const onHit = () => {
       hits.shift();
@@ -581,14 +612,14 @@ export default function Hero3D() {
         ballRig.position.z + SHADOW_OFFSET.z * (1 + bh * 0.25),
       );
       ballShadow.scale.set(bs, bs, 1);
-      (ballShadow.material as THREE.MeshBasicMaterial).opacity = Math.max(0.08, 0.34 - bh * 0.06);
+      (ballShadow.material as MeshBasicMaterial).opacity = Math.max(0.08, 0.34 - bh * 0.06);
 
       headW.set(0, HEAD_Y, 0).applyQuaternion(paddle.quaternion).add(paddle.position);
       const ph = Math.max(headW.y, 0);
       const ps = 1.7 / (1 + ph * 0.12);
       paddleShadow.position.set(headW.x + SHADOW_OFFSET.x * 1.2, 0.01, headW.z + SHADOW_OFFSET.z * 1.2);
       paddleShadow.scale.set(ps, ps * 0.7, 1);
-      (paddleShadow.material as THREE.MeshBasicMaterial).opacity = Math.max(0.1, 0.3 - ph * 0.05);
+      (paddleShadow.material as MeshBasicMaterial).opacity = Math.max(0.1, 0.3 - ph * 0.05);
 
       // Camera
       const k = 1 - Math.exp(-dt * 0.9);
@@ -668,9 +699,9 @@ export default function Hero3D() {
       shadowTex.dispose();
       gradientMap.dispose();
       scene.traverse((o) => {
-        const m = o as THREE.Mesh;
+        const m = o as Mesh;
         if (m.geometry) m.geometry.dispose();
-        const mat = (m.material ?? null) as THREE.Material | null;
+        const mat = (m.material ?? null) as Material | null;
         if (mat) (Array.isArray(mat) ? mat : [mat]).forEach((x) => x.dispose());
       });
       renderer.dispose();

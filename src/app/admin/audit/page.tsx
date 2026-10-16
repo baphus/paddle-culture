@@ -127,13 +127,20 @@ export default async function AuditPage({
     dataQuery = dataQuery.eq("action", action);
   }
 
-  const { count } = await countQuery;
+  const [{ count }, { data: pageRows }] = await Promise.all([
+    countQuery,
+    dataQuery.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1),
+  ]);
   const total = count ?? 0;
   const totalPages = Math.ceil(total / PAGE_SIZE);
   const safePage = total === 0 ? 1 : Math.min(page, Math.max(1, totalPages));
 
-  const offset = (safePage - 1) * PAGE_SIZE;
-  const { data: rows } = await dataQuery.range(offset, offset + PAGE_SIZE - 1);
+  // Out-of-range request: the parallel read fetched the wrong slice, so re-read the clamped page.
+  let rows = pageRows;
+  if (safePage !== page) {
+    const offset = (safePage - 1) * PAGE_SIZE;
+    ({ data: rows } = await dataQuery.range(offset, offset + PAGE_SIZE - 1));
+  }
 
   type AuditRow = {
     id: string;

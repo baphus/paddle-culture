@@ -1,4 +1,5 @@
-import { getDb } from "@/db/client";
+import { Suspense } from "react";
+import { getDb, type Db } from "@/db/client";
 import {
   addDaysStr,
   getCalendarBookings,
@@ -9,8 +10,20 @@ import {
 } from "@/lib/admin/calendar";
 import CalendarView from "@/components/admin/calendar-view";
 import PageHeader from "@/components/admin/page-header";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export const dynamic = "force-dynamic";
+
+type CalEvents = Awaited<ReturnType<typeof getCalendarBookings>>;
+
+// DB not configured or query failure → empty calendar, same as the old try/catch.
+function loadEvents(fetch: (db: Db) => Promise<CalEvents>): Promise<CalEvents> {
+  try {
+    return fetch(getDb()).catch(() => [] as CalEvents);
+  } catch {
+    return Promise.resolve([] as CalEvents);
+  }
+}
 
 function first(v: string | string[] | undefined): string {
   return Array.isArray(v) ? (v[0] ?? "") : (v ?? "");
@@ -50,19 +63,16 @@ export default async function CalendarPage({
   // Daily: just anchorDate → anchorDate+1
   const dayEnd = addDaysStr(anchorDate, 1);
 
-  let events: Awaited<ReturnType<typeof getCalendarBookings>> = [];
-  try {
-    const db = getDb();
-    if (view === "monthly") {
-      events = await getCalendarBookings(db, year, month);
-    } else if (view === "weekly") {
-      events = await getCalendarBookingsRange(db, weekStart, weekEnd);
-    } else {
-      events = await getCalendarBookingsRange(db, anchorDate, dayEnd);
-    }
-  } catch {
-    // DB not configured — render empty calendar
-  }
+  // Started before the shell renders; the calendar streams in once it resolves.
+  const eventsPromise = loadEvents((db) =>
+    view === "monthly"
+      ? getCalendarBookings(db, year, month)
+      : getCalendarBookingsRange(
+          db,
+          view === "weekly" ? weekStart : anchorDate,
+          view === "weekly" ? weekEnd : dayEnd,
+        ),
+  );
 
   return (
     <div className="space-y-6">
@@ -72,16 +82,49 @@ export default async function CalendarPage({
       />
 
       <div className="overflow-hidden rounded-xl border border-line bg-white">
-        <CalendarView
-          events={events}
-          year={year}
-          month={month}
-          today={today}
-          view={view}
-          anchorDate={anchorDate}
-          weekStart={weekStart}
-        />
+        <Suspense fallback={<Skeleton className="h-[520px] bg-oat/60" />}>
+          <CalendarBody
+            events={eventsPromise}
+            year={year}
+            month={month}
+            today={today}
+            view={view}
+            anchorDate={anchorDate}
+            weekStart={weekStart}
+          />
+        </Suspense>
       </div>
     </div>
+  );
+}
+
+async function CalendarBody({
+  events: eventsPromise,
+  year,
+  month,
+  today,
+  view,
+  anchorDate,
+  weekStart,
+}: {
+  events: Promise<CalEvents>;
+  year: number;
+  month: number;
+  today: string;
+  view: "daily" | "weekly" | "monthly";
+  anchorDate: string;
+  weekStart: string;
+}) {
+  const events = await eventsPromise;
+  return (
+    <CalendarView
+      events={events}
+      year={year}
+      month={month}
+      today={today}
+      view={view}
+      anchorDate={anchorDate}
+      weekStart={weekStart}
+    />
   );
 }

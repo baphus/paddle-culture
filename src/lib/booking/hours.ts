@@ -31,26 +31,29 @@ export async function loadOpenRules(
   args: { courtIds: string[]; from: Date; to: Date },
 ): Promise<OpenRules> {
   // operating_hours: rows for any of the specified courts OR global (court_id IS NULL)
-  const { data: hoursData, error: hoursError } = await db
-    .from("operating_hours")
-    .select("court_id,day_of_week,open_time,close_time")
-    .or(`court_id.in.(${args.courtIds.join(",")}),court_id.is.null`);
-
-  if (hoursError) throw new LaneError("DB_ERROR", hoursError.message, 500);
-
   // closures: overlapping the [from, to) range, global or for these courts
   const courtFilter = args.courtIds.map((id) => `court_id.eq.${id}`).join(",");
   const scopeFilter = courtFilter
     ? `scope.eq.global,and(scope.eq.court,or(${courtFilter}))`
     : "scope.eq.global";
 
-  const { data: closureData, error: closureError } = await db
-    .from("closures")
-    .select("scope,court_id,start_at,end_at")
-    .gt("end_at", args.from.toISOString())
-    .lt("start_at", args.to.toISOString())
-    .or(scopeFilter);
+  const [hoursRes, closureRes] = await Promise.all([
+    db
+      .from("operating_hours")
+      .select("court_id,day_of_week,open_time,close_time")
+      .or(`court_id.in.(${args.courtIds.join(",")}),court_id.is.null`),
+    db
+      .from("closures")
+      .select("scope,court_id,start_at,end_at")
+      .gt("end_at", args.from.toISOString())
+      .lt("start_at", args.to.toISOString())
+      .or(scopeFilter),
+  ]);
 
+  const { data: hoursData, error: hoursError } = hoursRes;
+  if (hoursError) throw new LaneError("DB_ERROR", hoursError.message, 500);
+
+  const { data: closureData, error: closureError } = closureRes;
   if (closureError) throw new LaneError("DB_ERROR", closureError.message, 500);
 
   const hours: HoursRow[] = (hoursData ?? []).map((r) => ({

@@ -1,5 +1,6 @@
 import { createClient as createServiceRoleClient } from "@supabase/supabase-js";
 import type { User } from "@supabase/supabase-js";
+import { cache } from "react";
 import { LaneError } from "@/lib/booking/errors";
 import { createClient } from "@/lib/supabase/server";
 
@@ -50,22 +51,24 @@ export function getSupabaseAdmin() {
  * (never getSession()). Returns null for missing/invalid sessions,
  * non-admin users, and deactivated accounts.
  */
-export async function getAdminSession(): Promise<AdminSession | null> {
-  try {
-    const supabase = await createClient();
-    const { data: claimsData, error: claimsError } =
-      await supabase.auth.getClaims();
-    const sub = claimsError ? undefined : claimsData?.claims?.sub;
-    if (typeof sub !== "string") return null;
-    const { data: userData, error: userError } = await supabase.auth.getUser();
-    const user = userData?.user;
-    if (userError || !user || user.id !== sub) return null;
-    if (!isAdmin(user) || isDeactivated(user)) return null;
-    return { userId: user.id, email: user.email ?? "", name: nameOf(user) };
-  } catch {
-    return null;
-  }
-}
+export const getAdminSession = cache(
+  async (): Promise<AdminSession | null> => {
+    try {
+      const supabase = await createClient();
+      const { data: claimsData, error: claimsError } =
+        await supabase.auth.getClaims();
+      const sub = claimsError ? undefined : claimsData?.claims?.sub;
+      if (typeof sub !== "string") return null;
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      const user = userData?.user;
+      if (userError || !user || user.id !== sub) return null;
+      if (!isAdmin(user) || isDeactivated(user)) return null;
+      return { userId: user.id, email: user.email ?? "", name: nameOf(user) };
+    } catch {
+      return null;
+    }
+  },
+);
 
 export async function requireAdmin(): Promise<AdminSession> {
   const session = await getAdminSession();

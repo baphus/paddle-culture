@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { TZDate } from "@date-fns/tz";
 import { addDays, subDays } from "date-fns";
@@ -6,6 +7,7 @@ import RevenueChartLoader from "@/components/admin/revenue-chart-loader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -24,6 +26,9 @@ import {
 import PageHeader from "@/components/admin/page-header";
 
 export const dynamic = "force-dynamic";
+
+type DayReport = Awaited<ReturnType<typeof revenueByDay>>;
+type MonthReport = Awaited<ReturnType<typeof revenueByMonth>>;
 
 function first(v: string | string[] | undefined): string {
   return Array.isArray(v) ? (v[0] ?? "") : (v ?? "");
@@ -85,19 +90,10 @@ export default async function RevenuePage({
     );
   }
 
-  const [{ days, totalBookings, totalCents }, { months }] = await Promise.all([
-    revenueByDay(db, { from, to }),
-    revenueByMonth(db),
-  ]);
-
-  const avgPerDay =
-    days.length > 0
-      ? Math.round(totalCents / days.filter((d) => d.revenueCents > 0).length)
-      : 0;
-  const peakDay = days.reduce(
-    (best, d) => (d.revenueCents > (best?.revenueCents ?? 0) ? d : best),
-    null as (typeof days)[0] | null,
-  );
+  // Both queries start here and are awaited by the streamed sections below, so
+  // the header + filter toolbar paint without waiting on Supabase.
+  const daysPromise = revenueByDay(db, { from, to });
+  const monthsPromise = revenueByMonth(db);
 
   return (
     <div className="space-y-5">
@@ -106,44 +102,20 @@ export default async function RevenuePage({
         description="Approved bookings only — counted on earliest slot date (Manila time)."
       />
 
-      {/* ── KPI strip ─────────────────────────────────────────────────── */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard
-          label="Total (filtered)"
-          value={formatPesosFromCents(totalCents)}
-          sub={`${totalBookings} booking${totalBookings !== 1 ? "s" : ""}`}
-          accent="flame"
-        />
-        <KpiCard
-          label="Avg per active day"
-          value={avgPerDay > 0 ? formatPesosFromCents(avgPerDay) : "—"}
-          sub={
-            days.filter((d) => d.revenueCents > 0).length + " days with revenue"
-          }
-          accent="pine"
-        />
-        <KpiCard
-          label="Peak day"
-          value={peakDay ? formatPesosFromCents(peakDay.revenueCents) : "—"}
-          sub={peakDay?.date ?? "—"}
-          accent="pine"
-        />
-        <KpiCard
-          label="All-time months"
-          value={String(months.length)}
-          sub={
-            months.length > 0
-              ? `${months[months.length - 1]!.month} → ${months[0]!.month}`
-              : "No data yet"
-          }
-          accent="muted"
-        />
-      </div>
-
-      {/* ── Chart ─────────────────────────────────────────────────────── */}
-      <div className="rounded-xl border border-line bg-white p-5">
-        <RevenueChartLoader days={days} months={months} mode="full" />
-      </div>
+      <Suspense
+        fallback={
+          <div className="space-y-5">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {[0, 1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-[86px] rounded-xl bg-oat/60" />
+              ))}
+            </div>
+            <Skeleton className="h-56 rounded-xl bg-oat/60" />
+          </div>
+        }
+      >
+        <RevenueSummary days={daysPromise} months={monthsPromise} />
+      </Suspense>
 
       {/* ── Date filter toolbar ───────────────────────────────────────── */}
       <div className="rounded-xl border border-line bg-white px-4 py-3">
@@ -231,6 +203,91 @@ export default async function RevenuePage({
         </form>
       </div>
 
+      <Suspense fallback={<Skeleton className="h-64 rounded-xl bg-oat/60" />}>
+        <RevenueTables days={daysPromise} months={monthsPromise} />
+      </Suspense>
+    </div>
+  );
+}
+
+// ─── streamed sections ───────────────────────────────────────────────────────
+
+async function RevenueSummary({
+  days: daysPromise,
+  months: monthsPromise,
+}: {
+  days: Promise<DayReport>;
+  months: Promise<MonthReport>;
+}) {
+  const [{ days, totalBookings, totalCents }, { months }] = await Promise.all([
+    daysPromise,
+    monthsPromise,
+  ]);
+
+  const activeDayCount = days.filter((d) => d.revenueCents > 0).length;
+  const avgPerDay =
+    days.length > 0 ? Math.round(totalCents / activeDayCount) : 0;
+  const peakDay = days.reduce(
+    (best, d) => (d.revenueCents > (best?.revenueCents ?? 0) ? d : best),
+    null as (typeof days)[0] | null,
+  );
+
+  return (
+    <>
+      {/* ── KPI strip ─────────────────────────────────────────────────── */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <KpiCard
+          label="Total (filtered)"
+          value={formatPesosFromCents(totalCents)}
+          sub={`${totalBookings} booking${totalBookings !== 1 ? "s" : ""}`}
+          accent="flame"
+        />
+        <KpiCard
+          label="Avg per active day"
+          value={avgPerDay > 0 ? formatPesosFromCents(avgPerDay) : "—"}
+          sub={activeDayCount + " days with revenue"}
+          accent="pine"
+        />
+        <KpiCard
+          label="Peak day"
+          value={peakDay ? formatPesosFromCents(peakDay.revenueCents) : "—"}
+          sub={peakDay?.date ?? "—"}
+          accent="pine"
+        />
+        <KpiCard
+          label="All-time months"
+          value={String(months.length)}
+          sub={
+            months.length > 0
+              ? `${months[months.length - 1]!.month} → ${months[0]!.month}`
+              : "No data yet"
+          }
+          accent="muted"
+        />
+      </div>
+
+      {/* ── Chart ─────────────────────────────────────────────────────── */}
+      <div className="rounded-xl border border-line bg-white p-5">
+        <RevenueChartLoader days={days} months={months} mode="full" />
+      </div>
+    </>
+  );
+}
+
+async function RevenueTables({
+  days: daysPromise,
+  months: monthsPromise,
+}: {
+  days: Promise<DayReport>;
+  months: Promise<MonthReport>;
+}) {
+  const [{ days, totalCents }, { months }] = await Promise.all([
+    daysPromise,
+    monthsPromise,
+  ]);
+
+  return (
+    <>
       {/* ── Daily breakdown table ─────────────────────────────────────── */}
       <div className="overflow-hidden rounded-xl border border-line bg-white">
         <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
@@ -342,7 +399,7 @@ export default async function RevenuePage({
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 

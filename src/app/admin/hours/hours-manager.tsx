@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -182,10 +182,14 @@ function HoursSection({
   const [hClose, setHClose] = useState("03:00");
 
   // Group hours by day of week
-  const byDay = DAY_NAMES.reduce<Record<number, HoursRow[]>>((acc, _, i) => {
-    acc[i] = initialHours.filter((h) => h.dayOfWeek === i);
-    return acc;
-  }, {});
+  const byDay = useMemo(
+    () =>
+      DAY_NAMES.reduce<Record<number, HoursRow[]>>((acc, _, i) => {
+        acc[i] = initialHours.filter((h) => h.dayOfWeek === i);
+        return acc;
+      }, {}),
+    [initialHours],
+  );
 
   async function addRow(e: React.FormEvent) {
     e.preventDefault();

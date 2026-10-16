@@ -136,13 +136,14 @@ export default function Step1DateTime({
   const tomorrowStr = useMemo(() => manilaTomorrowStr(), []);
   const maxStr = useMemo(() => maxBookableDateStr(), []);
 
-  const [courts, setCourts] = useState<CourtOption[]>(initialCourts);
+  // Courts/rates come from the parent (booking-flow already fetches /api/courts + /api/pricing)
+  const courts = initialCourts;
   const [courtIds, setCourtIds] = useState<string[]>(() =>
     initialCourtIds && initialCourtIds.length > 0
       ? initialCourtIds
       : initialCourts.map((c) => c.id),
   );
-  const [rates, setRates] = useState<DisplayRates>(initialRates);
+  const rates = initialRates;
   const [selectedDate, setSelectedDate] = useState<string | null>(initialSelectedDate ?? null);
   const [view, setView] = useState(() => partsOf(initialSelectedDate ?? todayStr));
   const [avail, setAvail] = useState<CourtAvailability[] | null>(null);
@@ -176,48 +177,16 @@ export default function Step1DateTime({
   // Unique slot ISOs across all selected (court, slot) pairs
   const selectedSlotIsos = useMemo(() => {
     const isos = new Set(selected.map((pair) => pair.split("|")[1] as string));
-    return [...isos].sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+    return [...isos].sort();
   }, [selected]);
+
+  const selectedSet = useMemo(() => new Set(selected), [selected]);
 
   // Notify parent of live state changes — passes unique slot ISOs for summary
   useEffect(() => {
     onLiveUpdate?.({ courtIds, selectedDate, selectedSlots: selectedSlotIsos, paddleQty, ball });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [courtIds, selectedDate, selectedSlotIsos, paddleQty, ball]);
-
-  // Refresh court list live
-  useEffect(() => {
-    fetch("/api/courts")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((b: { courts?: CourtOption[] } | null) => {
-        if (b?.courts && b.courts.length > 0) {
-          setCourts(b.courts);
-          setCourtIds((prev) =>
-            prev.length > 0
-              ? prev.filter((id) => b.courts!.some((c) => c.id === id))
-              : b.courts!.map((c) => c.id),
-          );
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  // Refresh display rates live
-  useEffect(() => {
-    fetch("/api/pricing")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((b: DisplayRates | null) => {
-        if (
-          b &&
-          [b.morning, b.evening, b.paddle, b.ball].every(
-            (n) => typeof n === "number" && Number.isFinite(n) && n > 0,
-          )
-        ) {
-          setRates({ morning: b.morning, evening: b.evening, paddle: b.paddle, ball: b.ball, currency: "PHP" });
-        }
-      })
-      .catch(() => {});
-  }, []);
 
   const courtsKey = useMemo(() => [...courtIds].sort().join(","), [courtIds]);
 
@@ -280,13 +249,24 @@ export default function Step1DateTime({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate, courtsKey, retryKey]);
 
-  const slotByCourt = useMemo(() => {
-    const m = new Map<string, Map<string, AvailabilitySlot>>();
+  // Cell state per "courtId|slotIso" — computed once per availability payload
+  const cellStates = useMemo(() => {
+    const m = new Map<string, CellState>();
     for (const c of avail ?? []) {
-      m.set(c.courtId, new Map(c.slots.map((s) => [s.start, s])));
+      for (const s of c.slots) m.set(`${c.courtId}|${s.start}`, cellState(s));
     }
     return m;
   }, [avail]);
+
+  const visibleCourts = useMemo(
+    () => courts.filter((c) => courtIds.includes(c.id)),
+    [courts, courtIds],
+  );
+
+  const courtIndexById = useMemo(
+    () => new Map(courts.map((c, i) => [c.id, i])),
+    [courts],
+  );
 
   const gridSlots = useMemo(
     () => (selectedDate ? slotsForDate(selectedDate).map((s) => s.start.toISOString()) : []),
@@ -315,14 +295,12 @@ export default function Step1DateTime({
       // While loading: past slots grey out, future ones show as open
       return new Date(iso).getTime() <= Date.now() ? "past" : "open";
     }
-    const slot = slotByCourt.get(courtId)?.get(iso);
-    if (!slot) return "closed";
-    return cellState(slot);
+    return cellStates.get(`${courtId}|${iso}`) ?? "closed";
   }
 
   // Whether a specific (court, slot) cell is selected
   function isCellSelected(iso: string, courtId: string): boolean {
-    return selected.includes(`${courtId}|${iso}`);
+    return selectedSet.has(`${courtId}|${iso}`);
   }
 
   // Toggle a specific (court, slot) cell
@@ -535,7 +513,7 @@ export default function Step1DateTime({
   // Panel 1 (time grid) is fullscreen — rendered separately from the card wrapper
   if (panel === 1) {
     const previewCourt = previewCourtId ? courts.find((c) => c.id === previewCourtId) ?? null : null;
-    const previewIndex = previewCourt ? courts.findIndex((c) => c.id === previewCourt.id) : 0;
+    const previewIndex = previewCourt ? (courtIndexById.get(previewCourt.id) ?? 0) : 0;
     return (
       <div className="flex flex-col">
         <Dialog open={previewCourt !== null} onOpenChange={(open) => { if (!open) setPreviewCourtId(null); }}>
@@ -674,9 +652,7 @@ export default function Step1DateTime({
                     TIME
                   </th>
                   {/* Court column headers */}
-                  {courts
-                    .filter((c) => courtIds.includes(c.id))
-                    .map((court) => (
+                  {visibleCourts.map((court) => (
                       <th
                         key={court.id}
                         scope="col"
@@ -690,7 +666,7 @@ export default function Step1DateTime({
                         >
                           <div className="size-8 rounded-lg overflow-hidden border border-line-warm/60 bg-oat pointer-events-none">
                             <LandingImage
-                              src={`/images/court-${(courts.findIndex((c) => c.id === court.id) % 2) + 1}.jpg`}
+                              src={`/images/court-${((courtIndexById.get(court.id) ?? 0) % 2) + 1}.jpg`}
                               alt={court.name}
                               label={`${court.name} photo`}
                               className="w-full h-full"
@@ -746,10 +722,8 @@ export default function Step1DateTime({
                           </span>
                         </td>
                         {/* Court cells */}
-                        {courts
-                          .filter((c) => courtIds.includes(c.id))
-                          .map((court) => {
-                            const cs = slotStateForCourt(iso, court.id);
+                        {visibleCourts.map((court) => {
+                          const cs = slotStateForCourt(iso, court.id);
                             const isSel = isCellSelected(iso, court.id);
                             return (
                               <td key={court.id} className="py-2 px-2 text-center">

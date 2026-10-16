@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -83,9 +83,7 @@ export default function ConfirmationStep({
     toast.success("QR code downloaded!");
   };
 
-  const sortedSlots = [...slotStarts].sort(
-    (a, b) => new Date(a).getTime() - new Date(b).getTime(),
-  );
+  const sortedSlots = useMemo(() => [...slotStarts].sort(), [slotStarts]);
   const firstSlot = sortedSlots[0];
 
   const timeRangeLabel = formatSlotRanges(sortedSlots);
@@ -97,7 +95,7 @@ export default function ConfirmationStep({
       : "Upcoming";
 
   // Build invoice line items from server total (or fall back to rate-based estimate)
-  const invoiceLines = (() => {
+  const invoiceLines = useMemo(() => {
     let dayCount = 0;
     let nightCount = 0;
     for (const iso of sortedSlots) {
@@ -126,7 +124,7 @@ export default function ConfirmationStep({
     if (details.ball)
       lines.push({ label: "Ball set (flat fee)", amount: rates.ball });
     return lines;
-  })();
+  }, [sortedSlots, courtNames, rates, details.paddleQty, details.paddleHours, details.ball]);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 animate-rise">

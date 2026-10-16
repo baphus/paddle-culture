@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -83,25 +83,29 @@ export default function RevenueChart({ days, months, mode = "full" }: Props) {
   const isMini = mode === "mini";
 
   // Build chart data — daily sorted oldest→newest, trim label to MM-DD / Mon-YY
-  const dailyData = [...days]
-    .sort((a, b) => (a.date < b.date ? -1 : 1))
-    .map((d) => ({
-      label: d.date.slice(5), // MM-DD
-      revenue: d.revenueCents / 100,
-      bookings: d.bookings,
-    }));
+  const dailyData = useMemo(
+    () =>
+      [...days].sort((a, b) => (a.date < b.date ? -1 : 1)).map((d) => ({
+        label: d.date.slice(5), // MM-DD
+        revenue: d.revenueCents / 100,
+        bookings: d.bookings,
+      })),
+    [days],
+  );
 
-  const monthlyData = [...months]
-    .sort((a, b) => (a.month < b.month ? -1 : 1))
-    .map((m) => {
-      const [y, mo] = m.month.split("-");
-      const date = new Date(Number(y), Number(mo) - 1, 1);
-      return {
-        label: date.toLocaleString("en-PH", { month: "short", year: "2-digit" }),
-        revenue: m.revenueCents / 100,
-        bookings: m.bookings,
-      };
-    });
+  const monthlyData = useMemo(
+    () =>
+      [...months].sort((a, b) => (a.month < b.month ? -1 : 1)).map((m) => {
+        const [y, mo] = m.month.split("-");
+        const date = new Date(Number(y), Number(mo) - 1, 1);
+        return {
+          label: date.toLocaleString("en-PH", { month: "short", year: "2-digit" }),
+          revenue: m.revenueCents / 100,
+          bookings: m.bookings,
+        };
+      }),
+    [months],
+  );
 
   const data = toggle === "daily" ? dailyData : monthlyData;
   const hasData = data.length > 0;

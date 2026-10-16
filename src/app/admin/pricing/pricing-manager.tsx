@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Save, ChevronDown, ChevronUp } from "lucide-react";
@@ -142,6 +142,11 @@ function CourtCard({
   const [open, setOpen] = useState(true);
   const isGlobal = rules[0]?.courtId === null;
 
+  const sortedRules = useMemo(
+    () => [...rules].sort((a, b) => sortKey(a).localeCompare(sortKey(b))),
+    [rules],
+  );
+
   // Count unsaved changes in this card
   const dirtyCount = rules.filter((r) => {
     const draft = amounts[r.id];
@@ -189,7 +194,7 @@ function CourtCard({
       {/* Rule rows */}
       {open && (
         <div className="space-y-2 border-t border-line px-4 pb-4 pt-3">
-          {[...rules].sort((a, b) => sortKey(a).localeCompare(sortKey(b))).map((rule) => (
+          {sortedRules.map((rule) => (
             <RuleRow
               key={rule.id}
               rule={rule}
@@ -217,12 +222,16 @@ export default function PricingManager({
   const [busy, setBusy] = useState<string | null>(null);
 
   // Group rules by courtName
-  const groups = initial.reduce<Record<string, PricingRuleRow[]>>((acc, r) => {
-    const key = r.courtName;
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(r);
-    return acc;
-  }, {});
+  const groups = useMemo(
+    () =>
+      initial.reduce<Record<string, PricingRuleRow[]>>((acc, r) => {
+        const key = r.courtName;
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(r);
+        return acc;
+      }, {}),
+    [initial],
+  );
 
   // Global rules first, then court-specific sorted by name
   const sortedKeys = Object.keys(groups).sort((a, b) => {

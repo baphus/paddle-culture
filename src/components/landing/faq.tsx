@@ -1,7 +1,7 @@
 import { FALLBACK_RATES, peso, type DisplayRates } from "@/lib/pricing-display";
 
-export default function Faq({ rates = FALLBACK_RATES }: { rates?: DisplayRates }) {
-  const FAQS = [
+function buildFaqs(rates: DisplayRates) {
+  return [
     {
       q: "How do I book a court?",
       a: `Pick your date, select 1 or 2 courts, and choose any 1-hour slots. Tap "Hold these slots" to lock them for 10 minutes, fill in your contact details, pay via GCash, BDO, or BPI, then upload your payment screenshot. Once submitted, you'll get a tracking QR code by email while staff verifies your payment.`,
@@ -27,6 +27,10 @@ export default function Faq({ rates = FALLBACK_RATES }: { rates?: DisplayRates }
       a: "No. All bookings are final — no cancellations, rescheduling, or refunds. Review your date, time, and court selection carefully before uploading payment.",
     },
   ];
+}
+
+export default function Faq({ rates = FALLBACK_RATES }: { rates?: DisplayRates }) {
+  const FAQS = buildFaqs(rates);
   return (
     <section id="faq" className="scroll-mt-20" aria-labelledby="faq-heading">
       <div className="mx-auto w-full max-w-3xl px-4 py-10 sm:px-6 lg:py-14">

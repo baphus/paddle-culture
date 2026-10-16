@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { CalendarCheck, Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -15,14 +14,6 @@ const LINKS = [
 
 export default function Header() {
   const pathname = usePathname();
-  const [hash, setHash] = useState("");
-
-  useEffect(() => {
-    const updateHash = () => setHash(window.location.hash);
-    updateHash();
-    window.addEventListener("hashchange", updateHash);
-    return () => window.removeEventListener("hashchange", updateHash);
-  }, []);
 
   const isActive = (href: string) => {
     if (href === "/#top") return pathname === "/";

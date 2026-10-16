@@ -45,25 +45,36 @@ export async function getAvailability(
   // Build ISO strings for the slot starts in this date
   const startIsos = starts.map((s) => s.toISOString());
 
-  // ── Live booking_slots rows ──────────────────────────────────────────────
-  // Filter: court_id in courtIds AND slot_start in startIsos AND state in LIVE_SLOT_STATES
-  const { data: slotData, error: slotError } = await db
-    .from("booking_slots")
-    .select("court_id,slot_start,state")
-    .in("court_id", args.courtIds)
-    .in("slot_start", startIsos)
-    .in("state", [...LIVE_SLOT_STATES]);
+  // ── Slots + holds + operating hours/closures, issued together ────────────
+  const ruleTimes = starts.map((s) => s.getTime());
 
+  const [slotRes, holdRes, rules] = await Promise.all([
+    // Live booking_slots rows: court_id in courtIds AND slot_start in startIsos
+    // AND state in LIVE_SLOT_STATES
+    db
+      .from("booking_slots")
+      .select("court_id,slot_start,state")
+      .in("court_id", args.courtIds)
+      .in("slot_start", startIsos)
+      .in("state", [...LIVE_SLOT_STATES]),
+    // Live holds rows (server clock: expires_at > now())
+    db
+      .from("holds")
+      .select("court_id,slot_start")
+      .in("court_id", args.courtIds)
+      .in("slot_start", startIsos)
+      .gt("expires_at", new Date().toISOString()),
+    loadOpenRules(db, {
+      courtIds: args.courtIds,
+      from: new Date(Math.min(...ruleTimes) - 3_600_000),
+      to: new Date(Math.max(...ruleTimes) + 2 * 3_600_000),
+    }),
+  ]);
+
+  const { data: slotData, error: slotError } = slotRes;
   if (slotError) throw new Error(slotError.message);
 
-  // ── Live holds rows (server clock: expires_at > now()) ───────────────────
-  const { data: holdData, error: holdError } = await db
-    .from("holds")
-    .select("court_id,slot_start")
-    .in("court_id", args.courtIds)
-    .in("slot_start", startIsos)
-    .gt("expires_at", new Date().toISOString());
-
+  const { data: holdData, error: holdError } = holdRes;
   if (holdError) throw new Error(holdError.message);
 
   const key = (courtId: string, t: number) => `${courtId}|${t}`;
@@ -83,14 +94,6 @@ export async function getAvailability(
       slotState.set(k, "held");
     }
   }
-
-  // ── Operating hours / closures ────────────────────────────────────────────
-  const ruleTimes = starts.map((s) => s.getTime());
-  const rules = await loadOpenRules(db, {
-    courtIds: args.courtIds,
-    from: new Date(Math.min(...ruleTimes) - 3_600_000),
-    to: new Date(Math.max(...ruleTimes) + 2 * 3_600_000),
-  });
 
   return args.courtIds.map((courtId) => ({
     courtId,
