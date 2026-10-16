@@ -1,18 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { DataTable } from "@/components/ui/data-table";
 import type { AdminUserRecord } from "@/lib/admin/users";
 
 export default function UsersTable({
@@ -25,30 +19,87 @@ export default function UsersTable({
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
 
-  async function handleAction(
-    userId: string,
-    action: "deactivate" | "reactivate",
-  ) {
-    setBusy(userId);
-    try {
-      const res = await fetch(`/api/admin/users/${userId}/${action}`, {
-        method: "POST",
-      });
-      const body = (await res.json()) as { error?: { message?: string } };
-      if (!res.ok) {
-        toast.error(body.error?.message ?? `Could not ${action} user.`);
-        return;
+  const handleAction = useCallback(
+    async (userId: string, action: "deactivate" | "reactivate") => {
+      setBusy(userId);
+      try {
+        const res = await fetch(`/api/admin/users/${userId}/${action}`, {
+          method: "POST",
+        });
+        const body = (await res.json()) as { error?: { message?: string } };
+        if (!res.ok) {
+          toast.error(body.error?.message ?? `Could not ${action} user.`);
+          return;
+        }
+        toast.success(
+          action === "deactivate" ? "User deactivated." : "User reactivated.",
+        );
+        router.refresh();
+      } catch {
+        toast.error("Request failed.");
+      } finally {
+        setBusy(null);
       }
-      toast.success(
-        action === "deactivate" ? "User deactivated." : "User reactivated.",
-      );
-      router.refresh();
-    } catch {
-      toast.error("Request failed.");
-    } finally {
-      setBusy(null);
-    }
-  }
+    },
+    [router],
+  );
+
+  const columns = useMemo<ColumnDef<AdminUserRecord>[]>(
+    () => [
+      {
+        accessorKey: "name",
+        header: "Name",
+        cell: ({ row }) => (
+          <span className="font-medium">{row.original.name ?? "—"}</span>
+        ),
+      },
+      {
+        accessorKey: "email",
+        header: "Email",
+        cell: ({ row }) => (
+          <span className="text-muted-foreground">{row.original.email}</span>
+        ),
+      },
+      {
+        accessorKey: "status",
+        header: "Status",
+        cell: ({ row }) => (
+          <Badge
+            variant={row.original.status === "active" ? "default" : "secondary"}
+          >
+            {row.original.status === "active" ? "Active" : "Deactivated"}
+          </Badge>
+        ),
+      },
+      {
+        id: "actions",
+        header: "",
+        enableSorting: false,
+        enableHiding: false,
+        cell: ({ row }) => {
+          const user = row.original;
+          const active = user.status === "active";
+          if (user.id === actorId) return null;
+          return (
+            <div className="text-right">
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                disabled={busy === user.id}
+                onClick={() =>
+                  handleAction(user.id, active ? "deactivate" : "reactivate")
+                }
+              >
+                {active ? "Deactivate" : "Reactivate"}
+              </Button>
+            </div>
+          );
+        },
+      },
+    ],
+    [actorId, busy, handleAction],
+  );
 
   if (users.length === 0) {
     return (
@@ -59,51 +110,11 @@ export default function UsersTable({
   }
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead className="px-4">Name</TableHead>
-          <TableHead className="px-4">Email</TableHead>
-          <TableHead className="px-4">Status</TableHead>
-          <TableHead className="px-4" />
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {users.map((user) => {
-          const isSelf = user.id === actorId;
-          const active = user.status === "active";
-          return (
-            <TableRow key={user.id}>
-              <TableCell className="px-4 py-3 font-medium">
-                {user.name ?? "—"}
-              </TableCell>
-              <TableCell className="px-4 py-3 text-muted-foreground">
-                {user.email}
-              </TableCell>
-              <TableCell className="px-4 py-3">
-                <Badge variant={active ? "default" : "secondary"}>
-                  {active ? "Active" : "Deactivated"}
-                </Badge>
-              </TableCell>
-              <TableCell className="px-4 py-3 text-right">
-                {!isSelf && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="xs"
-                    disabled={busy === user.id}
-                    onClick={() =>
-                      handleAction(user.id, active ? "deactivate" : "reactivate")
-                    }
-                  >
-                    {active ? "Deactivate" : "Reactivate"}
-                  </Button>
-                )}
-              </TableCell>
-            </TableRow>
-          );
-        })}
-      </TableBody>
-    </Table>
+    <DataTable
+      columns={columns}
+      data={users}
+      searchKey="email"
+      placeholder="Filter users…"
+    />
   );
 }
