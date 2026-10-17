@@ -583,7 +583,7 @@ function WeeklyView({
         const dowLabel = DAY_NAMES_SHORT[new Date(date + "T12:00:00Z").getUTCDay()]!;
 
         return (
-          <div key={date} className="flex min-h-[320px] flex-col">
+          <div key={date} className="flex min-h-[320px] min-w-0 flex-col">
             {/* Header row */}
             <div
               className={cn(

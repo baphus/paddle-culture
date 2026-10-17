@@ -69,6 +69,12 @@ export default function Header() {
             Open Daily: 6:00 AM – 3:00 AM
           </span>
           <a
+            href="/login"
+            className="text-sm font-semibold text-pine/80 transition-colors hover:text-pine"
+          >
+            Log in
+          </a>
+          <a
             href="/book"
             className="inline-flex items-center justify-center gap-2 rounded-full bg-flame px-5 py-2.5 text-sm font-bold whitespace-nowrap text-white shadow-[0_8px_20px_rgba(234,102,44,0.35)] transition-all hover:-translate-y-0.5 hover:bg-flame-hover"
           >
@@ -108,6 +114,12 @@ export default function Header() {
                 {l.label}
               </a>
             ))}
+            <a
+              href="/login"
+              className="block rounded-xl px-4 py-2.5 text-sm font-semibold text-ink hover:bg-oat"
+            >
+              Log in
+            </a>
             <p className="mx-4 mt-2 mb-1 inline-flex items-center gap-1.5 rounded-full border border-line bg-cream px-3 py-1.5 text-[11px] font-bold text-pine">
               <span className="size-1.5 rounded-full bg-live-dot" aria-hidden />
               Open Daily: 6:00 AM – 3:00 AM

@@ -38,7 +38,7 @@ export default function AdminShell({ email, name, children }: Props) {
       <NextTopLoader color="var(--primary)" showSpinner={false} />
       <SidebarProvider>
         <AdminSidebar email={email} name={name} />
-        <SidebarInset>
+        <SidebarInset className="min-w-0 overflow-x-clip">
           <header className="flex h-16 shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
             <div className="flex items-center gap-2 px-4">
               <SidebarTrigger className="-ml-1" />
@@ -65,7 +65,9 @@ export default function AdminShell({ email, name, children }: Props) {
               </Breadcrumb>
             </div>
           </header>
-          <div className="flex flex-1 flex-col gap-4 p-4 pt-4 md:p-6 md:pt-6">{children}</div>
+          <div className="flex min-w-0 flex-1 flex-col gap-4 overflow-x-clip p-4 pt-4 md:p-6 md:pt-6">
+            {children}
+          </div>
         </SidebarInset>
       </SidebarProvider>
     </TooltipProvider>
