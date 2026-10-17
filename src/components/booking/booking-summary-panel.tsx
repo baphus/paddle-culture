@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
-import { formatManilaLong, formatSlotRanges, formatCountdown } from "@/lib/courts";
+import { formatManilaLong, formatSlotRanges, formatCountdown, formatCourtSlotGroups, type CourtSlotGroup } from "@/lib/courts";
 import { peso, type DisplayRates } from "@/lib/pricing-display";
 import { timeBandFor } from "@/lib/booking/slots";
 
@@ -27,6 +27,9 @@ export interface SummaryData {
   selectedSlots: string[];
   /** Names of selected courts */
   courtNames: string[];
+  /** Per-court slot attribution — drives per-court time lines when the booking
+   *  moves between courts. Absent/empty falls back to the collapsed range. */
+  slotGroups?: CourtSlotGroup[];
   /** Live display rates for estimate */
   rates: DisplayRates;
   /** Live paddle quantity — updates immediately from step 1 panel 4 */
@@ -183,7 +186,7 @@ export interface SummaryAdvance {
 }
 
 export function BookingSummaryDesktop({ data }: { data: SummaryData }) {
-  const { selectedDate, selectedSlots, courtNames, rates, paddleQty, ball, isHeld, holdDeadlineMs } = data;
+  const { selectedDate, selectedSlots, courtNames, slotGroups, rates, paddleQty, ball, isHeld, holdDeadlineMs } = data;
   const { courtTotal, paddleTotal, ballTotal, total, breakdown, rangeLabel, durationLabel } = useMemo(
     () => computeBreakdown(selectedSlots, courtNames.length, rates, paddleQty, ball),
     [selectedSlots, courtNames, rates, paddleQty, ball],
@@ -196,6 +199,8 @@ export function BookingSummaryDesktop({ data }: { data: SummaryData }) {
   const courtLabel = courtNames.length > 0 ? courtNames.join(", ") : "No court selected";
   const dateLabel = hasDate ? formatManilaLong(selectedDate!) : "No date selected";
   const paddleHours = selectedSlots.length;
+  // Non-empty only when the booking changes courts — otherwise `rangeLabel` is exact.
+  const courtSlotLines = formatCourtSlotGroups(slotGroups ?? []);
 
   return (
     <aside
@@ -282,9 +287,17 @@ export function BookingSummaryDesktop({ data }: { data: SummaryData }) {
             <span className="block text-[10px] font-semibold uppercase tracking-wide text-warm-muted">
               Time
             </span>
-            <span className="block truncate text-sm font-bold text-ink">
-              {hasSlots ? rangeLabel : "No time selected"}
-            </span>
+            {courtSlotLines.length > 0 ? (
+              courtSlotLines.map((line) => (
+                <span key={line} className="block text-sm font-bold text-ink">
+                  {line}
+                </span>
+              ))
+            ) : (
+              <span className="block truncate text-sm font-bold text-ink">
+                {hasSlots ? rangeLabel : "No time selected"}
+              </span>
+            )}
             {hasSlots && (
               <span className="block text-[10px] font-medium text-warm-muted">{durationLabel}</span>
             )}
@@ -406,7 +419,7 @@ export function BookingSummaryDesktop({ data }: { data: SummaryData }) {
 
 export function BookingSummaryMobile({ data, advance }: { data: SummaryData; advance: SummaryAdvance | null }) {
   const [open, setOpen] = useState(false);
-  const { selectedDate, selectedSlots, courtNames, rates, paddleQty, ball, isHeld, holdDeadlineMs } = data;
+  const { selectedDate, selectedSlots, courtNames, slotGroups, rates, paddleQty, ball, isHeld, holdDeadlineMs } = data;
 
   const { courtTotal, paddleTotal, ballTotal, total, breakdown, rangeLabel, durationLabel } = useMemo(
     () => computeBreakdown(selectedSlots, courtNames.length, rates, paddleQty, ball),
@@ -424,6 +437,7 @@ export function BookingSummaryMobile({ data, advance }: { data: SummaryData; adv
   const courtLabel = courtNames.length > 0 ? courtNames.join(", ") : "—";
   const dateLabel = hasDate ? formatManilaLong(selectedDate!) : "—";
   const paddleHours = selectedSlots.length;
+  const courtSlotLines = formatCourtSlotGroups(slotGroups ?? []);
 
   return (
     <>
@@ -570,10 +584,14 @@ export function BookingSummaryMobile({ data, advance }: { data: SummaryData; adv
                 <span className="font-bold text-ink">{dateLabel}</span>
               </div>
               {hasSlots && (
-                <div className="flex items-center gap-2 text-xs">
-                  <Clock className="size-3.5 shrink-0 text-flame" />
+                <div className="flex items-start gap-2 text-xs">
+                  <Clock className="mt-0.5 size-3.5 shrink-0 text-flame" />
                   <span className="font-semibold text-warm-muted">Time:</span>
-                  <span className="font-bold text-ink">{rangeLabel} ({durationLabel})</span>
+                  <span className="font-bold text-ink">
+                    {courtSlotLines.length > 0
+                      ? courtSlotLines.join("; ")
+                      : `${rangeLabel} (${durationLabel})`}
+                  </span>
                 </div>
               )}
               {(paddleQty > 0 || ball) && (

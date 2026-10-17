@@ -11,7 +11,7 @@ import {
   User,
 } from "lucide-react";
 import { toast } from "sonner";
-import { formatCountdown, type CourtOption } from "@/lib/courts";
+import { formatCountdown, type CourtOption, type CourtSlotGroup } from "@/lib/courts";
 import { FALLBACK_RATES, type DisplayRates } from "@/lib/pricing-display";
 import { cn } from "@/lib/utils";
 import ConfirmationStep from "./confirmation-step";
@@ -144,6 +144,9 @@ export default function BookingFlow({
     initialCourts.length > 0 ? [initialCourts[0].id] : [],
   );
   const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
+  // Per-court slot attribution — kept for display only (summary + invoice);
+  // pricing and hold/submit payloads stay keyed off the flat arrays above.
+  const [slotGroups, setSlotGroups] = useState<CourtSlotGroup[]>([]);
   // Equipment — live from step 1 panel 4, pre-fills DetailsForm
   const [livePaddleQty, setLivePaddleQty] = useState(0);
   const [liveBall, setLiveBall] = useState(false);
@@ -203,11 +206,12 @@ export default function BookingFlow({
   }, []);
 
   const handleHoldSuccess = useCallback(
-    (newHold: HoldState, newCourtIds: string[], newSlots: string[], date: string, paddleQty = 0, ball = false) => {
+    (newHold: HoldState, newCourtIds: string[], newSlots: string[], date: string, paddleQty = 0, ball = false, groups: CourtSlotGroup[] = []) => {
       setError(null);
       setHold(newHold);
       setCourtIds(newCourtIds);
       setSelectedSlots(newSlots);
+      setSlotGroups(groups);
       setSelectedDate(date);
       setLivePaddleQty(paddleQty);
       setLiveBall(ball);
@@ -220,10 +224,11 @@ export default function BookingFlow({
 
   /** Called on every live change in step 1 — keeps summary in sync before hold */
   const handleLiveUpdate = useCallback(
-    (update: { courtIds: string[]; selectedDate: string | null; selectedSlots: string[]; paddleQty: number; ball: boolean }) => {
+    (update: { courtIds: string[]; selectedDate: string | null; selectedSlots: string[]; paddleQty: number; ball: boolean; slotGroups: CourtSlotGroup[] }) => {
       setCourtIds(update.courtIds);
       setSelectedDate(update.selectedDate);
       setSelectedSlots(update.selectedSlots);
+      setSlotGroups(update.slotGroups);
       setLivePaddleQty(update.paddleQty);
       setLiveBall(update.ball);
     },
@@ -272,6 +277,7 @@ export default function BookingFlow({
     releaseHold(hold);
     setHold(null);
     setSelectedSlots([]);
+    setSlotGroups([]);
     setSelectedDate(null);
     setLivePaddleQty(0);
     setLiveBall(false);
@@ -296,13 +302,14 @@ export default function BookingFlow({
       selectedDate,
       selectedSlots,
       courtNames,
+      slotGroups,
       rates,
       paddleQty: livePaddleQty,
       ball: liveBall,
       isHeld: !!hold,
       holdDeadlineMs: hold?.deadlineMs ?? null,
     }),
-    [selectedDate, selectedSlots, courtNames, rates, livePaddleQty, liveBall, hold],
+    [selectedDate, selectedSlots, courtNames, slotGroups, rates, livePaddleQty, liveBall, hold],
   );
 
   const showSummaryPanel = step !== "confirmation";
@@ -492,6 +499,7 @@ export default function BookingFlow({
           total={result.total}
           courtNames={courtNames}
           slotStarts={selectedSlots}
+          slotGroups={slotGroups}
           dateStr={selectedDate}
           details={details}
           rates={rates}

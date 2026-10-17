@@ -151,6 +151,27 @@ export function formatSlotRanges(startIsos: string[]): string {
     .join(", ");
 }
 
+/** One court's slice of a booking: the (court, slots) pairing that the flat
+ *  `courtNames` + `slotStarts` arrays lose. */
+export interface CourtSlotGroup {
+  courtName: string;
+  slotStarts: string[];
+}
+
+/**
+ * Per-court time lines for a booking that moves between courts —
+ * ["Court 1 · 3:00 – 4:00 PM", "Court 2 · 4:00 – 5:00 PM"]. Empty whenever the
+ * collapsed range label is already accurate (one court, or every court on the
+ * same hours), so callers can fall back to the plain label.
+ */
+export function formatCourtSlotGroups(groups: CourtSlotGroup[]): string[] {
+  const booked = groups.filter((g) => g.slotStarts.length > 0);
+  if (booked.length <= 1) return [];
+  const keys = booked.map((g) => [...g.slotStarts].sort().join(","));
+  if (keys.every((k) => k === keys[0])) return [];
+  return booked.map((g) => `${g.courtName} · ${formatSlotRanges(g.slotStarts)}`);
+}
+
 /** "mm:ss" countdown text for a millisecond remainder (clamped at 0). */
 export function formatCountdown(remainingMs: number): string {
   const totalSec = Math.max(0, Math.ceil(remainingMs / 1000));

@@ -33,6 +33,7 @@ import { manilaDateToday } from "@/lib/admin/calendar";
 import { formatPesosFromCents, revenueByDay, revenueByMonth } from "@/lib/admin/bookings";
 import { manilaDateStr, manilaWallClock } from "@/lib/booking/slots";
 import RevenueChartLoader from "@/components/admin/revenue-chart-loader";
+import RecentBookingsCard from "./recent-bookings-card";
 import RecentBookingsTable from "./recent-bookings-table";
 
 export const dynamic = "force-dynamic";
@@ -108,21 +109,11 @@ export default async function AdminPage() {
       </Card>
 
       {/* Recent bookings */}
-      <Card>
-        <CardHeader className="border-b">
-          <CardTitle>Recent bookings</CardTitle>
-          <CardAction>
-            <Link href="/admin/bookings" className="text-sm text-muted-foreground hover:text-foreground">
-              View all
-            </Link>
-          </CardAction>
-        </CardHeader>
-        <CardContent className="px-0">
-          <Suspense fallback={<Skeleton className="mx-4 h-32" />}>
-            <RecentBookingsSection stats={statsPromise} />
-          </Suspense>
-        </CardContent>
-      </Card>
+      <RecentBookingsCard>
+        <Suspense fallback={<Skeleton className="h-32" />}>
+          <RecentBookingsSection stats={statsPromise} />
+        </Suspense>
+      </RecentBookingsCard>
 
       {/* Quick links */}
       <section>

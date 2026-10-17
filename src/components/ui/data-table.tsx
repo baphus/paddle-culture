@@ -29,6 +29,7 @@ import {
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { ViewToggle } from "@/components/ui/view-toggle"
 import {
   Table,
   TableBody,
@@ -94,6 +95,10 @@ export function DataTable<TData, TValue>({
   searchValue,
   onSearchChange,
   actions,
+  gridCard,
+  view: controlledView,
+  showColumnToggle = true,
+  showSearch = true,
 }: {
   columns: ColumnDef<TData, TValue>[]
   data: TData[]
@@ -110,9 +115,19 @@ export function DataTable<TData, TValue>({
   onSearchChange?: (value: string) => void
   /** Extra toolbar controls, rendered in the search row right after the input. */
   actions?: React.ReactNode
+  /** Render a row as a card; enables the list/grid toolbar toggle. */
+  gridCard?: (row: TData) => React.ReactNode
+  /** Controlled view (the parent renders its own toggle, e.g. in a card header). */
+  view?: "list" | "grid"
+  /** Column-visibility menu in the toolbar (default true). */
+  showColumnToggle?: boolean
+  /** Search input in the toolbar (default true). */
+  showSearch?: boolean
 }) {
   const [search, setSearch] = React.useState("")
   const [sorting, setSorting] = React.useState<SortingState>([])
+  const [internalView, setInternalView] = React.useState<"list" | "grid">("list")
+  const view = controlledView ?? internalView
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     []
   )
@@ -165,77 +180,102 @@ export function DataTable<TData, TValue>({
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          <Input
-            value={onSearchChange ? (searchValue ?? "") : search}
-            onChange={(e) => onSearch(e.target.value)}
-            placeholder={placeholder}
-            className="max-w-xs"
-          />
+          {showSearch && (
+            <Input
+              value={onSearchChange ? (searchValue ?? "") : search}
+              onChange={(e) => onSearch(e.target.value)}
+              placeholder={placeholder}
+              className="max-w-xs"
+            />
+          )}
           {actions}
         </div>
-        <ColumnVisibilityMenu table={table} />
+        <div className="flex items-center gap-2">
+          {gridCard && controlledView === undefined && (
+            <ViewToggle view={view} onViewChange={setInternalView} />
+          )}
+          {showColumnToggle && view === "list" && (
+            <ColumnVisibilityMenu table={table} />
+          )}
+        </div>
       </div>
 
-      <div className="overflow-hidden rounded-lg border">
-        <Table>
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id} className="px-4">
-                    {header.isPlaceholder ? null : (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="-ml-2"
-                        disabled={!header.column.getCanSort()}
-                        onClick={header.column.getToggleSortingHandler()}
-                      >
-                        {flexRender(
-                          header.column.columnDef.header,
-                          header.getContext()
-                        )}
-                        {header.column.getCanSort() &&
-                          ({
-                            asc: <ArrowUpIcon />,
-                            desc: <ArrowDownIcon />,
-                          }[header.column.getIsSorted() as string] ?? (
-                            <ArrowUpDownIcon />
-                          ))}
-                      </Button>
-                    )}
-                  </TableHead>
-                ))}
-              </TableRow>
+      {gridCard && view === "grid" ? (
+        table.getRowModel().rows.length ? (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {table.getRowModel().rows.map((row) => (
+              <React.Fragment key={row.id}>
+                {gridCard(row.original)}
+              </React.Fragment>
             ))}
-          </TableHeader>
-          <TableBody>
-            {table.getRowModel().rows.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id} className="px-4">
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext()
+          </div>
+        ) : (
+          <div className="rounded-lg border p-8 text-center text-sm text-muted-foreground">
+            No results.
+          </div>
+        )
+      ) : (
+        <div className="overflow-hidden rounded-lg border">
+          <Table>
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => (
+                    <TableHead key={header.id} className="px-4">
+                      {header.isPlaceholder ? null : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="-ml-2"
+                          disabled={!header.column.getCanSort()}
+                          onClick={header.column.getToggleSortingHandler()}
+                        >
+                          {flexRender(
+                            header.column.columnDef.header,
+                            header.getContext()
+                          )}
+                          {header.column.getCanSort() &&
+                            ({
+                              asc: <ArrowUpIcon />,
+                              desc: <ArrowDownIcon />,
+                            }[header.column.getIsSorted() as string] ?? (
+                              <ArrowUpDownIcon />
+                            ))}
+                        </Button>
                       )}
-                    </TableCell>
+                    </TableHead>
                   ))}
                 </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell
-                  colSpan={columns.length}
-                  className="h-24 text-center text-muted-foreground"
-                >
-                  No results.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {table.getRowModel().rows.length ? (
+                table.getRowModel().rows.map((row) => (
+                  <TableRow key={row.id}>
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id} className="px-4">
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext()
+                        )}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell
+                    colSpan={columns.length}
+                    className="h-24 text-center text-muted-foreground"
+                  >
+                    No results.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
       <div className="flex items-center justify-end gap-2">
         <span className="text-sm text-muted-foreground">

@@ -26,6 +26,7 @@ import {
   monthLabelManila,
   weekdayManila,
   type CourtOption,
+  type CourtSlotGroup,
 } from "@/lib/courts";
 import { FALLBACK_RATES, peso, type DisplayRates } from "@/lib/pricing-display";
 import Image from "next/image";
@@ -123,6 +124,7 @@ export interface Step1DateTimeProps {
     date: string,
     paddleQty: number,
     ball: boolean,
+    slotGroups: CourtSlotGroup[],
   ) => void;
   onHoldExpired?: () => void;
   onCancel?: () => void;
@@ -133,6 +135,7 @@ export interface Step1DateTimeProps {
     selectedSlots: string[];
     paddleQty: number;
     ball: boolean;
+    slotGroups: CourtSlotGroup[];
   }) => void;
 }
 
@@ -216,11 +219,27 @@ export default function Step1DateTime({
     return [...ids];
   }, [selected]);
 
+  // Which hours belong to which court — step 1 is the only place that knows,
+  // so the summary can't infer it from the flat `slotStarts` alone.
+  const slotGroups = useMemo<CourtSlotGroup[]>(() => {
+    const byCourt = new Map<string, string[]>();
+    for (const pair of selected) {
+      const [courtId, iso] = pair.split("|") as [string, string];
+      const existing = byCourt.get(courtId);
+      if (existing) existing.push(iso);
+      else byCourt.set(courtId, [iso]);
+    }
+    return [...byCourt].map(([courtId, isos]) => ({
+      courtName: courts.find((c) => c.id === courtId)?.name ?? "Court",
+      slotStarts: isos.sort(),
+    }));
+  }, [selected, courts]);
+
   // Notify parent of live state changes — passes unique slot ISOs for summary
   useEffect(() => {
-    onLiveUpdate?.({ courtIds: selectedCourtIds, selectedDate, selectedSlots: selectedSlotIsos, paddleQty, ball });
+    onLiveUpdate?.({ courtIds: selectedCourtIds, selectedDate, selectedSlots: selectedSlotIsos, paddleQty, ball, slotGroups });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCourtIds, selectedDate, selectedSlotIsos, paddleQty, ball]);
+  }, [selectedCourtIds, selectedDate, selectedSlotIsos, paddleQty, ball, slotGroups]);
 
   const courtsKey = useMemo(() => [...courtIds].sort().join(","), [courtIds]);
 
@@ -454,7 +473,7 @@ export default function Step1DateTime({
 
   function handleContinueCta() {
     if (hold && onHoldSuccess && selectedDate) {
-      onHoldSuccess(hold, hold.courtIds, hold.slotStarts, selectedDate, paddleQty, ball);
+      onHoldSuccess(hold, hold.courtIds, hold.slotStarts, selectedDate, paddleQty, ball, slotGroups);
       return;
     }
     void createHold();
@@ -1256,7 +1275,7 @@ export default function Step1DateTime({
             id="step1-advance"
             onClick={() => {
               if (!hold || !selectedDate) return;
-              onHoldSuccess?.(hold, hold.courtIds, hold.slotStarts, selectedDate, paddleQty, ball);
+              onHoldSuccess?.(hold, hold.courtIds, hold.slotStarts, selectedDate, paddleQty, ball, slotGroups);
             }}
             disabled={!hold || !selectedDate}
             className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-flame px-5 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"

@@ -9,7 +9,7 @@ import {
   Receipt,
   User,
 } from "lucide-react";
-import { formatManilaLong, formatSlotRanges } from "@/lib/courts";
+import { formatManilaLong, formatSlotRanges, formatCourtSlotGroups, type CourtSlotGroup } from "@/lib/courts";
 import { timeBandFor } from "@/lib/booking/slots";
 import { googleCalendarUrl } from "@/lib/booking/calendar";
 import { FALLBACK_RATES, peso, type DisplayRates } from "@/lib/pricing-display";
@@ -25,6 +25,9 @@ export interface BookingInvoiceProps {
   total: string;
   courtNames: string[];
   slotStarts: string[];
+  /** Per-court slot attribution — renders per-court time lines when the booking
+   *  moves between courts. Absent/empty falls back to the collapsed range. */
+  slotGroups?: CourtSlotGroup[];
   dateStr?: string | null;
   player: Player;
   equipment: Equipment;
@@ -39,6 +42,7 @@ export default function BookingInvoice({
   total,
   courtNames,
   slotStarts,
+  slotGroups,
   dateStr,
   player,
   equipment,
@@ -48,6 +52,8 @@ export default function BookingInvoice({
   const sortedSlots = [...slotStarts].sort();
   const firstSlot = sortedSlots[0];
   const timeRangeLabel = formatSlotRanges(sortedSlots);
+  // Non-empty only when the booking changes courts — otherwise `timeRangeLabel` is exact.
+  const courtSlotLines = formatCourtSlotGroups(slotGroups ?? []);
 
   const formattedDate = dateStr
     ? formatManilaLong(dateStr)
@@ -88,6 +94,7 @@ export default function BookingInvoice({
     location: VENUE_ADDRESS,
     details: [
       `Booking ref: #${token.slice(0, 8).toUpperCase()}`,
+      courtSlotLines.join("; "),
       bookingUrl ? `Track your booking: ${bookingUrl}` : "",
     ]
       .filter(Boolean)
@@ -143,9 +150,15 @@ export default function BookingInvoice({
               <Clock className="mt-0.5 size-4 shrink-0 text-flame" aria-hidden />
               <div>
                 <span className="block text-[10px] font-semibold uppercase tracking-wide text-warm-muted">Time &amp; Duration</span>
-                <span className="font-bold text-ink">
-                  {timeRangeLabel}
-                </span>
+                {courtSlotLines.length > 0 ? (
+                  courtSlotLines.map((line) => (
+                    <span key={line} className="block font-bold text-ink">{line}</span>
+                  ))
+                ) : (
+                  <span className="font-bold text-ink">
+                    {timeRangeLabel}
+                  </span>
+                )}
                 <span className="block text-xs text-warm-muted">
                   {sortedSlots.length} hour{sortedSlots.length === 1 ? "" : "s"}
                 </span>

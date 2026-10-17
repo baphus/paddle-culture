@@ -18,6 +18,13 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type { CalendarEvent } from "@/lib/admin/calendar";
 import { formatConsecutiveSlots } from "@/lib/admin/calendar";
 import type { BookingDetail } from "@/lib/admin/bookings";
@@ -450,26 +457,26 @@ export default function CalendarView({
         </SheetContent>
       </Sheet>
 
-      {/* ── Booking detail (2nd slide-over) ─────────────────────────────── */}
-      <Sheet
+      {/* ── Booking detail (modal) ──────────────────────────────────────── */}
+      <Dialog
         open={detailBooking !== null || detailLoading}
         onOpenChange={(o) => { if (!o) { setDetailBooking(null); setDetailLoading(false); } }}
       >
-        <SheetContent className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-md">
+        <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden rounded-xl p-0 sm:max-w-md">
           {detailLoading && (
             <div className="flex flex-1 items-center justify-center py-20">
               <LoadingAnimation label="Loading booking" />
             </div>
           )}
           {detailBooking && (
-            <BookingDetailSheet
+            <BookingDetail
               booking={detailBooking}
               onClose={() => setDetailBooking(null)}
               onUpdate={() => router.refresh()}
             />
           )}
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -789,9 +796,9 @@ function DayPanel({
   );
 }
 
-// ─── Booking detail sheet (2nd slide-over) ────────────────────────────────────
+// ─── Booking detail (modal body) ──────────────────────────────────────────────
 
-function BookingDetailSheet({
+function BookingDetail({
   booking,
   onClose,
   onUpdate,
@@ -876,24 +883,22 @@ function BookingDetailSheet({
 
   return (
     <>
-      <SheetHeader className="border-b px-5 py-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <SheetTitle>
-              {booking.fullName}
-            </SheetTitle>
-            <SheetDescription>
-              {booking.email} · {booking.phone}
-            </SheetDescription>
-          </div>
+      <DialogHeader className="gap-1 border-b px-5 py-4 pr-10">
+        <div className="flex items-center justify-between gap-3">
+          <DialogTitle className="text-base font-semibold">
+            {booking.fullName}
+          </DialogTitle>
           <BookingStatusBadge
             status={booking.status}
-            className="mt-0.5 shrink-0 text-[11px]"
+            className="shrink-0 text-[11px]"
           />
         </div>
-      </SheetHeader>
+        <DialogDescription className="mt-0.5 text-xs">
+          {booking.email} · {booking.phone}
+        </DialogDescription>
+      </DialogHeader>
 
-      <div className="flex-1 space-y-4 px-5 py-5">
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-5">
         {/* Booking details */}
         <Card>
           <CardContent className="space-y-2">

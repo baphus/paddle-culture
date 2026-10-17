@@ -105,6 +105,12 @@ export default function TrackView({
     .map((s) => s.slotStart)
     .sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
 
+  // Per-court attribution for the invoice — each row carries its own court.
+  const slotGroups = courtNames.map((name) => ({
+    courtName: name,
+    slotStarts: slots.filter((s) => s.courtName === name).map((s) => s.slotStart),
+  }));
+
   const equipment = {
     paddleQty: rental?.paddleQty ?? 0,
     paddleHours: rental?.paddleHours != null ? Number(rental.paddleHours) : null,
@@ -181,6 +187,7 @@ export default function TrackView({
         total={total}
         courtNames={courtNames}
         slotStarts={sortedStarts}
+        slotGroups={slotGroups}
         player={{ fullName, email: maskEmail(email), phone: maskPhone(phone) }}
         equipment={equipment}
         bookingUrl={url}

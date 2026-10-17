@@ -3,18 +3,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Check, Copy, Eye, X } from "lucide-react";
+import { Check, Eye, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LoadingAnimation } from "@/components/ui/loading-animation";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
 import {
   Dialog,
   DialogContent,
@@ -86,7 +79,7 @@ export default function BookingActions({ booking }: { booking: BookingDetail }) 
     }
   }
 
-  async function openDrawer() {
+  async function openDetail() {
     setOpen(true);
     if (proofUrl || proofFailed || !booking.proofPath) return;
     try {
@@ -101,27 +94,10 @@ export default function BookingActions({ booking }: { booking: BookingDetail }) 
     }
   }
 
-  function copyTrackingLink() {
-    const url = `${window.location.origin}/track/${booking.trackingToken}`;
-    navigator.clipboard.writeText(url).then(
-      () => toast.success("Tracking link copied."),
-      () => toast.error("Copy failed."),
-    );
-  }
-
   return (
     <div className="flex items-center gap-1.5">
-      <Button variant="outline" size="sm" onClick={openDrawer}>
+      <Button variant="outline" size="sm" onClick={openDetail}>
         <Eye className="size-3.5" /> View
-      </Button>
-
-      <Button
-        variant="outline"
-        size="icon-sm"
-        onClick={copyTrackingLink}
-        title="Copy tracking link"
-      >
-        <Copy className="size-3.5" />
       </Button>
 
       {pending && (
@@ -136,27 +112,25 @@ export default function BookingActions({ booking }: { booking: BookingDetail }) 
         </Button>
       )}
 
-      {/* Detail sheet */}
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-md">
-          <SheetHeader className="border-b px-5 py-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <SheetTitle className="text-base font-semibold">
-                  {booking.fullName}
-                </SheetTitle>
-                <SheetDescription className="mt-0.5 text-xs">
-                  {booking.email} · {booking.phone}
-                </SheetDescription>
-              </div>
+      {/* Detail modal */}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden rounded-xl p-0 sm:max-w-md">
+          <DialogHeader className="gap-1 border-b px-5 py-4 pr-10">
+            <div className="flex items-center justify-between gap-3">
+              <DialogTitle className="text-base font-semibold">
+                {booking.fullName}
+              </DialogTitle>
               <BookingStatusBadge
                 status={booking.status}
-                className="mt-0.5 shrink-0"
+                className="shrink-0"
               />
             </div>
-          </SheetHeader>
+            <DialogDescription className="mt-0.5 text-xs">
+              {booking.email} · {booking.phone}
+            </DialogDescription>
+          </DialogHeader>
 
-          <div className="flex-1 space-y-4 px-5 py-5">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-5">
             {/* Booking details */}
             <div className="space-y-2 rounded-xl border p-4">
               <DetailRow label="Courts" value={booking.courts || "—"} />
@@ -203,13 +177,6 @@ export default function BookingActions({ booking }: { booking: BookingDetail }) 
               </div>
             </div>
 
-            {/* Actions */}
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" onClick={copyTrackingLink}>
-                <Copy className="size-3.5" /> Copy tracking link
-              </Button>
-            </div>
-
             {pending && (
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -230,8 +197,8 @@ export default function BookingActions({ booking }: { booking: BookingDetail }) 
               </div>
             )}
           </div>
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
 
       {/* Approve / reject confirmation dialog */}
       <Dialog

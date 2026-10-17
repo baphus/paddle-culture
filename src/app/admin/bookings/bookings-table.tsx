@@ -15,6 +15,7 @@ import {
   type BookingDetail,
 } from "@/lib/admin/bookings";
 import { columns } from "./columns";
+import BookingCard from "./booking-card";
 
 export interface BookingsFilters {
   q: string;
@@ -133,6 +134,7 @@ export default function BookingsTable({
       placeholder="Search by name…"
       pageSize={BOOKINGS_PAGE_SIZE}
       actions={filterActions}
+      gridCard={(b) => <BookingCard booking={b} />}
     />
   );
 }

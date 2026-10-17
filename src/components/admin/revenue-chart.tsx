@@ -67,6 +67,38 @@ function ChartTooltip({
   );
 }
 
+// ─── weekly rollup ─────────────────────────────────────────────────────────────
+
+/** Roll daily rows into Monday-start weeks (Manila dates, YYYY-MM-DD). */
+function rollupByWeek(days: RevenueDay[]) {
+  const weeks = new Map<string, { revenue: number; bookings: number }>();
+  for (const d of days) {
+    const key = weekStart(d.date);
+    const entry = weeks.get(key);
+    if (entry) {
+      entry.revenue += d.revenueCents / 100;
+      entry.bookings += d.bookings;
+    } else {
+      weeks.set(key, { revenue: d.revenueCents / 100, bookings: d.bookings });
+    }
+  }
+  return [...weeks.entries()]
+    .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+    .map(([key, v]) => ({ label: key.slice(5), revenue: v.revenue, bookings: v.bookings }));
+}
+
+// Mirrors weekStartManila in lib/admin/calendar.ts — kept local so this client
+// component never imports the server admin modules.
+function weekStart(dateStr: string): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const utcNoon = Date.UTC(y as number, (m as number) - 1, d as number, 12);
+  const dow = new Date(utcNoon).getUTCDay();
+  const daysToMon = dow === 0 ? -6 : 1 - dow;
+  const dt = new Date(utcNoon + daysToMon * 86_400_000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())}`;
+}
+
 // ─── types ────────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -75,7 +107,7 @@ interface Props {
   mode?: "full" | "mini";
 }
 
-type Toggle = "daily" | "monthly";
+type Toggle = "daily" | "weekly" | "monthly";
 
 // ─── main component ───────────────────────────────────────────────────────────
 
@@ -108,7 +140,9 @@ export default function RevenueChart({ days, months, mode = "full" }: Props) {
     [months],
   );
 
-  const data = toggle === "daily" ? dailyData : monthlyData;
+  const weeklyData = useMemo(() => rollupByWeek(days), [days]);
+
+  const data = toggle === "daily" ? dailyData : toggle === "weekly" ? weeklyData : monthlyData;
   const hasData = data.length > 0;
   const chartHeight = isMini ? 130 : 280;
 
@@ -118,11 +152,15 @@ export default function RevenueChart({ days, months, mode = "full" }: Props) {
       <div className={`flex items-center justify-between ${isMini ? "mb-3" : "mb-4"}`}>
         {!isMini && (
           <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            {toggle === "daily" ? "Daily revenue (approved bookings)" : "Monthly revenue (approved bookings)"}
+            {toggle === "daily"
+              ? "Daily revenue (approved bookings)"
+              : toggle === "weekly"
+                ? "Weekly revenue (approved bookings)"
+                : "Monthly revenue (approved bookings)"}
           </p>
         )}
         <div className={`flex items-center gap-1 rounded-lg border border-border bg-muted p-0.5 ${isMini ? "ml-auto" : ""}`}>
-          {(["daily", "monthly"] as Toggle[]).map((t) => (
+          {(["daily", "weekly", "monthly"] as Toggle[]).map((t) => (
             <button
               key={t}
               type="button"

@@ -4,6 +4,8 @@ import { CalendarX2 } from "lucide-react";
 import { DataTable } from "@/components/ui/data-table";
 import type { BookingDetail } from "@/lib/admin/bookings";
 import { columns } from "./bookings/columns";
+import BookingCard from "./bookings/booking-card";
+import { useBookingView } from "./recent-bookings-card";
 
 // Client boundary for the dashboard slice: column defs hold render functions,
 // so they cannot be passed from the server page. Pages client-side over the
@@ -13,6 +15,8 @@ export default function RecentBookingsTable({
 }: {
   rows: BookingDetail[];
 }) {
+  const view = useBookingView();
+
   if (rows.length === 0) {
     return (
       <div className="flex h-32 flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
@@ -29,6 +33,10 @@ export default function RecentBookingsTable({
       searchKey="fullName"
       placeholder="Search bookings…"
       pageSize={10}
+      view={view}
+      gridCard={(b) => <BookingCard booking={b} />}
+      showColumnToggle={false}
+      showSearch={false}
     />
   );
 }

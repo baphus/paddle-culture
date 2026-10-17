@@ -20,6 +20,7 @@ import type { DisplayRates } from "@/lib/pricing-display";
 import { VENUE_ADDRESS, VENUE_MAP_LINK } from "@/lib/venue";
 import BookingInvoice from "./booking-invoice";
 import type { DetailsValues } from "./details-form";
+import type { CourtSlotGroup } from "@/lib/courts";
 
 export interface ConfirmationProps {
   trackingToken: string;
@@ -27,6 +28,8 @@ export interface ConfirmationProps {
   total: string;
   courtNames: string[];
   slotStarts: string[];
+  /** Per-court slot attribution — forwarded to the invoice for per-court time lines. */
+  slotGroups?: CourtSlotGroup[];
   dateStr?: string | null;
   details: DetailsValues;
   /** Live rates used to render invoice line items (falls back to FALLBACK_RATES) */
@@ -40,6 +43,7 @@ export default function ConfirmationStep({
   total,
   courtNames,
   slotStarts,
+  slotGroups,
   dateStr,
   details,
   rates,
@@ -118,6 +122,7 @@ export default function ConfirmationStep({
         total={total}
         courtNames={courtNames}
         slotStarts={slotStarts}
+        slotGroups={slotGroups}
         dateStr={dateStr}
         player={details}
         equipment={details}
