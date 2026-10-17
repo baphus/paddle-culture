@@ -9,7 +9,6 @@ import {
   BookOpen,
   CalendarDays,
   Clock,
-  DollarSign,
   LayoutDashboard,
   LogOut,
   ScrollText,
@@ -40,8 +39,7 @@ const NAV_ITEMS = [
 ] as const;
 
 const CONFIG_ITEMS = [
-  { href: "/admin/courts", label: "Courts", icon: Settings },
-  { href: "/admin/pricing", label: "Pricing", icon: DollarSign },
+  { href: "/admin/courts", label: "Courts & Pricing", icon: Settings },
   { href: "/admin/hours", label: "Hours & Closures", icon: Clock },
 ] as const;
 

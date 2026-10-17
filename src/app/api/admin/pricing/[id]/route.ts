@@ -3,7 +3,11 @@ import { z } from "zod";
 import { LaneError, err } from "@/lib/booking/errors";
 import { requireAdmin } from "@/lib/admin/session";
 import { getDbOrThrow } from "@/lib/admin/decisions";
-import { pricingAmountSchema, updatePricingAmount } from "@/lib/admin/config";
+import {
+  deletePricingRule,
+  pricingAmountSchema,
+  updatePricingAmount,
+} from "@/lib/admin/config";
 
 export const runtime = "nodejs";
 
@@ -11,7 +15,7 @@ const idParam = z.string().uuid();
 
 // PATCH /api/admin/pricing/[id] — admin only. Edits the AMOUNT of one
 // pricing_rules row + audit row. Vocabulary (day_type/time_band/item_type/
-// unit) is read-only by design: values only, no new rule kinds, no deletes.
+// unit) is read-only by design: values only, no new rule kinds.
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -32,5 +36,28 @@ export async function PATCH(
     if (e instanceof LaneError) return err(e.code, e.message, e.status);
     console.error("admin pricing update failed", e);
     return err("INTERNAL", "Pricing update failed.", 500);
+  }
+}
+
+// DELETE /api/admin/pricing/[id] — admin only. Removes a court-scoped rate
+// override so that court falls back to the global default + audit row. Global
+// rows are refused: they have no fallback, and deleting one would leave
+// recalculateTotal unable to price a booking.
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const admin = await requireAdmin();
+    const { id } = await params;
+    if (!idParam.safeParse(id).success) {
+      return err("BAD_REQUEST", "Invalid pricing rule id.", 400);
+    }
+    await deletePricingRule(getDbOrThrow(), admin, id);
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    if (e instanceof LaneError) return err(e.code, e.message, e.status);
+    console.error("admin pricing delete failed", e);
+    return err("INTERNAL", "Pricing reset failed.", 500);
   }
 }

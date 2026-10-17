@@ -17,16 +17,24 @@ function pad(n: number): string {
 }
 
 /**
+ * An instant for a wall-clock time on a Manila date. Do NOT build this with
+ * `new TZDate("<date>T<hh>:00:00", MANILA_TZ)`: TZDate's string constructor
+ * parses in the *process* timezone (see @date-fns/tz `mini.js`), so on a UTC
+ * server (Vercel) every grid instant silently shifts 8h. Component args are
+ * interpreted as target-zone wall clock, which is what we want.
+ */
+export function manilaWallClock(dateStr: string, hour = 0, minute = 0): TZDate {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return TZDate.tz(MANILA_TZ, y as number, (m as number) - 1, d as number, hour, minute, 0);
+}
+
+/**
  * All 21 slot-start instants for a Manila selection date (YYYY-MM-DD).
  * Mapping is explicit Asia/Manila wall time via TZDate — never browser-local
  * math. Manila is UTC+8 with no DST, so hour arithmetic is exact.
  */
 export function slotsForDate(dateStr: string): SlotInstant[] {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const base = new TZDate(
-    `${y}-${pad(m as number)}-${pad(d as number)}T${pad(DAY_START_HOUR_MANILA)}:00:00`,
-    MANILA_TZ,
-  );
+  const base = manilaWallClock(dateStr, DAY_START_HOUR_MANILA);
   const out: SlotInstant[] = [];
   for (let i = 0; i < SLOT_COUNT; i++) {
     out.push({ index: i, start: addHours(base, i) });
@@ -72,9 +80,9 @@ export function isOnSlotGrid(instant: Date): boolean {
   if (z.getMinutes() !== 0 || z.getSeconds() !== 0 || z.getMilliseconds() !== 0) {
     return false;
   }
-  const base = new TZDate(
-    `${z.getFullYear()}-${pad(z.getMonth() + 1)}-${pad(z.getDate())}T${pad(DAY_START_HOUR_MANILA)}:00:00`,
-    MANILA_TZ,
+  const base = manilaWallClock(
+    `${z.getFullYear()}-${pad(z.getMonth() + 1)}-${pad(z.getDate())}`,
+    DAY_START_HOUR_MANILA,
   );
   const diffHours = (z.getTime() - base.getTime()) / 3_600_000;
   if (Number.isInteger(diffHours) && diffHours >= 0 && diffHours < SLOT_COUNT) {
@@ -83,10 +91,7 @@ export function isOnSlotGrid(instant: Date): boolean {
   // Overnight spill: 00:00–02:00 wall time belongs to the previous
   // selection date's 06:00→03:00+1d grid.
   const sel = selectionDateStr(instant);
-  const selBase = new TZDate(
-    `${sel}T${pad(DAY_START_HOUR_MANILA)}:00:00`,
-    MANILA_TZ,
-  );
+  const selBase = manilaWallClock(sel, DAY_START_HOUR_MANILA);
   if (selBase.getTime() === base.getTime()) return false;
   const prevDiffHours = (z.getTime() - selBase.getTime()) / 3_600_000;
   return (

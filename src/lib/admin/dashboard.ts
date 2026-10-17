@@ -2,6 +2,7 @@ import { TZDate } from "@date-fns/tz";
 import { addDays } from "date-fns";
 import type { Db } from "@/db/client";
 import { MANILA_TZ } from "@/lib/booking/constants";
+import { manilaWallClock } from "@/lib/booking/slots";
 import type { BookingDetail } from "./bookings";
 import { listBookings } from "./bookings";
 
@@ -14,7 +15,7 @@ function manilaToday(): string {
 }
 
 function manilaDayStart(dateStr: string): Date {
-  return new TZDate(`${dateStr}T00:00:00`, MANILA_TZ);
+  return manilaWallClock(dateStr);
 }
 
 export interface DashboardStats {

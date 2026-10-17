@@ -22,6 +22,8 @@ const KNOWN_ACTIONS = [
   "court.create",
   "court.status",
   "pricing.update",
+  "pricing.create",
+  "pricing.delete",
   "hours.create",
   "hours.delete",
   "closure.create",

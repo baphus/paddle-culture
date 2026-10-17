@@ -95,6 +95,13 @@ export async function setCourtStatus(
 
 // --- Pricing (values only) ---------------------------------------------------
 
+// Fixed vocabulary. Mirrors the seed's rate card + pickRule() fallback keys in
+// src/lib/booking/pricing.ts and the `time_band` / `day_type` values in slots.ts.
+export const PRICING_DAY_TYPES = ["weekday", "weekend", "holiday", "all"] as const;
+export const PRICING_TIME_BANDS = ["morning", "evening", "all"] as const;
+export const PRICING_ITEM_TYPES = ["court", "paddle", "ball"] as const;
+export const PRICING_UNITS = ["slot", "hour", "flat"] as const;
+
 export const pricingAmountSchema = z.object({
   amount: z
     .string()
@@ -181,6 +188,106 @@ export async function updatePricingAmount(
   const row = rows.find((r) => r.id === id);
   if (!row) throw new LaneError("INTERNAL", "Pricing rule unreadable.", 500);
   return row;
+}
+
+// Court-specific rates: a court-scoped row overrides the global default for
+// that court (pickRule tries the court row before the global one at each
+// fallback step). The vocabulary is still fixed — only the key and amount.
+export const pricingRuleSetSchema = z.object({
+  courtId: z.string().uuid("Invalid court."),
+  dayType: z.enum(PRICING_DAY_TYPES),
+  timeBand: z.enum(PRICING_TIME_BANDS),
+  itemType: z.enum(PRICING_ITEM_TYPES),
+  unit: z.enum(PRICING_UNITS),
+  amount: pricingAmountSchema.shape.amount,
+});
+
+/**
+ * Sets the rate for one (court, dayType, timeBand, itemType) key: updates the
+ * court's own row when it has one, inserts the override when it does not. Keyed
+ * so a repeated save can never create two rows for the same key. Overrides are
+ * removed with deletePricingRule, which returns the court to the global default.
+ */
+export async function setPricingRule(
+  db: Db,
+  admin: AdminSession,
+  input: z.infer<typeof pricingRuleSetSchema>,
+): Promise<PricingRuleRow> {
+  const { data: existing, error: fetchError } = await db
+    .from("pricing_rules")
+    .select("id")
+    .eq("court_id", input.courtId)
+    .eq("day_type", input.dayType)
+    .eq("time_band", input.timeBand)
+    .eq("item_type", input.itemType)
+    .maybeSingle();
+  if (fetchError) throw new LaneError("DB_ERROR", fetchError.message, 500);
+  if (existing) {
+    return updatePricingAmount(db, admin, (existing as { id: string }).id, input.amount);
+  }
+
+  const { data, error } = await db
+    .from("pricing_rules")
+    .insert({
+      court_id: input.courtId,
+      day_type: input.dayType,
+      time_band: input.timeBand,
+      item_type: input.itemType,
+      unit: input.unit,
+      amount: input.amount,
+    })
+    .select("id")
+    .single();
+  if (error || !data) throw new LaneError("DB_ERROR", error?.message ?? "Insert failed.", 500);
+  const id = (data as { id: string }).id;
+
+  await db.from("audit_log").insert([
+    audit(admin, "pricing.create", "pricing_rule", id, null, {
+      court_id: input.courtId,
+      day_type: input.dayType,
+      time_band: input.timeBand,
+      item_type: input.itemType,
+      unit: input.unit,
+      amount: input.amount,
+    }),
+  ]);
+
+  const rows = await listPricingRules(db);
+  const row = rows.find((r) => r.id === id);
+  if (!row) throw new LaneError("INTERNAL", "Pricing rule unreadable.", 500);
+  return row;
+}
+
+/**
+ * Drops a court's rate override so the court follows the global default again.
+ * Global rows have nothing to fall back to, so removing one is refused.
+ */
+export async function deletePricingRule(
+  db: Db,
+  admin: AdminSession,
+  id: string,
+): Promise<void> {
+  const { data: existing, error: fetchError } = await db
+    .from("pricing_rules")
+    .select("id,court_id,day_type,time_band,item_type,unit,amount")
+    .eq("id", id)
+    .single();
+  if (fetchError || !existing) throw new LaneError("NOT_FOUND", "Pricing rule not found.", 404);
+
+  const rule = existing as {
+    id: string; court_id: string | null; day_type: string; time_band: string;
+    item_type: string; unit: string; amount: string;
+  };
+  if (rule.court_id === null) {
+    throw new LaneError("GLOBAL_RULE", "The global default rate cannot be removed.", 409);
+  }
+
+  const { error: deleteError } = await db.from("pricing_rules").delete().eq("id", id);
+  if (deleteError) throw new LaneError("DB_ERROR", deleteError.message, 500);
+
+  await db.from("audit_log").insert([
+    audit(admin, "pricing.delete", "pricing_rule", id, rule, null),
+  ]);
 }
 
 // --- Operating hours -----------------------------------------------------------

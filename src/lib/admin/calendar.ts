@@ -2,7 +2,7 @@ import { TZDate } from "@date-fns/tz";
 import { addMonths } from "date-fns";
 import type { Db } from "@/db/client";
 import { MANILA_TZ } from "@/lib/booking/constants";
-import { manilaDateStr } from "@/lib/booking/slots";
+import { manilaDateStr, manilaWallClock } from "@/lib/booking/slots";
 
 // All Drizzle ORM imports replaced with @supabase/supabase-js HTTP client.
 
@@ -145,9 +145,8 @@ export async function getCalendarBookings(
   year: number,
   month: number,
 ): Promise<CalendarEvent[]> {
-  const monthStart = new TZDate(
-    `${year}-${String(month).padStart(2, "0")}-01T00:00:00`,
-    MANILA_TZ,
+  const monthStart = manilaWallClock(
+    `${year}-${String(month).padStart(2, "0")}-01`,
   );
   const monthEnd = addMonths(monthStart, 1);
   return buildEvents(db, monthStart as unknown as Date, monthEnd as unknown as Date);
@@ -158,8 +157,8 @@ export async function getCalendarBookingsRange(
   start: string,
   end: string,
 ): Promise<CalendarEvent[]> {
-  const rangeStart = new TZDate(`${start}T00:00:00`, MANILA_TZ);
-  const rangeEnd = new TZDate(`${end}T00:00:00`, MANILA_TZ);
+  const rangeStart = manilaWallClock(start);
+  const rangeEnd = manilaWallClock(end);
   return buildEvents(
     db,
     rangeStart as unknown as Date,

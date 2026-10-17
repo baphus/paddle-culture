@@ -2,7 +2,7 @@ import { TZDate } from "@date-fns/tz";
 import { addDays } from "date-fns";
 import type { Db } from "@/db/client";
 import { MANILA_TZ } from "@/lib/booking/constants";
-import { manilaDateStr } from "@/lib/booking/slots";
+import { manilaDateStr, manilaWallClock } from "@/lib/booking/slots";
 
 // All Drizzle ORM imports replaced with @supabase/supabase-js HTTP client.
 
@@ -36,7 +36,7 @@ export interface BookingDetail {
 }
 
 function manilaDayStart(dateStr: string): Date {
-  return new TZDate(`${dateStr}T00:00:00`, MANILA_TZ);
+  return manilaWallClock(dateStr);
 }
 
 function hourLabel(h: number): string {

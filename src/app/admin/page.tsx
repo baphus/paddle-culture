@@ -31,7 +31,7 @@ import { requireAdmin } from "@/lib/admin/session";
 import { getDashboardStats, type DashboardStats } from "@/lib/admin/dashboard";
 import { manilaDateToday } from "@/lib/admin/calendar";
 import { formatPesosFromCents, revenueByDay, revenueByMonth } from "@/lib/admin/bookings";
-import { manilaDateStr } from "@/lib/booking/slots";
+import { manilaDateStr, manilaWallClock } from "@/lib/booking/slots";
 import RevenueChartLoader from "@/components/admin/revenue-chart-loader";
 import RecentBookingsTable from "./recent-bookings-table";
 
@@ -52,7 +52,7 @@ type MonthArr = Awaited<ReturnType<typeof revenueByMonth>>["months"];
 export default async function AdminPage() {
   const session = await requireAdmin();
 
-  const todayStart = new TZDate(`${manilaDateToday()}T00:00:00`, "Asia/Manila") as unknown as Date;
+  const todayStart = manilaWallClock(manilaDateToday()) as unknown as Date;
 
   // Queries start here, but nothing awaits them yet: the shell below paints
   // immediately and each section streams in behind its own Suspense boundary.
@@ -131,8 +131,7 @@ export default async function AdminPage() {
           <QuickLink href="/admin/bookings" icon={BookOpen} label="Manage Bookings" desc="Review, approve, or reject" />
           <QuickLink href="/admin/revenue" icon={BarChart2} label="Revenue" desc="Daily breakdown & chart" />
           <QuickLink href="/admin/audit" icon={ScrollText} label="Audit Log" desc="Full action history" />
-          <QuickLink href="/admin/courts" icon={Settings} label="Courts" desc="Activate or deactivate courts" />
-          <QuickLink href="/admin/pricing" icon={DollarSign} label="Pricing" desc="Update rates" />
+          <QuickLink href="/admin/courts" icon={Settings} label="Courts & Pricing" desc="Courts, status, and rates" />
           <QuickLink href="/admin/hours" icon={Clock} label="Hours & Closures" desc="Operating hours and closures" />
         </div>
       </section>

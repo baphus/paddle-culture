@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/card";
 import { getDb } from "@/db/client";
 import { MANILA_TZ } from "@/lib/booking/constants";
+import { manilaWallClock } from "@/lib/booking/slots";
 import {
   formatPesosFromCents,
   revenueByDay,
@@ -47,7 +48,7 @@ function manilaToday(): string {
 }
 
 function manilaDayStart(dateStr: string): Date {
-  return new TZDate(`${dateStr}T00:00:00`, MANILA_TZ);
+  return manilaWallClock(dateStr);
 }
 
 // Quick-range presets (relative to today)
