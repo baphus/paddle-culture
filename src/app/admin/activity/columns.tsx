@@ -47,13 +47,20 @@ export function formatDayHeader(dateStr: string): string {
   return `${weekday}, ${day} ${month}`;
 }
 
-/** "angelina.gotelli" → "AG"; "system" → "SY". */
-export function initialsOf(name: string): string {
-  const parts = name
-    .split(/[.\s@_:-]+/)
+/**
+ * First letter of the person behind an `actor` value.
+ * `actor` holds an email (`sarah.jones@ckgrounds.ph`), so drop the domain before
+ * taking the initial — otherwise the last segment resolves to the domain ("SP"
+ * for ckgrounds.ph). Handles "Sarah Jones", "sarah.jones", "sarah_jones", and
+ * "system".
+ */
+export function initialsOf(actor: string): string {
+  const localPart = actor.split("@")[0] ?? "";
+  const parts = localPart
+    .split(/[.\s_-]+/)
     .map((p) => p.trim())
     .filter(Boolean);
-  const a = parts[0]?.[0] ?? "?";
-  const b = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? "") : (parts[0]?.[1] ?? "");
-  return `${a}${b}`.toUpperCase();
+  // Skip punctuation so a stray "@" or "." never renders as the avatar glyph.
+  const letter = (parts[0] ?? actor.trim()).match(/[a-z0-9]/i)?.[0];
+  return (letter ?? "?").toUpperCase();
 }
