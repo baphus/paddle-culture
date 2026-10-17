@@ -117,7 +117,7 @@ export default async function AdminPage() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <QuickLink href="/admin/bookings" icon={BookOpen} label="Manage Bookings" desc="Review, approve, or reject" />
           <QuickLink href="/admin/revenue" icon={BarChart2} label="Revenue" desc="Daily breakdown & chart" />
-          <QuickLink href="/admin/audit" icon={ScrollText} label="Audit Log" desc="Full action history" />
+          <QuickLink href="/admin/activity" icon={ScrollText} label="Activity" desc="Full action history" />
           <QuickLink href="/admin/courts" icon={Settings} label="Courts & Pricing" desc="Courts, status, and rates" />
           <QuickLink href="/admin/hours" icon={Clock} label="Hours & Closures" desc="Operating hours and closures" />
         </div>

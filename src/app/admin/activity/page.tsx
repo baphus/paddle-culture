@@ -1,7 +1,7 @@
 import { getDb } from "@/db/client";
 import PageHeader from "@/components/admin/page-header";
 import { requireAdmin } from "@/lib/admin/session";
-import AuditTable from "./audit-table";
+import ActivityTimeline from "./audit-table";
 import type { AuditRow } from "./columns";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,7 @@ function escapeIlike(s: string): string {
   return s.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
 
-export default async function AuditPage({
+export default async function ActivityPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -40,7 +40,7 @@ export default async function AuditPage({
   } catch {
     return (
       <div className="space-y-6">
-        <PageHeader title="Audit Log" />
+        <PageHeader title="Activity" />
         <p className="text-sm text-muted-foreground">Database is not configured.</p>
       </div>
     );
@@ -71,12 +71,12 @@ export default async function AuditPage({
     rows = (data ?? []) as AuditRow[];
     total = count ?? 0;
   } catch (err) {
-    console.error("[audit] query failed:", err);
+    console.error("[activity] query failed:", err);
     return (
       <div className="space-y-6">
-        <PageHeader title="Audit Log" />
+        <PageHeader title="Activity" />
         <p className="text-sm text-muted-foreground">
-          Could not load the audit log. Check your database connection and try
+          Could not load the activity log. Check your database connection and try
           again.
         </p>
       </div>
@@ -91,12 +91,12 @@ export default async function AuditPage({
     const clamped = (page - 1) * PAGE_SIZE;
     const { data, error } = await query.range(clamped, clamped + PAGE_SIZE - 1);
     if (error) {
-      console.error("[audit] query failed:", error.message);
+      console.error("[activity] query failed:", error.message);
       return (
         <div className="space-y-6">
-          <PageHeader title="Audit Log" />
+          <PageHeader title="Activity" />
           <p className="text-sm text-muted-foreground">
-            Could not load the audit log. Check your database connection and try
+            Could not load the activity log. Check your database connection and try
             again.
           </p>
         </div>
@@ -107,11 +107,8 @@ export default async function AuditPage({
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        title="Audit Log"
-        description={`Read-only event history — ${total} event${total === 1 ? "" : "s"}.`}
-      />
-      <AuditTable
+      <PageHeader title="Activity" />
+      <ActivityTimeline
         rows={rows}
         page={page}
         pageCount={pageCount}

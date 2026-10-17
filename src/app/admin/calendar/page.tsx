@@ -8,6 +8,8 @@ import {
   manilaYearMonth,
   weekStartManila,
 } from "@/lib/admin/calendar";
+import { listClosures } from "@/lib/admin/config";
+import type { ClosureRow } from "@/lib/admin/config";
 import CalendarView from "@/components/admin/calendar-view";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,6 +24,16 @@ function loadEvents(fetch: (db: Db) => Promise<CalEvents>): Promise<CalEvents> {
     return fetch(getDb()).catch(() => [] as CalEvents);
   } catch {
     return Promise.resolve([] as CalEvents);
+  }
+}
+
+function loadClosures(db: Db, start: string, end: string): Promise<ClosureRow[]> {
+  try {
+    return listClosures(db).then((rows) =>
+      rows.filter((r) => r.startAt < end && r.endAt > start),
+    );
+  } catch {
+    return Promise.resolve([]);
   }
 }
 
@@ -42,7 +54,7 @@ export default async function CalendarPage({
   const { year: nowYear, month: nowMonth } = manilaYearMonth();
   const today = manilaDateToday();
 
-  const view = (first(sp.view) || "monthly") as "daily" | "weekly" | "monthly";
+  const view = (first(sp.view) || "monthly") as "daily" | "weekly" | "monthly" | "schedule";
 
   // ── monthly ──────────────────────────────────────────────────────────────
   const rawY = Number.parseInt(first(sp.y), 10);
@@ -69,18 +81,19 @@ export default async function CalendarPage({
       ? getCalendarBookings(db, year, month)
       : getCalendarBookingsRange(
           db,
-          view === "weekly" ? weekStart : anchorDate,
-          view === "weekly" ? weekEnd : dayEnd,
+          view === "weekly" || view === "schedule" ? weekStart : anchorDate,
+          view === "weekly" || view === "schedule" ? weekEnd : dayEnd,
         ),
   );
+
+  // Closures: fetch only when needed (schedule view uses them; others don't)
+  const closuresPromise =
+    view === "schedule" ? loadClosures(getDb(), weekStart, weekEnd) : undefined;
 
   return (
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Booking Calendar</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          All bookings by slot date (Manila time).
-        </p>
       </header>
 
       <Card className="gap-0 overflow-hidden py-0">
@@ -93,6 +106,7 @@ export default async function CalendarPage({
             view={view}
             anchorDate={anchorDate}
             weekStart={weekStart}
+            closures={closuresPromise}
           />
         </Suspense>
       </Card>
@@ -108,16 +122,19 @@ async function CalendarBody({
   view,
   anchorDate,
   weekStart,
+  closures,
 }: {
   events: Promise<CalEvents>;
   year: number;
   month: number;
   today: string;
-  view: "daily" | "weekly" | "monthly";
+  view: "daily" | "weekly" | "monthly" | "schedule";
   anchorDate: string;
   weekStart: string;
+  closures?: Promise<ClosureRow[]>;
 }) {
   const events = await eventsPromise;
+  const closureRows = closures ? await closures : [];
   return (
     <CalendarView
       events={events}
@@ -127,6 +144,7 @@ async function CalendarBody({
       view={view}
       anchorDate={anchorDate}
       weekStart={weekStart}
+      closures={closureRows}
     />
   );
 }

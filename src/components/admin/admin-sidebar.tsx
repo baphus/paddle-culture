@@ -34,7 +34,7 @@ const NAV_ITEMS = [
   { href: "/admin/bookings", label: "Bookings", icon: BookOpen },
   { href: "/admin/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/admin/revenue", label: "Revenue", icon: BarChart2 },
-  { href: "/admin/audit", label: "Audit Log", icon: ScrollText },
+  { href: "/admin/activity", label: "Activity", icon: ScrollText },
   { href: "/admin/users", label: "Users", icon: Users },
 ] as const;
 

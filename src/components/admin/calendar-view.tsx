@@ -28,10 +28,11 @@ import {
 import type { CalendarEvent } from "@/lib/admin/calendar";
 import { formatConsecutiveSlots } from "@/lib/admin/calendar";
 import type { BookingDetail } from "@/lib/admin/bookings";
+import type { ClosureRow } from "@/lib/admin/config";
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
-type ViewMode = "daily" | "weekly" | "monthly";
+type ViewMode = "daily" | "weekly" | "monthly" | "schedule";
 
 interface Props {
   events: CalendarEvent[];
@@ -42,6 +43,7 @@ interface Props {
   anchorDate?: string; // optional for mini mode
   weekStart?: string; // optional for mini mode
   mode?: "full" | "mini";
+  closures?: ClosureRow[];
 }
 
 // ─── constants ────────────────────────────────────────────────────────────────
@@ -163,6 +165,7 @@ export default function CalendarView({
   anchorDate = today,
   weekStart = today,
   mode = "full",
+  closures = [],
 }: Props) {
   const router = useRouter();
   const isMini = mode === "mini";
@@ -311,6 +314,8 @@ export default function CalendarView({
                 const d = prevMonthDate(year, month);
                 const [y2, m2] = d.split("-").map(Number);
                 navigate({ view: "monthly", y: String(y2), m: String(m2) });
+              } else if (view === "schedule") {
+                navigate({ view: "schedule", date: addDays(weekStart, -7) });
               } else if (view === "weekly") {
                 navigate({ view: "weekly", date: addDays(weekStart, -7) });
               } else {
@@ -326,7 +331,7 @@ export default function CalendarView({
           <h2 className="text-base font-extrabold tracking-tight text-foreground">
             {view === "monthly"
               ? `${MONTH_NAMES[month - 1]} ${year}`
-              : view === "weekly"
+              : view === "schedule" || view === "weekly"
                 ? weekRangeLabel(weekStart)
                 : dayLabel(anchorDate)}
           </h2>
@@ -340,6 +345,8 @@ export default function CalendarView({
                 const d = nextMonthDate(year, month);
                 const [y2, m2] = d.split("-").map(Number);
                 navigate({ view: "monthly", y: String(y2), m: String(m2) });
+              } else if (view === "schedule") {
+                navigate({ view: "schedule", date: addDays(weekStart, 7) });
               } else if (view === "weekly") {
                 navigate({ view: "weekly", date: addDays(weekStart, 7) });
               } else {
@@ -365,6 +372,8 @@ export default function CalendarView({
               if (view === "monthly") {
                 const now = new Date();
                 navigate({ view: "monthly", y: String(now.getUTCFullYear()), m: String(now.getUTCMonth() + 1) });
+              } else if (view === "schedule") {
+                navigate({ view: "schedule", date: today });
               } else if (view === "weekly") {
                 navigate({ view: "weekly", date: today });
               } else {
@@ -378,7 +387,7 @@ export default function CalendarView({
 
           {/* View toggle */}
           <div className="flex rounded-lg border border-border bg-muted p-0.5">
-            {(["monthly", "weekly", "daily"] as ViewMode[]).map((v) => (
+            {(["monthly", "weekly", "daily", "schedule"] as ViewMode[]).map((v) => (
               <button
                 key={v}
                 type="button"
@@ -421,6 +430,16 @@ export default function CalendarView({
           date={anchorDate}
           today={today}
           byDate={byDate}
+          onOpenBooking={openBookingDetail}
+          detailLoading={detailLoading}
+        />
+      )}
+      {view === "schedule" && (
+        <ScheduleView
+          events={events}
+          closures={closures ?? []}
+          weekStart={weekStart}
+          today={today}
           onOpenBooking={openBookingDetail}
           detailLoading={detailLoading}
         />
@@ -527,7 +546,7 @@ function MonthlyView({
               type="button"
               onClick={() => onDayClick(cell.date)}
               className={cn(
-                "group min-h-[90px] border-b border-r border-border p-1.5 text-left transition-colors",
+                "group min-h-[64px] sm:min-h-[90px] border-b border-r border-border p-1.5 text-left transition-colors",
                 isLastRow && "border-b-0",
                 (idx + 1) % 7 === 0 && "border-r-0",
                 !cell.inMonth && "bg-muted/30",
@@ -546,12 +565,12 @@ function MonthlyView({
 
               {/* Dot indicator + count */}
               {dayEvents.length > 0 && (
-                <div className="flex items-center gap-1 px-0.5">
+                <div className="flex min-w-0 items-center gap-1 px-0.5">
                   <span className={cn(
                     "size-1.5 shrink-0 rounded-full",
                     hasPending ? "bg-accent-foreground" : hasApproved ? "bg-primary" : "bg-destructive",
                   )} />
-                  <span className="text-[11px] font-semibold text-foreground/70 leading-tight">
+                  <span className="min-w-0 truncate text-[11px] font-semibold text-foreground/70 leading-tight">
                     {dayEvents.length} booking{dayEvents.length !== 1 ? "s" : ""}
                   </span>
                 </div>
@@ -582,44 +601,109 @@ function WeeklyView({
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
   return (
-    <div className="grid grid-cols-7 divide-x divide-border">
-      {days.map((date, col) => {
-        const dayEvents = byDate.get(date) ?? [];
-        const isToday = date === today;
-        const [, , dd] = date.split("-").map(Number);
-        const dowLabel = DAY_NAMES_SHORT[new Date(date + "T12:00:00Z").getUTCDay()]!;
+    <>
+      {/* Desktop: 7-col grid */}
+      <div className="hidden sm:grid grid-cols-7 divide-x divide-border">
+        {days.map((date, col) => {
+          const dayEvents = byDate.get(date) ?? [];
+          const isToday = date === today;
+          const [, , dd] = date.split("-").map(Number);
+          const dowLabel = DAY_NAMES_SHORT[new Date(date + "T12:00:00Z").getUTCDay()]!;
 
-        return (
-          <div key={date} className="flex min-h-[320px] min-w-0 flex-col">
-            {/* Header row */}
-            <div
-              className={cn(
-                "border-b border-border px-2 py-2 text-center",
-                isToday && "bg-primary/5",
-              )}
-            >
-              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-                {dowLabel}
-              </p>
+          return (
+            <div key={date} className="flex min-h-[320px] min-w-0 flex-col">
+              {/* Header row */}
+              <div
+                className={cn(
+                  "border-b border-border px-2 py-2 text-center",
+                  isToday && "bg-primary/5",
+                )}
+              >
+                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                  {dowLabel}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => onNavDay(date)}
+                  className={cn(
+                    "mx-auto mt-0.5 flex size-7 items-center justify-center rounded-full text-sm font-extrabold leading-none transition-colors",
+                    isToday
+                      ? "bg-primary text-primary-foreground"
+                      : "text-foreground hover:bg-muted",
+                  )}
+                >
+                  {dd}
+                </button>
+              </div>
+
+              {/* Events */}
+              <div className="flex flex-1 flex-col gap-1 p-1.5">
+                {dayEvents.length === 0 && (
+                  <p className="mt-3 text-center text-[10px] text-foreground/25">—</p>
+                )}
+                {dayEvents.map((ev) => {
+                  const c = eventColors(ev.status);
+                  return (
+                    <button
+                      key={ev.id}
+                      type="button"
+                      onClick={() => onDayClick(date)}
+                      className={cn(
+                        "w-full truncate rounded border px-1.5 py-1 text-left transition-opacity hover:opacity-80",
+                        c.pill,
+                      )}
+                    >
+                      <p className="truncate text-[11px] font-bold leading-tight">{ev.fullName}</p>
+                      <p className="mt-0.5 truncate text-[10px] font-medium leading-tight opacity-80">
+                        {formatConsecutiveSlots(ev.slotStarts)}
+                      </p>
+                    </button>
+                  );
+                })}
+                {dayEvents.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onDayClick(date)}
+                    className="mt-auto w-full truncate rounded-lg py-1 text-center text-[10px] font-semibold text-muted-foreground hover:bg-muted/60"
+                  >
+                    View all →
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Mobile: stacked per-day */}
+      <div className="flex flex-col gap-3 sm:hidden">
+        {days.map((date) => {
+          const dayEvents = byDate.get(date) ?? [];
+          const isToday = date === today;
+          const [, , dd] = date.split("-").map(Number);
+          const dowLabel = DAY_NAMES_SHORT[new Date(date + "T12:00:00Z").getUTCDay()]!;
+          return (
+            <div key={date} className="rounded-lg border border-border">
               <button
                 type="button"
                 onClick={() => onNavDay(date)}
                 className={cn(
-                  "mx-auto mt-0.5 flex size-7 items-center justify-center rounded-full text-sm font-extrabold leading-none transition-colors",
-                  isToday
-                    ? "bg-primary text-primary-foreground"
-                    : "text-foreground hover:bg-muted",
+                  "w-full px-3 py-2 text-left",
+                  isToday && "bg-primary/5",
                 )}
               >
-                {dd}
+                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  {dowLabel}
+                </span>
+                <span className="ml-1.5 text-sm font-extrabold text-foreground">
+                  {dd}
+                </span>
+                {dayEvents.length > 0 && (
+                  <span className="ml-1.5 text-[10px] font-semibold text-muted-foreground">
+                    · {dayEvents.length} booking{dayEvents.length !== 1 ? "s" : ""}
+                  </span>
+                )}
               </button>
-            </div>
-
-            {/* Events */}
-            <div className="flex flex-1 flex-col gap-1 p-1.5">
-              {dayEvents.length === 0 && (
-                <p className="mt-3 text-center text-[10px] text-foreground/25">—</p>
-              )}
               {dayEvents.map((ev) => {
                 const c = eventColors(ev.status);
                 return (
@@ -628,31 +712,24 @@ function WeeklyView({
                     type="button"
                     onClick={() => onDayClick(date)}
                     className={cn(
-                      "w-full rounded border px-1.5 py-1 text-left transition-opacity hover:opacity-80",
-                      c.pill,
+                      "block w-full border-t border-border px-3 py-1.5 text-left transition-opacity hover:bg-muted/50 hover:opacity-90",
                     )}
                   >
-                    <p className="truncate text-[11px] font-bold leading-tight">{ev.fullName}</p>
-                    <p className="mt-0.5 truncate text-[10px] font-medium leading-tight opacity-80">
+                    <p className="truncate text-xs font-bold leading-tight">{ev.fullName}</p>
+                    <p className="truncate text-[10px] font-medium opacity-80">
                       {formatConsecutiveSlots(ev.slotStarts)}
                     </p>
                   </button>
                 );
               })}
-              {dayEvents.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => onDayClick(date)}
-                  className="mt-auto w-full rounded-lg py-1 text-center text-[10px] font-semibold text-muted-foreground hover:bg-muted/60"
-                >
-                  View all →
-                </button>
+              {dayEvents.length === 0 && (
+                <div className="px-3 py-2 text-center text-[10px] text-foreground/25">—</div>
               )}
             </div>
-          </div>
-        );
-      })}
-    </div>
+          );
+        })}
+      </div>
+    </>
   );
 }
 
@@ -714,6 +791,145 @@ function DailyView({
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Schedule view (agenda / Google Calendar style) ───────────────────────────
+
+function formatManilaTime(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Manila" });
+}
+
+function formatClosureDateRange(startAt: string, endAt: string): string {
+  const s = new Date(startAt);
+  const e = new Date(endAt);
+  const sLabel = s.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric", timeZone: "Asia/Manila" });
+  const eLabel = e.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric", timeZone: "Asia/Manila" });
+  const tSame = s.toLocaleDateString("en-PH", { timeZone: "Asia/Manila" }).localeCompare(
+    e.toLocaleDateString("en-PH", { timeZone: "Asia/Manila" }));
+  if (tSame === 0) {
+    const st = s.toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Manila" });
+    const et = e.toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Manila" });
+    return `${st} – ${et}`;
+  }
+  const st = s.toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Manila" });
+  const et = e.toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Manila" });
+  return `${sLabel}, ${st} – ${eLabel}, ${et}`;
+}
+
+function ScheduleView({
+  events,
+  closures,
+  weekStart,
+  today,
+  onOpenBooking,
+  detailLoading,
+}: {
+  events: CalendarEvent[];
+  closures: ClosureRow[];
+  weekStart: string;
+  today: string;
+  onOpenBooking: (id: string) => void;
+  detailLoading: boolean;
+}) {
+  // Group events by date and render
+  type DayGroup = { date: string; bookings: CalendarEvent[]; closures: ClosureRow[] };
+  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  const groups: DayGroup[] = days.map((date) => ({
+    date,
+    bookings: events.filter((e) => e.date === date),
+    closures: closures.filter((c) => {
+      const start = new Date(c.startAt);
+      return start.toISOString().slice(0, 10) === date;
+    }),
+  })).filter((g) => g.bookings.length > 0 || g.closures.length > 0);
+
+  if (groups.length === 0) {
+    return <p className="py-12 text-center text-sm text-muted-foreground">No events this week.</p>;
+  }
+
+  return (
+    <div className="px-4 py-4">
+      {groups.map((group) => {
+        const [y, m, d] = group.date.split("-").map(Number);
+        const dt = new Date(Date.UTC(y as number, (m as number) - 1, d as number, 12));
+        const isToday = group.date === today;
+        const heading = dt.toLocaleDateString("en-US", {
+          weekday: "long",
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+          timeZone: "UTC",
+        });
+        return (
+          <div key={group.date} className="mb-6 last:mb-0">
+            <p className={cn(
+              "mb-2 text-xs font-bold uppercase tracking-wider",
+              isToday ? "text-primary" : "text-muted-foreground",
+            )}>
+              {heading}
+            </p>
+            <div className="space-y-2">
+              {group.bookings.map((ev) => {
+                const c = eventColors(ev.status);
+                return (
+                  <button
+                    key={ev.id}
+                    type="button"
+                    disabled={detailLoading}
+                    onClick={() => onOpenBooking(ev.id)}
+                    className={cn(
+                      "w-full rounded-xl border bg-background p-3 text-left transition-opacity hover:bg-muted/50 disabled:opacity-50",
+                      "border-border",
+                    )}
+                  >
+                    <div className="flex items-start gap-3">
+                      <span className={cn("mt-0.5 size-2.5 shrink-0 rounded-full", c.dot)} aria-hidden />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-bold text-foreground">{ev.fullName}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">{ev.courts}</p>
+                        <p className="mt-0.5 text-xs font-medium text-foreground/70">
+                          {formatConsecutiveSlots(ev.slotStarts)}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        <BookingStatusBadge status={ev.status} />
+                        <span className="text-xs font-bold text-foreground">{pesos(ev.total)}</span>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+              {group.closures.map((cl) => {
+                const isGlobal = cl.scope === "global";
+                return (
+                  <div
+                    key={cl.id}
+                    className="w-full rounded-xl border border-amber-200 bg-amber-50/50 p-3 text-left"
+                  >
+                    <div className="flex items-start gap-3">
+                      <span className="mt-0.5 size-2.5 shrink-0 rounded-full bg-amber-500" aria-hidden />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-bold text-foreground">
+                          {isGlobal ? "Court Closure" : `Closure · ${cl.courtName}`}
+                        </p>
+                        {cl.reason && (
+                          <p className="mt-0.5 text-xs text-muted-foreground">{cl.reason}</p>
+                        )}
+                        <p className="mt-0.5 text-xs font-medium text-foreground/70">
+                          {formatClosureDateRange(cl.startAt, cl.endAt)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
