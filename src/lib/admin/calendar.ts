@@ -7,6 +7,15 @@ import { formatSlotRanges, slotRangeLabel } from "@/lib/admin/bookings";
 
 // All Drizzle ORM imports replaced with @supabase/supabase-js HTTP client.
 
+/**
+ * UTC ISO string for a range bound. Range bounds here can be TZDate, whose
+ * overridden `toISOString` prints `...+08:00` — Postgres would read that as
+ * 16:00Z the day before, widening the query window by 8h.
+ */
+function utcIso(d: Date): string {
+  return new Date(d.getTime()).toISOString();
+}
+
 export interface CalendarEvent {
   id: string;
   fullName: string;
@@ -38,8 +47,8 @@ async function buildEvents(
   const { data: slotData, error: slotError } = await db
     .from("booking_slots")
     .select("booking_id,court_id,slot_start,courts(name)")
-    .gte("slot_start", rangeStart.toISOString())
-    .lt("slot_start", rangeEnd.toISOString())
+    .gte("slot_start", utcIso(rangeStart))
+    .lt("slot_start", utcIso(rangeEnd))
     .limit(2000);
 
   if (slotError) throw new Error(slotError.message);
@@ -113,7 +122,7 @@ export async function getCalendarBookings(
     `${year}-${String(month).padStart(2, "0")}-01`,
   );
   const monthEnd = addMonths(monthStart, 1);
-  return buildEvents(db, monthStart as unknown as Date, monthEnd as unknown as Date);
+  return buildEvents(db, new Date(monthStart.getTime()), new Date(monthEnd.getTime()));
 }
 
 export async function getCalendarBookingsRange(
@@ -122,12 +131,10 @@ export async function getCalendarBookingsRange(
   end: string,
 ): Promise<CalendarEvent[]> {
   const rangeStart = manilaWallClock(start);
-  const rangeEnd = manilaWallClock(end);
-  return buildEvents(
-    db,
-    rangeStart as unknown as Date,
-    rangeEnd as unknown as Date,
-  );
+  // `end` is an inclusive Manila date, so the upper bound is the *next* day's
+  // midnight; using it directly would drop that date's whole grid.
+  const rangeEnd = manilaWallClock(end).getTime() + 86_400_000;
+  return buildEvents(db, new Date(rangeStart.getTime()), new Date(rangeEnd));
 }
 
 export function manilaYearMonth(): { year: number; month: number } {

@@ -18,6 +18,11 @@ function manilaDayStart(dateStr: string): Date {
   return manilaWallClock(dateStr);
 }
 
+/** UTC ISO string — see note in admin/bookings.ts (TZDate.toISOString is zoned). */
+function utcIso(d: Date): string {
+  return new Date(d.getTime()).toISOString();
+}
+
 export interface DashboardStats {
   pending: number;
   approvedToday: number;
@@ -49,8 +54,8 @@ export async function getDashboardStats(db: Db): Promise<DashboardStats> {
     db
       .from("booking_slots")
       .select("booking_id")
-      .gte("slot_start", todayStart.toISOString())
-      .lt("slot_start", tomorrowStart.toISOString())
+      .gte("slot_start", utcIso(todayStart))
+      .lt("slot_start", utcIso(tomorrowStart))
       .limit(2000),
     listBookings(db, {
       q: "",

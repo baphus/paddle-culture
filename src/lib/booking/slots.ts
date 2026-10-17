@@ -1,5 +1,4 @@
 import { TZDate } from "@date-fns/tz";
-import { addHours } from "date-fns";
 import {
   DAY_START_HOUR_MANILA,
   MANILA_TZ,
@@ -8,16 +7,25 @@ import {
 
 export interface SlotInstant {
   index: number;
-  /** Slot start as a Date (instant; serializes to ISO UTC on the wire). */
+  /**
+   * Slot start as a plain Date (instant). Deliberately NOT a TZDate:
+   * @date-fns/tz overrides `toISOString`/`toJSON` on TZDate to emit zone-local
+   * strings (`...+08:00`), which then leak into PostgREST filters, JSON bodies
+   * and React keys. A plain Date always serializes to the UTC `...Z` form the
+   * server parses back with `new Date(s)`.
+   */
   start: Date;
 }
+
+const HOUR_MS = 3_600_000;
+const DAY_MS = 86_400_000;
 
 function pad(n: number): string {
   return String(n).padStart(2, "0");
 }
 
 /**
- * An instant for a wall-clock time on a Manila date. Do NOT build this with
+ * Instant for a wall-clock time on a Manila date. Do NOT build this with
  * `new TZDate("<date>T<hh>:00:00", MANILA_TZ)`: TZDate's string constructor
  * parses in the *process* timezone (see @date-fns/tz `mini.js`), so on a UTC
  * server (Vercel) every grid instant silently shifts 8h. Component args are
@@ -30,14 +38,15 @@ export function manilaWallClock(dateStr: string, hour = 0, minute = 0): TZDate {
 
 /**
  * All 21 slot-start instants for a Manila selection date (YYYY-MM-DD).
- * Mapping is explicit Asia/Manila wall time via TZDate — never browser-local
- * math. Manila is UTC+8 with no DST, so hour arithmetic is exact.
+ * The base is resolved once with Manila wall-clock args, then stepped by pure
+ * epoch arithmetic. Manila is UTC+8 with no DST, so hour arithmetic is exact
+ * and the result never depends on the host timezone.
  */
 export function slotsForDate(dateStr: string): SlotInstant[] {
-  const base = manilaWallClock(dateStr, DAY_START_HOUR_MANILA);
+  const baseMs = manilaWallClock(dateStr, DAY_START_HOUR_MANILA).getTime();
   const out: SlotInstant[] = [];
   for (let i = 0; i < SLOT_COUNT; i++) {
-    out.push({ index: i, start: addHours(base, i) });
+    out.push({ index: i, start: new Date(baseMs + i * HOUR_MS) });
   }
   return out;
 }
@@ -58,12 +67,17 @@ export function manilaDateStr(instant: Date): string {
  * Selection (offer) date for an instant. The operating day runs
  * 06:00→03:00+1d Manila, so instants before 06:00 wall time belong to the
  * previous selection date's 21-slot grid.
+ *
+ * The previous day is derived by subtracting 24h of *instants*, not with
+ * `setDate`: @date-fns/tz does not override `setDate`, so it would mutate in
+ * the process timezone and walk back two Manila days on a UTC server (the
+ * production OFF_GRID bug). Manila has no DST, so -24h is exactly one day.
  */
 export function selectionDateStr(instant: Date): string {
   const z = new TZDate(instant, MANILA_TZ);
+  const ms = z.getTime();
   if (z.getHours() < DAY_START_HOUR_MANILA) {
-    const prev = new TZDate(z);
-    prev.setDate(prev.getDate() - 1);
+    const prev = new TZDate(ms - DAY_MS, MANILA_TZ);
     return `${prev.getFullYear()}-${pad(prev.getMonth() + 1)}-${pad(prev.getDate())}`;
   }
   return `${z.getFullYear()}-${pad(z.getMonth() + 1)}-${pad(z.getDate())}`;
@@ -73,27 +87,25 @@ export function selectionDateStr(instant: Date): string {
  * True when an instant sits exactly on the hourly slot grid of its Manila
  * selection date (whole hour, one of the 21 slots starting 06:00).
  * Overnight slots 00:00–02:00 belong to the previous selection date's grid,
- * so the previous Manila day's 06:00 base is tried as a fallback.
+ * so that date's 06:00 base is tried as a fallback.
  */
 export function isOnSlotGrid(instant: Date): boolean {
   const z = new TZDate(instant, MANILA_TZ);
   if (z.getMinutes() !== 0 || z.getSeconds() !== 0 || z.getMilliseconds() !== 0) {
     return false;
   }
-  const base = manilaWallClock(
-    `${z.getFullYear()}-${pad(z.getMonth() + 1)}-${pad(z.getDate())}`,
-    DAY_START_HOUR_MANILA,
-  );
-  const diffHours = (z.getTime() - base.getTime()) / 3_600_000;
+  const todayStr = `${z.getFullYear()}-${pad(z.getMonth() + 1)}-${pad(z.getDate())}`;
+  const baseMs = manilaWallClock(todayStr, DAY_START_HOUR_MANILA).getTime();
+  const diffHours = (z.getTime() - baseMs) / HOUR_MS;
   if (Number.isInteger(diffHours) && diffHours >= 0 && diffHours < SLOT_COUNT) {
     return true;
   }
   // Overnight spill: 00:00–02:00 wall time belongs to the previous
   // selection date's 06:00→03:00+1d grid.
   const sel = selectionDateStr(instant);
-  const selBase = manilaWallClock(sel, DAY_START_HOUR_MANILA);
-  if (selBase.getTime() === base.getTime()) return false;
-  const prevDiffHours = (z.getTime() - selBase.getTime()) / 3_600_000;
+  const selBaseMs = manilaWallClock(sel, DAY_START_HOUR_MANILA).getTime();
+  if (selBaseMs === baseMs) return false;
+  const prevDiffHours = (z.getTime() - selBaseMs) / HOUR_MS;
   return (
     Number.isInteger(prevDiffHours) &&
     prevDiffHours >= 0 &&

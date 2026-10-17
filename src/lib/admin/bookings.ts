@@ -49,6 +49,15 @@ function manilaDayStart(dateStr: string): Date {
   return manilaWallClock(dateStr);
 }
 
+/**
+ * UTC ISO string for a PostgREST bound. manilaWallClock returns a TZDate whose
+ * overridden `toISOString` prints `...+08:00`; Postgres reads that as 16:00Z
+ * the day before, which silently widened every date filter by 8h.
+ */
+function utcIso(d: Date): string {
+  return new Date(d.getTime()).toISOString();
+}
+
 function hourLabelMinutes(h: number, min: number): string {
   const h12 = h % 12 === 0 ? 12 : h % 12;
   return `${h12}:${String(min).padStart(2, "0")}${h < 12 ? "AM" : "PM"}`;
@@ -152,10 +161,10 @@ export async function listBookings(
   // runs in Postgres instead of shipping a few hundred UUIDs back out in an
   // `.in(id, …)` URL.
   const lo = params.from
-    ? manilaDayStart(params.from).toISOString()
+    ? utcIso(manilaDayStart(params.from))
     : new Date(0).toISOString();
   const hi = params.to
-    ? addDays(manilaDayStart(params.to), 1).toISOString()
+    ? utcIso(addDays(manilaDayStart(params.to), 1))
     : new Date(8640000000000000).toISOString();
   const isDateFiltered = Boolean(params.from || params.to);
 

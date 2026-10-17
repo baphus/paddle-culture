@@ -363,6 +363,26 @@ export default function BookingFlow({
       });
   }, [restoredDraft, handleHoldReclaimed]);
 
+  /**
+   * Step 1 reset its attempt (Back, Cancel, Clear, date change). The wizard
+   * mirrors that state for the summary, so it has to drop it here too — a
+   * summary still listing a date and a total after someone hit Back would offer
+   * to book hours they just walked away from. An empty court list is what makes
+   * the summary disappear entirely.
+   */
+  const handleClearSelection = useCallback(
+    (opts?: { keepDate?: boolean }) => {
+      setSelectedSlots([]);
+      setSlotGroups([]);
+      setCourtIds([]);
+      if (opts?.keepDate) return;
+      setSelectedDate(null);
+      setLivePaddleQty(0);
+      setLiveBall(false);
+    },
+    [],
+  );
+
   const handleHoldExpired = useCallback(() => {
     // On the payment step the customer is mid-payment: money may already be on
     // its way. Do NOT wipe their hold and dump them at step 1 — the payment
@@ -375,12 +395,13 @@ export default function BookingFlow({
       return;
     }
     setHold(null);
+    handleClearSelection();
     setError("Your hold expired. Please select your slots and hold again.");
     toast.error("Your hold expired. Please select your slots and hold again.", {
       duration: 8000,
     });
     setStep("select");
-  }, []);
+  }, [handleClearSelection]);
 
   const handleHoldSuccess = useCallback(
     (newHold: HoldState, newCourtIds: string[], newSlots: string[], date: string, paddleQty = 0, ball = false, groups: CourtSlotGroup[] = []) => {
@@ -446,9 +467,10 @@ export default function BookingFlow({
       } catch {}
     }
     setHold(null);
+    handleClearSelection();
     setStep("select");
     window.scrollTo({ top: 0, behavior: "smooth" });
-  }, [hold]);
+  }, [hold, handleClearSelection]);
 
   const startOver = () => {
     releaseHold(hold);
@@ -488,11 +510,16 @@ export default function BookingFlow({
       ball: liveBall,
       isHeld: !!hold,
       holdDeadlineMs: hold?.deadlineMs ?? null,
+      canClearSlots: step === "select" && selectedSlots.length > 0,
     }),
-    [selectedDate, selectedSlots, courtNames, slotGroups, rates, livePaddleQty, liveBall, hold],
+    [selectedDate, selectedSlots, courtNames, slotGroups, rates, livePaddleQty, liveBall, hold, step],
   );
 
   const showSummaryPanel = step !== "confirmation";
+  // Summary exists once there's a date, courts or slots to talk about. Both
+  // summary surfaces check the same things; this keeps the desktop grid in step.
+  const hasSummaryContent =
+    !!selectedDate || selectedSlots.length > 0 || courtNames.length > 0;
 
   // Mobile sheet Continue — clicks the step's own CTA by id, so the real
   // hold/validation/submit path (including disabled states) always runs.
@@ -591,8 +618,8 @@ export default function BookingFlow({
       {/* Two-column layout for steps 1–3 */}
       {showSummaryPanel ? (
         <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-12 lg:gap-8">
-          {/* Main content — 8 cols on desktop */}
-          <div className="lg:col-span-8">
+          {/* Main content — 8 cols beside the summary, full width without it */}
+          <div className={cn("lg:col-span-8", !hasSummaryContent && "lg:col-span-12")}>
             {/* Step 1: Book (Courts → Date → Time → Equipment) */}
             {step === "select" && (
               <Step1DateTime
@@ -608,6 +635,7 @@ export default function BookingFlow({
                 onHoldSuccess={handleHoldSuccess}
                 onHoldExpired={handleHoldExpired}
                 onCancel={startOver}
+                onClearSelection={handleClearSelection}
                 onLiveUpdate={handleLiveUpdate}
               />
             )}
@@ -677,10 +705,14 @@ export default function BookingFlow({
             )}
           </div>
 
-          {/* Sticky summary panel — desktop only */}
-          <div className="hidden lg:col-span-4 lg:block lg:sticky lg:top-24 lg:self-start">
-            <BookingSummaryDesktop data={summaryData} />
-          </div>
+          {/* Sticky summary panel — desktop only. When it has nothing to show
+              (fresh visit, or a Back just cleared the attempt) the main column
+              takes the full width instead of leaving an empty 4-col gutter. */}
+          {hasSummaryContent ? (
+            <div className="hidden lg:col-span-4 lg:block lg:sticky lg:top-24 lg:self-start">
+              <BookingSummaryDesktop data={summaryData} />
+            </div>
+          ) : null}
         </div>
       ) : null}
 

@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { LoadingAnimation } from "@/components/ui/loading-animation";
 import { MAX_SLOTS_PER_BOOKING } from "@/lib/booking/constants";
+import { clearDraft } from "@/lib/booking/draft";
 import { slotsForDate, timeBandFor } from "@/lib/booking/slots";
 import {
   addDaysManilaStr,
@@ -146,6 +147,13 @@ export interface Step1DateTimeProps {
   ) => void;
   onHoldExpired?: () => void;
   onCancel?: () => void;
+  /**
+   * Fires when the picks themselves are dropped — a date change, Back out of
+   * the grid, Clear, or Cancel. The wizard keeps its own copy of the slots for
+   * the summary, so it has to forget them in the same breath or it goes on
+   * advertising times the grid no longer has selected.
+   */
+  onClearSelection?: (opts?: { keepDate?: boolean }) => void;
   /** Fires on every change so the parent can keep its summary data live */
   onLiveUpdate?: (update: {
     courtIds: string[];
@@ -173,6 +181,7 @@ export default function Step1DateTime({
   onHoldSuccess,
   onHoldExpired,
   onCancel,
+  onClearSelection,
   onLiveUpdate,
 }: Step1DateTimeProps) {
   const todayStr = useMemo(() => manilaTodayStr(), []);
@@ -195,13 +204,26 @@ export default function Step1DateTime({
   const [loadingAvail, setLoadingAvail] = useState(false);
   const [availFailed, setAvailFailed] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
-  // selected: Set of "courtId|slotIso" pairs — each cell is independent
-  const [selected, setSelected] = useState<string[]>(() =>
-    (initialSelectedSlots ?? []).flatMap((iso) =>
-      (initialCourtIds && initialCourtIds.length > 0 ? initialCourtIds : initialCourts.map((c) => c.id))
-        .map((cId) => `${cId}|${iso}`),
-    ),
-  );
+  // selected: Set of "courtId|slotIso" pairs — each cell is independent.
+  // A restored draft is trusted only for ISOs that are actually on the grid of
+  // its own selected date: a draft written by an older client (or for another
+  // date) could otherwise POST an instant no visible cell represents, and the
+  // server would answer OFF_GRID with no way for the user to see why.
+  const [selected, setSelected] = useState<string[]>(() => {
+    const restored = initialSelectedSlots ?? [];
+    const grid = new Set(
+      initialSelectedDate
+        ? slotsForDate(initialSelectedDate).map((s) => s.start.toISOString())
+        : [],
+    );
+    const courtIds =
+      initialCourtIds && initialCourtIds.length > 0
+        ? initialCourtIds
+        : initialCourts.map((c) => c.id);
+    return restored
+      .filter((iso) => grid.has(new Date(iso).toISOString()) || grid.size === 0)
+      .flatMap((iso) => courtIds.map((cId) => `${cId}|${new Date(iso).toISOString()}`));
+  });
   const [hold, setHold] = useState<HoldState | null>(existingHold ?? null);
   const [holding, setHolding] = useState(false);
   // Confirmation before an action that releases the hold (date change, cancel)
@@ -221,9 +243,6 @@ export default function Step1DateTime({
   });
   const [previewCourtId, setPreviewCourtId] = useState<string | null>(null);
   const panelHeadingRef = useRef<HTMLHeadingElement | null>(null);
-  const selectedRef = useRef<string[]>([]);
-  selectedRef.current = selected;
-  const carryRef = useRef(false);
 
   // Unique slot ISOs across all selected (court, slot) pairs
   const selectedSlotIsos = useMemo(() => {
@@ -345,29 +364,6 @@ export default function Step1DateTime({
     return Object.entries(forDate).map(([courtId, slots]) => ({ courtId, slots }));
   }, [monthCache, cacheKey, selectedDate]);
 
-  // Carry selected cells to the new date once that date's data is present.
-  useEffect(() => {
-    if (!carryRef.current || !avail) return;
-    carryRef.current = false;
-    const fresh = new Map(
-      avail.map((c) => [c.courtId, new Map(c.slots.map((s) => [s.start, s]))]),
-    );
-    const prev = selectedRef.current;
-    const kept = prev.filter((pair) => {
-      const [courtId, iso] = pair.split("|") as [string, string];
-      const s = fresh.get(courtId)?.get(iso);
-      return !!s && cellState(s) === "open";
-    });
-    if (kept.length !== prev.length) {
-      setSelected(kept);
-      toast(
-        kept.length === 0
-          ? "Those hours aren't open on the new date — pick your time again."
-          : "Some hours aren't open on the new date — kept the ones that are.",
-      );
-    }
-  }, [avail]);
-
   // A cached month can go stale while the tab is hidden — drop it on refocus.
   useEffect(() => {
     function onVisible() {
@@ -471,6 +467,15 @@ export default function Step1DateTime({
   async function createHold() {
     if (selected.length === 0) { toast.error("Pick at least 1 hour first."); return; }
     if (courtIds.length === 0) { toast.error("No courts listed right now."); return; }
+    // Only ever POST instants that sit on the selected date's grid. A stale
+    // restored draft (or a slot left over from another date) would otherwise be
+    // rejected server-side as OFF_GRID while every visible cell shows free.
+    const grid = new Set(slotsForDate(selectedDate ?? "").map((s) => s.start.toISOString()));
+    if (grid.size > 0 && selected.some((pair) => !grid.has(pair.split("|")[1] ?? ""))) {
+      toast.error("Some picks aren't available on this date any more. Please re-select.");
+      setSelected((prev) => prev.filter((pair) => grid.has(pair.split("|")[1] ?? "")));
+      return;
+    }
     setHolding(true);
     try {
       // Group selected pairs by court
@@ -576,26 +581,27 @@ export default function Step1DateTime({
     setView({ y: view.y + Math.floor(m / 12), m: ((m % 12) + 12) % 12 });
   }
 
+  /**
+   * Move to another date with a clean slate. Picks are never carried across:
+   * the same hour on another day is a different slot, and quietly keeping it
+   * booked people into a time they had not looked at.
+   */
   function applyDateChange(dateStr: string, stayOnTimeGrid: boolean) {
-    const freshGrid = slotsForDate(dateStr).map((s) => s.start.toISOString());
-    // Carry compatible (court, slot) pairs to the new date by slot index
-    const carried = selected.map((pair) => {
-      const [cId, iso] = pair.split("|") as [string, string];
-      const idx = gridSlots.indexOf(iso);
-      if (idx < 0) return null;
-      const newIso = freshGrid[idx];
-      return newIso ? `${cId}|${newIso}` : null;
-    }).filter((p): p is string => p !== null);
+    const hadPicks = selected.length > 0;
     if (hold) {
       releaseHoldTokens(hold.tokens);
       setHold(null);
       toast("Previous hold released — those slots are free again.");
     }
-    carryRef.current = carried.length > 0;
-    setSelected(carried);
+    setSelected([]);
     setSelectedDate(dateStr);
     setView(partsOf(dateStr));
     if (!stayOnTimeGrid) { setCourtIds(courts.map((c) => c.id)); setPanel(1); }
+    if (hadPicks) {
+      // The new day stays — only the old day's hours are gone.
+      onClearSelection?.({ keepDate: true });
+      toast(`Date changed — pick your times for ${formatManilaLong(dateStr)}.`);
+    }
   }
 
   function pickDate(dateStr: string, stayOnTimeGrid = false) {
@@ -616,20 +622,87 @@ export default function Step1DateTime({
     applyDateChange(dateStr, stayOnTimeGrid);
   }
 
-  function handleCancel() {
+  /**
+   * End the attempt in this step. Backing out of any step is a fresh start:
+   * the hold is released (asking first, since that gives the slots away), and
+   * the picks, the date, the equipment and the parent's summary all go.
+   *
+   * Going *back* is the customer saying "not this after all", so leaving the
+   * summary populated would offer to book hours they just walked away from.
+   */
+  function resetAll(next?: () => void) {
+    const run = () => {
+      setSelected([]);
+      setSelectedDate(null);
+      setPaddleQty(0);
+      setBall(false);
+      onClearSelection?.();
+      next?.();
+    };
     if (hold) {
       setReleaseConfirm({
-        message: "Leaving now releases the slots you're holding.",
-        confirmLabel: "Release hold & leave",
+        message:
+          "Going back releases your hold — those slots go back on sale and your picks are cleared.",
+        confirmLabel: "Release hold & go back",
         run: () => {
           releaseHoldTokens(hold.tokens);
           setHold(null);
-          window.location.href = "/";
+          run();
         },
       });
       return;
     }
-    window.location.href = "/";
+    run();
+  }
+
+  /**
+   * Drop only the picked slots, keeping the date and equipment. Used when the
+   * date changes: the picks belonged to the old day, the rest still applies.
+   */
+  function clearSelection(next?: () => void) {
+    if (selected.length === 0) {
+      next?.();
+      return;
+    }
+    if (hold) {
+      setReleaseConfirm({
+        message:
+          "Clearing these slots releases your hold — they go back on sale and you'll need to pick them again.",
+        confirmLabel: "Release hold & clear",
+        run: () => {
+          releaseHoldTokens(hold.tokens);
+          setHold(null);
+          setSelected([]);
+          onClearSelection?.();
+          next?.();
+        },
+      });
+      return;
+    }
+    setSelected([]);
+    onClearSelection?.();
+    next?.();
+  }
+
+  function handleCancel() {
+    // Cancel always ends the attempt cleanly: the hold is released, everything
+    // dropped (so the summary and the saved draft don't bring it back) and the
+    // tab's draft cleared before we leave.
+    resetAll(() => {
+      clearDraft();
+      if (onCancel) { onCancel(); return; }
+      window.location.href = "/";
+    });
+  }
+
+  /** Back out of the time grid to the date panel — starts the attempt over. */
+  function backToDates() {
+    resetAll(() => setPanel(0));
+  }
+
+  /** The card's Back button — from equipment, or from the date panel itself. */
+  function backPanel() {
+    resetAll(() => setPanel((panel - 1) as Panel));
   }
 
   // Shift selected date by +/- days — stay on the time grid
@@ -653,10 +726,11 @@ export default function Step1DateTime({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view.y, view.m, leadBlanks, daysInMonth]);
 
-  type DayKind = "past" | "today" | "open" | "selected" | "beyond";
+  // No "selected" kind: the calendar no longer marks the chosen day, so
+  // yesterday's pick can't read as a live selection while you browse.
+  type DayKind = "past" | "today" | "open" | "beyond";
   function dayKind(dateStr: string): DayKind {
     if (dateStr > maxStr) return "beyond";
-    if (dateStr === selectedDate) return "selected";
     if (dateStr === todayStr) return "today"; // today: highlighted but not bookable
     if (dateStr < tomorrowStr) return "past";
     return "open";
@@ -746,7 +820,7 @@ export default function Step1DateTime({
           <div className="flex items-center justify-between gap-3 px-4 py-3">
             <button
               type="button"
-              onClick={() => setPanel(0)}
+              onClick={backToDates}
               className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-1 rounded-xl border border-line-warm/60 bg-white px-3 text-sm font-bold text-pine transition-all hover:bg-oat"
             >
               <ArrowLeft className="size-4" aria-hidden /> Back
@@ -765,7 +839,7 @@ export default function Step1DateTime({
               </button>
               <button
                 type="button"
-                onClick={() => setPanel(0)}
+                onClick={backToDates}
                 className="inline-flex items-center gap-1.5 rounded-xl border border-line-warm/60 bg-white px-3 py-1.5 text-xs font-bold text-ink hover:bg-oat transition-colors"
               >
                 <span>{dateLabel}</span>
@@ -781,27 +855,41 @@ export default function Step1DateTime({
               </button>
             </div>
 
-            {/* Selection count + CTA */}
-            <button
-              type="button"
-              onClick={handleContinueCta}
-              disabled={ctaDisabled}
-              className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-flame px-4 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
-            >
-              {holding ? (
-                <LoadingAnimation size="compact" label="Holding slots" />
-              ) : (
-                <>
-                  <span>Hold</span>
-                  {selected.length > 0 && (
-                    <span className="rounded-full bg-white/25 px-1.5 py-0.5 text-[11px] font-extrabold">
-                      {selected.length}
-                    </span>
-                  )}
-                  <ArrowRight className="size-4" aria-hidden />
-                </>
+            {/* Clear + CTA. The clear button mounts only when there is
+                something to clear, so the top bar keeps its width otherwise. */}
+            <div className="flex items-center gap-2">
+              {selected.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => clearSelection()}
+                  id="step1-clear"
+                  className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl border border-line-warm/70 bg-white px-3 text-sm font-bold text-warm-muted transition-all hover:bg-oat hover:text-ink"
+                >
+                  <X className="size-4" aria-hidden />
+                  <span>Clear</span>
+                </button>
               )}
-            </button>
+              <button
+                type="button"
+                onClick={handleContinueCta}
+                disabled={ctaDisabled}
+                className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-flame px-4 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
+              >
+                {holding ? (
+                  <LoadingAnimation size="compact" label="Holding slots" />
+                ) : (
+                  <>
+                    <span>Hold</span>
+                    {selected.length > 0 && (
+                      <span className="rounded-full bg-white/25 px-1.5 py-0.5 text-[11px] font-extrabold">
+                        {selected.length}
+                      </span>
+                    )}
+                    <ArrowRight className="size-4" aria-hidden />
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
           {/* Legend */}
@@ -986,21 +1074,32 @@ export default function Step1DateTime({
               </span>
             )}
           </div>
-          <button
-            type="button"
-            onClick={handleContinueCta}
-            disabled={ctaDisabled}
-            id="step1-advance"
-            className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-flame px-6 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
-          >
-            {holding ? (
-              <><LoadingAnimation size="compact" label="Holding slots" /> Holding…</>
-            ) : hold ? (
-              <>Continue to Equipment <ArrowRight className="size-4" /></>
-            ) : (
-              <>Continue <ArrowRight className="size-4" /></>
+          <div className="flex items-center gap-2">
+            {selected.length > 0 && (
+              <button
+                type="button"
+                onClick={() => clearSelection()}
+                className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl border border-line-warm/70 bg-white px-4 text-sm font-bold text-warm-muted transition-all hover:bg-oat hover:text-ink"
+              >
+                <X className="size-4" aria-hidden /> Clear slots
+              </button>
             )}
-          </button>
+            <button
+              type="button"
+              onClick={handleContinueCta}
+              disabled={ctaDisabled}
+              id="step1-advance"
+              className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-flame px-6 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
+            >
+              {holding ? (
+                <><LoadingAnimation size="compact" label="Holding slots" /> Holding…</>
+              ) : hold ? (
+                <>Continue to Equipment <ArrowRight className="size-4" /></>
+              ) : (
+                <>Continue <ArrowRight className="size-4" /></>
+              )}
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -1163,37 +1262,17 @@ export default function Step1DateTime({
                         );
                       }
 
-                      const isSel = kind === "selected";
-
                       return (
-                        <div key={cell.key} role="gridcell" aria-selected={isSel}>
+                        <div key={cell.key} role="gridcell">
                           <button
                             type="button"
                             onClick={() => pickDate(dateStr)}
-                            aria-pressed={isSel}
                             aria-label={formatManilaLong(dateStr)}
-                            className={cn(
-                              "flex h-11 w-full flex-col justify-between rounded-lg border p-1 text-left transition-all sm:h-16 sm:rounded-xl sm:p-1.5",
-                              isSel
-                                ? "border-2 border-flame bg-pine text-white shadow-md"
-                                : "border-line-warm/70 bg-white text-ink hover:bg-oat",
-                            )}
+                            className="flex h-11 w-full flex-col justify-between rounded-lg border border-line-warm/70 bg-white p-1 text-left text-ink transition-all hover:bg-oat sm:h-16 sm:rounded-xl sm:p-1.5"
                           >
-                            <span
-                              className={cn(
-                                "text-sm font-bold sm:text-base",
-                                isSel ? "text-white font-extrabold" : "text-ink",
-                              )}
-                            >
-                              {dayNum}
-                            </span>
-                            <span
-                              className={cn(
-                                "block text-[9px] font-bold uppercase tracking-wide leading-tight",
-                                isSel ? "text-flame" : "text-warm-muted/70 font-semibold",
-                              )}
-                            >
-                              {isSel ? "Selected" : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][weekdayManila(dateStr)]}
+                            <span className="text-sm font-bold sm:text-base">{dayNum}</span>
+                            <span className="block text-[9px] font-bold uppercase tracking-wide leading-tight text-warm-muted/70 font-semibold">
+                              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][weekdayManila(dateStr)]}
                             </span>
                           </button>
                         </div>
@@ -1205,10 +1284,6 @@ export default function Step1DateTime({
 
               {/* Legend */}
               <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-line-warm/40 pt-3 text-[11px] text-warm-muted">
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="size-2.5 rounded border border-flame bg-pine" aria-hidden />
-                  Selected
-                </span>
                 <span className="inline-flex items-center gap-1.5">
                   <span className="size-2 rounded-full bg-warm-muted/40" aria-hidden />
                   Unavailable
@@ -1329,7 +1404,7 @@ export default function Step1DateTime({
         {panel > 0 ? (
           <button
             type="button"
-            onClick={() => setPanel((panel - 1) as Panel)}
+            onClick={backPanel}
             className="inline-flex min-h-[44px] items-center gap-1 rounded-xl border border-line-warm/60 bg-white px-5 text-sm font-bold text-pine transition-all hover:bg-oat"
           >
             <ChevronLeft className="size-4" aria-hidden /> Back

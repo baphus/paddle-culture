@@ -13,6 +13,7 @@ import {
   ReceiptText,
   Sparkles,
   Timer,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
@@ -40,6 +41,12 @@ export interface SummaryData {
   isHeld: boolean;
   /** Hold expiry deadline (ms since epoch), or null when no hold is active */
   holdDeadlineMs: number | null;
+  /**
+   * Whether the summary should offer "Clear slots". True only while the time
+   * grid step is open with picks to drop — the button just clicks step 1's own
+   * clear control, so the hold-release confirmation stays in one place.
+   */
+  canClearSlots?: boolean;
 }
 
 // ---- hold countdown ---------------------------------------------------------
@@ -117,6 +124,17 @@ function useHoldCountdown(deadlineMs: number | null): Countdown {
 
 // ---- helpers ----------------------------------------------------------------
 
+/**
+ * "Clear slots" everywhere just presses step 1's own clear control. The hold
+ * release and its confirmation live there, so this panel never needs to know
+ * about holds or tokens.
+ */
+const CLEAR_SLOTS_TARGET_ID = "step1-clear";
+
+function clearSlots(): void {
+  document.getElementById(CLEAR_SLOTS_TARGET_ID)?.click();
+}
+
 function computeBreakdown(
   selectedSlots: string[],
   courtCount: number,
@@ -186,7 +204,7 @@ export interface SummaryAdvance {
 }
 
 export function BookingSummaryDesktop({ data }: { data: SummaryData }) {
-  const { selectedDate, selectedSlots, courtNames, slotGroups, rates, paddleQty, ball, isHeld, holdDeadlineMs } = data;
+  const { selectedDate, selectedSlots, courtNames, slotGroups, rates, paddleQty, ball, isHeld, holdDeadlineMs, canClearSlots } = data;
   const { courtTotal, paddleTotal, ballTotal, total, breakdown, rangeLabel, durationLabel } = useMemo(
     () => computeBreakdown(selectedSlots, courtNames.length, rates, paddleQty, ball),
     [selectedSlots, courtNames, rates, paddleQty, ball],
@@ -201,6 +219,12 @@ export function BookingSummaryDesktop({ data }: { data: SummaryData }) {
   const paddleHours = selectedSlots.length;
   // Non-empty only when the booking changes courts — otherwise `rangeLabel` is exact.
   const courtSlotLines = formatCourtSlotGroups(slotGroups ?? []);
+
+  // Nothing picked yet (or a Back just cleared the attempt) — the summary has
+  // nothing to summarise, so it stays out of the way rather than sitting there
+  // as an empty card. Matches the mobile sheet, which also hides itself.
+  const hasAny = hasDate || hasSlots || courtNames.length > 0;
+  if (!hasAny) return null;
 
   return (
     <aside
@@ -303,6 +327,17 @@ export function BookingSummaryDesktop({ data }: { data: SummaryData }) {
             )}
           </div>
         </div>
+
+        {/* Clear slots — drops every pick, same control as the time grid */}
+        {canClearSlots && (
+          <button
+            type="button"
+            onClick={clearSlots}
+            className="inline-flex min-h-[40px] w-full items-center justify-center gap-1.5 rounded-xl border border-line-warm/70 bg-white px-3 text-xs font-bold text-warm-muted transition-all hover:bg-oat hover:text-ink"
+          >
+            <X className="size-3.5" aria-hidden /> Clear slots
+          </button>
+        )}
 
         {/* Equipment — live from step 1 panel 4 */}
         {(paddleQty > 0 || ball) && (
@@ -419,7 +454,7 @@ export function BookingSummaryDesktop({ data }: { data: SummaryData }) {
 
 export function BookingSummaryMobile({ data, advance }: { data: SummaryData; advance: SummaryAdvance | null }) {
   const [open, setOpen] = useState(false);
-  const { selectedDate, selectedSlots, courtNames, slotGroups, rates, paddleQty, ball, isHeld, holdDeadlineMs } = data;
+  const { selectedDate, selectedSlots, courtNames, slotGroups, rates, paddleQty, ball, isHeld, holdDeadlineMs, canClearSlots } = data;
 
   const { courtTotal, paddleTotal, ballTotal, total, breakdown, rangeLabel, durationLabel } = useMemo(
     () => computeBreakdown(selectedSlots, courtNames.length, rates, paddleQty, ball),
@@ -529,6 +564,18 @@ export function BookingSummaryMobile({ data, advance }: { data: SummaryData; adv
               )}
             </button>
 
+            {/* Clear — compact so the step CTA keeps its room on a 360px phone */}
+            {canClearSlots && (
+              <button
+                type="button"
+                onClick={clearSlots}
+                className="inline-flex min-h-[40px] shrink-0 items-center justify-center gap-1 rounded-xl border border-line-warm/70 bg-white px-2.5 text-xs font-bold text-warm-muted transition-all hover:bg-oat hover:text-ink"
+              >
+                <X className="size-3.5" aria-hidden />
+                <span>Clear</span>
+              </button>
+            )}
+
             {/* Step CTA — always visible; fires the step's own button so hold/
                 validation/payment logic is never duplicated here */}
             {advance && (
@@ -610,7 +657,15 @@ export function BookingSummaryMobile({ data, advance }: { data: SummaryData; adv
               )}
             </div>
 
-            {/* Cost breakdown */}
+            {canClearSlots && (
+              <button
+                type="button"
+                onClick={clearSlots}
+                className="mt-3 inline-flex min-h-[40px] w-full items-center justify-center gap-1.5 rounded-xl border border-line-warm/70 bg-white px-3 text-xs font-bold text-warm-muted transition-all hover:bg-oat hover:text-ink"
+              >
+                <X className="size-3.5" aria-hidden /> Clear slots
+              </button>
+            )}
             {hasSlots && (
               <div className="mt-4 rounded-xl border border-line-warm/60 bg-white p-3 text-xs">
                 <div className="space-y-1.5">
