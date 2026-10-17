@@ -12,19 +12,15 @@ import {
   DollarSign,
   ScrollText,
   Settings,
-  TrendingDown,
-  TrendingUp,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardAction,
   CardContent,
-  CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { StatCard } from "@/components/admin/stat-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getDb } from "@/db/client";
 import { requireAdmin } from "@/lib/admin/session";
@@ -223,65 +219,6 @@ function getGreeting(): string {
   if (h < 12) return "morning";
   if (h < 18) return "afternoon";
   return "evening";
-}
-
-interface StatCardProps {
-  label: string;
-  value: string;
-  icon: React.ComponentType<{ className?: string }>;
-  href: string;
-  trend?: number | null;
-  trendLabel?: string;
-  subtitle: string;
-}
-
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  href,
-  trend,
-  trendLabel,
-  subtitle,
-}: StatCardProps) {
-  const up = trend != null && trend >= 0;
-  return (
-    <Link
-      href={href}
-      className="rounded-xl outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <Card className="@container/card h-full">
-        <CardHeader>
-          <CardDescription className="flex items-center gap-2">
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-              <Icon className="size-4" />
-            </span>
-            {label}
-          </CardDescription>
-          <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            {value}
-          </CardTitle>
-          {trend != null ? (
-            <CardAction>
-              <Badge variant="outline">
-                {up ? <TrendingUp /> : <TrendingDown />}
-                {`${up ? "+" : ""}${trend.toFixed(1)}%`}
-              </Badge>
-            </CardAction>
-          ) : null}
-        </CardHeader>
-        <CardFooter className="flex-col items-start gap-1.5 text-sm">
-          {trend != null && trendLabel ? (
-            <div className="line-clamp-1 flex gap-2 font-medium">
-              {trendLabel}
-              {up ? <TrendingUp className="size-4" /> : <TrendingDown className="size-4" />}
-            </div>
-          ) : null}
-          <div className="text-muted-foreground">{subtitle}</div>
-        </CardFooter>
-      </Card>
-    </Link>
-  );
 }
 
 /** % change vs a prior period, or null when there is no baseline to compare. */

@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ViewToggle } from "@/components/ui/view-toggle";
+import { useIsMobileQuery } from "@/hooks/use-mobile";
 
 const ViewContext = React.createContext<"list" | "grid">("list");
 
@@ -13,7 +14,13 @@ export function useBookingView() {
 }
 
 export default function RecentBookingsCard({ children }: { children: React.ReactNode }) {
-  const [view, setView] = React.useState<"list" | "grid">("list");
+  const isMobile = useIsMobileQuery();
+  const [view, setView] = React.useState<"list" | "grid">(isMobile ? "grid" : "list");
+
+  // Mobile default is the grid; the header toggle still wins after mount.
+  React.useEffect(() => {
+    setView(isMobile ? "grid" : "list");
+  }, [isMobile]);
 
   return (
     <Card>

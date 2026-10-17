@@ -2,11 +2,15 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { TZDate } from "@date-fns/tz";
 import { addDays, subDays } from "date-fns";
-import { CalendarDays, X } from "lucide-react";
+import {
+  CalendarDays,
+  CalendarRange,
+  DollarSign,
+  TrendingUp,
+} from "lucide-react";
 import RevenueChartLoader from "@/components/admin/revenue-chart-loader";
+import { StatCard } from "@/components/admin/stat-card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -18,7 +22,6 @@ import {
 } from "@/components/ui/table";
 import {
   Card,
-  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
@@ -31,6 +34,8 @@ import {
   revenueByDay,
   revenueByMonth,
 } from "@/lib/admin/bookings";
+import { RevenueExportDropdown } from "./revenue-export";
+import { RevenueRangeFilter } from "./revenue-range-filter";
 
 export const dynamic = "force-dynamic";
 
@@ -51,12 +56,8 @@ function manilaDayStart(dateStr: string): Date {
   return manilaWallClock(dateStr);
 }
 
-// Quick-range presets (relative to today)
-const PRESETS = [
-  { label: "Last 7 days", days: 7 },
-  { label: "Last 30 days", days: 30 },
-  { label: "Last 90 days", days: 90 },
-] as const;
+const DEFAULT_DAYS = 30;
+const PRESETS = [7, 30, 90] as const;
 
 export default async function RevenuePage({
   searchParams,
@@ -72,18 +73,21 @@ export default async function RevenuePage({
   const to = toStr
     ? addDays(manilaDayStart(toStr), 1)
     : addDays(defaultFrom, 1);
-
-  // Determine which preset is active (for chip highlight)
-  const activePreset = PRESETS.find(({ days }) => {
-    const expectedFrom = subDays(defaultFrom, days - 1);
-    return (
-      !fromStr &&
-      !toStr &&
-      from.getTime() === expectedFrom.getTime()
-    );
-  });
-  // The default (no params) matches "Last 30 days"
   const noParams = !fromStr && !toStr;
+
+  // Preset buttons are server-rendered links; the active one is a disabled
+  // button so it can't navigate to the range it already represents.
+  const presets = PRESETS.map((d) => {
+    const presetFrom = format(subDays(defaultFrom, d - 1));
+    const presetTo = format(defaultFrom);
+    return {
+      days: d,
+      href: `/admin/revenue?from=${presetFrom}&to=${presetTo}`,
+      active: noParams
+        ? d === DEFAULT_DAYS
+        : fromStr === presetFrom && toStr === presetTo,
+    };
+  });
 
   let db;
   try {
@@ -98,25 +102,58 @@ export default async function RevenuePage({
   }
 
   // Both queries start here and are awaited by the streamed sections below, so
-  // the header + filter toolbar paint without waiting on Supabase.
+  // the header + filters paint without waiting on Supabase.
   const daysPromise = revenueByDay(db, { from, to });
   const monthsPromise = revenueByMonth(db);
 
   return (
     <div className="space-y-5">
-      <header>
+      <header className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">Revenue</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Approved bookings only — counted on earliest slot date (Manila time).
-        </p>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
+            {presets.map(({ days: d, href, active }) =>
+              active ? (
+                <Button key={d} size="sm" disabled>
+                  <CalendarDays className="size-3.5" />
+                  {`Last ${d} days`}
+                </Button>
+              ) : (
+                <Button
+                  key={d}
+                  variant="outline"
+                  size="sm"
+                  nativeButton={false}
+                  render={<Link href={href} />}
+                >
+                  <CalendarDays className="size-3.5" />
+                  {`Last ${d} days`}
+                </Button>
+              ),
+            )}
+          </div>
+
+          <RevenueRangeFilter from={fromStr} to={toStr} />
+
+          <Suspense
+            fallback={<Skeleton className="h-7 w-24 rounded-[12px]" />}
+          >
+            <Export
+              days={daysPromise}
+              months={monthsPromise}
+              range={`${format(from)}_${format(subDays(to, 1))}`}
+            />
+          </Suspense>
+        </div>
       </header>
 
       <Suspense
         fallback={
           <div className="space-y-5">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               {[0, 1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-[86px]" />
+                <Skeleton key={i} className="h-[132px] rounded-xl" />
               ))}
             </div>
             <Skeleton className="h-56" />
@@ -126,89 +163,6 @@ export default async function RevenuePage({
         <RevenueSummary days={daysPromise} months={monthsPromise} />
       </Suspense>
 
-      {/* ── Date filter toolbar ───────────────────────────────────────── */}
-      <Card className="py-0">
-        <CardContent className="py-3">
-        {/* Row 1: quick-range chips */}
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="mr-1 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
-            <CalendarDays className="size-3.5" />
-            Range
-          </span>
-
-          {/* "Last N days" preset chips */}
-          {PRESETS.map(({ label, days: d }) => {
-            const presetFrom = format(subDays(defaultFrom, d - 1));
-            const presetTo = format(defaultFrom);
-            const isActive =
-              fromStr === presetFrom && toStr === presetTo;
-            return (
-              <Link
-                key={label}
-                href={`/admin/revenue?from=${presetFrom}&to=${presetTo}`}
-                className={chipClass(isActive)}
-              >
-                {label}
-              </Link>
-            );
-          })}
-
-          {/* All time chip */}
-          <Link
-            href="/admin/revenue"
-            className={chipClass(noParams)}
-          >
-            Default (30 d)
-          </Link>
-
-          {(fromStr || toStr) && (
-            <Link
-              href="/admin/revenue"
-              className="ml-auto flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground"
-            >
-              <X className="size-3.5" /> Clear
-            </Link>
-          )}
-        </div>
-
-        {/* Row 2: custom date range form */}
-        <form
-          method="get"
-          action="/admin/revenue"
-          className="mt-3 flex flex-wrap items-end gap-3 border-t border-border pt-3"
-        >
-          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider self-end pb-2">
-            Custom
-          </span>
-          <div className="space-y-0.5">
-            <Label htmlFor="from" className="text-[11px] font-semibold text-muted-foreground">
-              From
-            </Label>
-            <Input
-              id="from"
-              name="from"
-              type="date"
-              defaultValue={fromStr}
-              className="w-36"
-            />
-          </div>
-          <div className="space-y-0.5">
-            <Label htmlFor="to" className="text-[11px] font-semibold text-muted-foreground">
-              To
-            </Label>
-            <Input
-              id="to"
-              name="to"
-              type="date"
-              defaultValue={toStr}
-              className="w-36"
-            />
-          </div>
-          <Button type="submit">Apply</Button>
-        </form>
-        </CardContent>
-      </Card>
-
       <Suspense fallback={<Skeleton className="h-64" />}>
         <RevenueTables days={daysPromise} months={monthsPromise} />
       </Suspense>
@@ -217,6 +171,21 @@ export default async function RevenuePage({
 }
 
 // ─── streamed sections ───────────────────────────────────────────────────────
+
+async function Export({
+  days: daysPromise,
+  months: monthsPromise,
+  range,
+}: {
+  days: Promise<DayReport>;
+  months: Promise<MonthReport>;
+  range: string;
+}) {
+  const [{ days }, { months }] = await Promise.all([daysPromise, monthsPromise]);
+  return (
+    <RevenueExportDropdown days={days} months={months} range={range} />
+  );
+}
 
 async function RevenueSummary({
   days: daysPromise,
@@ -241,26 +210,30 @@ async function RevenueSummary({
   return (
     <>
       {/* ── KPI strip ─────────────────────────────────────────────────── */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
           label="Total (filtered)"
           value={formatPesosFromCents(totalCents)}
-          sub={`${totalBookings} booking${totalBookings !== 1 ? "s" : ""}`}
+          icon={DollarSign}
+          subtitle={`${totalBookings} booking${totalBookings !== 1 ? "s" : ""}`}
         />
-        <KpiCard
+        <StatCard
           label="Avg per active day"
           value={avgPerDay > 0 ? formatPesosFromCents(avgPerDay) : "—"}
-          sub={activeDayCount + " days with revenue"}
+          icon={TrendingUp}
+          subtitle={`${activeDayCount} days with revenue`}
         />
-        <KpiCard
+        <StatCard
           label="Peak day"
           value={peakDay ? formatPesosFromCents(peakDay.revenueCents) : "—"}
-          sub={peakDay?.date ?? "—"}
+          icon={CalendarDays}
+          subtitle={peakDay?.date ?? "—"}
         />
-        <KpiCard
+        <StatCard
           label="All-time months"
           value={String(months.length)}
-          sub={
+          icon={CalendarRange}
+          subtitle={
             months.length > 0
               ? `${months[months.length - 1]!.month} → ${months[0]!.month}`
               : "No data yet"
@@ -270,15 +243,15 @@ async function RevenueSummary({
 
       {/* ── Chart ─────────────────────────────────────────────────────── */}
       <Card>
-        <CardHeader>
+        <CardHeader className="border-b">
           <CardTitle>Revenue</CardTitle>
           <CardDescription>
             Approved bookings over the selected range.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <div className="px-(--card-spacing)">
           <RevenueChartLoader days={days} months={months} mode="full" />
-        </CardContent>
+        </div>
       </Card>
     </>
   );
@@ -300,7 +273,7 @@ async function RevenueTables({
     <>
       {/* ── Daily breakdown table ─────────────────────────────────────── */}
       <Card className="gap-0 overflow-hidden py-0">
-        <CardHeader className="border-b">
+        <CardHeader className="border-b pt-4">
           <CardTitle className="text-sm">Daily breakdown</CardTitle>
           <CardDescription>
             {days.length} day{days.length !== 1 ? "s" : ""}
@@ -414,31 +387,4 @@ async function RevenueTables({
 function format(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-function chipClass(active: boolean): string {
-  return [
-    "inline-flex h-7 items-center rounded-full border px-3 text-xs font-semibold transition-colors",
-    active
-      ? "bg-primary border-primary text-primary-foreground"
-      : "bg-background border-border text-muted-foreground hover:bg-muted",
-  ].join(" ");
-}
-
-// ─── KPI card ─────────────────────────────────────────────────────────────────
-
-function KpiCard({ label, value, sub }: { label: string; value: string; sub: string }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardDescription className="text-xs font-medium uppercase tracking-wider">
-          {label}
-        </CardDescription>
-        <CardTitle className="text-2xl tabular-nums">{value}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p className="text-xs text-muted-foreground">{sub}</p>
-      </CardContent>
-    </Card>
-  );
 }

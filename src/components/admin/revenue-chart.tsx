@@ -112,7 +112,7 @@ type Toggle = "daily" | "weekly" | "monthly";
 // ─── main component ───────────────────────────────────────────────────────────
 
 export default function RevenueChart({ days, months, mode = "full" }: Props) {
-  const [toggle, setToggle] = useState<Toggle>("daily");
+  const [toggle, setToggle] = useState<Toggle>("monthly");
   const isMini = mode === "mini";
 
   // Build chart data — daily sorted oldest→newest, trim label to MM-DD / Mon-YY
@@ -160,7 +160,7 @@ export default function RevenueChart({ days, months, mode = "full" }: Props) {
           </p>
         )}
         <div className={`flex items-center gap-1 rounded-lg border border-border bg-muted p-0.5 ${isMini ? "ml-auto" : ""}`}>
-          {(["daily", "weekly", "monthly"] as Toggle[]).map((t) => (
+          {(["monthly", "weekly", "daily"] as Toggle[]).map((t) => (
             <button
               key={t}
               type="button"

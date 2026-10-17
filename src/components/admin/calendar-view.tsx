@@ -378,7 +378,7 @@ export default function CalendarView({
 
           {/* View toggle */}
           <div className="flex rounded-lg border border-border bg-muted p-0.5">
-            {(["daily", "weekly", "monthly"] as ViewMode[]).map((v) => (
+            {(["monthly", "weekly", "daily"] as ViewMode[]).map((v) => (
               <button
                 key={v}
                 type="button"

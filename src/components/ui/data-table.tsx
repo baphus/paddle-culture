@@ -11,7 +11,9 @@ import {
   useReactTable,
   type ColumnDef,
   type ColumnFiltersState,
+  type ColumnMeta,
   type PaginationState,
+  type RowData,
   type SortingState,
   type Table as TanstackTable,
   type Updater,
@@ -30,6 +32,8 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ViewToggle } from "@/components/ui/view-toggle"
+import { useIsMobileQuery } from "@/hooks/use-mobile"
+import { cn } from "cn"
 import {
   Table,
   TableBody,
@@ -38,6 +42,34 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+
+/**
+ * Pin a column to the right edge so row actions stay reachable while the rest
+ * of the table scrolls horizontally. Opt in per column with `meta: { sticky: "right" }`.
+ */
+declare module "@tanstack/react-table" {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  interface ColumnMeta<TData extends RowData, TValue> {
+    sticky?: "right"
+  }
+}
+
+// `-mx-px` hides the cell's own left border under the pinned edge; the shadow
+// gives cells something to scroll under once content passes the seam.
+const STICKY_HEAD =
+  "sticky right-0 z-20 -mx-px border-l border-border bg-background text-right shadow-[-4px_0_8px_-6px_rgb(0_0_0/0.25)]"
+const STICKY_CELL =
+  "sticky right-0 z-10 -mx-px border-l border-border bg-background shadow-[-4px_0_8px_-6px_rgb(0_0_0/0.25)] group-hover:bg-muted/50"
+
+function stickyClass<TData>(
+  table: TanstackTable<TData>,
+  column: { id: string; columnDef: { meta?: ColumnMeta<TData, unknown> } }
+): string | false {
+  if (column.columnDef.meta?.sticky !== "right") return false
+  const visible = table.getVisibleLeafColumns()
+  // Only the right-most visible column can pin to the right edge.
+  return visible[visible.length - 1]?.id === column.id ? STICKY_CELL : false
+}
 
 function ColumnVisibilityMenu<TData>({ table }: { table: TanstackTable<TData> }) {
   return (
@@ -126,13 +158,22 @@ export function DataTable<TData, TValue>({
 }) {
   const [search, setSearch] = React.useState("")
   const [sorting, setSorting] = React.useState<SortingState>([])
-  const [internalView, setInternalView] = React.useState<"list" | "grid">("list")
+  // Grid cards read better than an 8-column table on a phone, so the initial
+  // view follows the viewport. Only the default: the toggle still overrides.
+  const isMobile = useIsMobileQuery()
+  const [internalView, setInternalView] = React.useState<"list" | "grid">(
+    isMobile ? "grid" : "list"
+  )
   const view = controlledView ?? internalView
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     []
   )
   const [columnVisibility, setColumnVisibility] =
     React.useState<VisibilityState>({})
+
+  React.useEffect(() => {
+    setInternalView(isMobile ? "grid" : "list")
+  }, [isMobile])
 
   const onPaginationChange = React.useCallback(
     (updater: Updater<PaginationState>) => {
@@ -220,46 +261,58 @@ export function DataTable<TData, TValue>({
             <TableHeader>
               {table.getHeaderGroups().map((headerGroup) => (
                 <TableRow key={headerGroup.id}>
-                  {headerGroup.headers.map((header) => (
-                    <TableHead key={header.id} className="px-4">
-                      {header.isPlaceholder ? null : (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="-ml-2"
-                          disabled={!header.column.getCanSort()}
-                          onClick={header.column.getToggleSortingHandler()}
-                        >
-                          {flexRender(
-                            header.column.columnDef.header,
-                            header.getContext()
-                          )}
-                          {header.column.getCanSort() &&
-                            ({
-                              asc: <ArrowUpIcon />,
-                              desc: <ArrowDownIcon />,
-                            }[header.column.getIsSorted() as string] ?? (
-                              <ArrowUpDownIcon />
-                            ))}
-                        </Button>
-                      )}
-                    </TableHead>
-                  ))}
+                  {headerGroup.headers.map((header) => {
+                    const sticky = stickyClass(table, header.column)
+                    return (
+                      <TableHead
+                        key={header.id}
+                        className={cn("px-4", sticky && STICKY_HEAD)}
+                      >
+                        {header.isPlaceholder ? null : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="-ml-2"
+                            disabled={!header.column.getCanSort()}
+                            onClick={header.column.getToggleSortingHandler()}
+                          >
+                            {flexRender(
+                              header.column.columnDef.header,
+                              header.getContext()
+                            )}
+                            {header.column.getCanSort() &&
+                              ({
+                                asc: <ArrowUpIcon />,
+                                desc: <ArrowDownIcon />,
+                              }[header.column.getIsSorted() as string] ?? (
+                                <ArrowUpDownIcon />
+                              ))}
+                          </Button>
+                        )}
+                      </TableHead>
+                    )
+                  })}
                 </TableRow>
               ))}
             </TableHeader>
             <TableBody>
               {table.getRowModel().rows.length ? (
                 table.getRowModel().rows.map((row) => (
-                  <TableRow key={row.id}>
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id} className="px-4">
-                        {flexRender(
-                          cell.column.columnDef.cell,
-                          cell.getContext()
-                        )}
-                      </TableCell>
-                    ))}
+                  <TableRow key={row.id} className="group">
+                    {row.getVisibleCells().map((cell) => {
+                      const sticky = stickyClass(table, cell.column)
+                      return (
+                        <TableCell
+                          key={cell.id}
+                          className={cn("px-4", sticky && STICKY_CELL)}
+                        >
+                          {flexRender(
+                            cell.column.columnDef.cell,
+                            cell.getContext()
+                          )}
+                        </TableCell>
+                      )
+                    })}
                   </TableRow>
                 ))
               ) : (

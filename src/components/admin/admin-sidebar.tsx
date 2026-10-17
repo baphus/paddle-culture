@@ -84,7 +84,7 @@ export default function AdminSidebar({ email, name }: Props) {
                 height={32}
                 className="size-8 rounded-full object-cover"
               />
-              <div className="grid flex-1 text-left text-sm leading-tight">
+              <div className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
                 <span className="truncate font-medium">CK Grounds</span>
                 <span className="truncate text-xs text-muted-foreground">
                   Admin
