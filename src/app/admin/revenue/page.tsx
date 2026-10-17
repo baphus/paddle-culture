@@ -9,7 +9,11 @@ import {
   TrendingUp,
 } from "lucide-react";
 import RevenueChartLoader from "@/components/admin/revenue-chart-loader";
-import { StatCard } from "@/components/admin/stat-card";
+import {
+  StatCard,
+  STAT_CARD_GRID,
+  STAT_CARD_MIN_HEIGHT,
+} from "@/components/admin/stat-card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -151,9 +155,9 @@ export default async function RevenuePage({
       <Suspense
         fallback={
           <div className="space-y-5">
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className={STAT_CARD_GRID}>
               {[0, 1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-[132px] rounded-xl" />
+                <Skeleton key={i} className={`${STAT_CARD_MIN_HEIGHT} rounded-xl`} />
               ))}
             </div>
             <Skeleton className="h-56" />
@@ -210,7 +214,7 @@ async function RevenueSummary({
   return (
     <>
       {/* ── KPI strip ─────────────────────────────────────────────────── */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className={STAT_CARD_GRID}>
         <StatCard
           label="Total (filtered)"
           value={formatPesosFromCents(totalCents)}
@@ -335,7 +339,7 @@ async function RevenueTables({
       {/* ── Monthly breakdown table ───────────────────────────────────── */}
       {months.length > 0 && (
         <Card className="gap-0 overflow-hidden py-0">
-          <CardHeader className="border-b">
+          <CardHeader className="border-b pt-6">
             <CardTitle className="text-sm">All-time monthly breakdown</CardTitle>
           </CardHeader>
           <div className="overflow-x-auto">

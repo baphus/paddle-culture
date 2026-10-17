@@ -20,7 +20,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { StatCard } from "@/components/admin/stat-card";
+import {
+  StatCard,
+  STAT_CARD_GRID,
+  STAT_CARD_MIN_HEIGHT,
+} from "@/components/admin/stat-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getDb } from "@/db/client";
 import { requireAdmin } from "@/lib/admin/session";
@@ -77,9 +81,9 @@ export default async function AdminPage() {
       {/* Stat cards */}
       <Suspense
         fallback={
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className={STAT_CARD_GRID}>
             {[0, 1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-[132px] rounded-xl" />
+              <Skeleton key={i} className={`${STAT_CARD_MIN_HEIGHT} rounded-xl`} />
             ))}
           </div>
         }
@@ -87,7 +91,7 @@ export default async function AdminPage() {
         <StatCards stats={statsPromise} days={chartDaysPromise} />
       </Suspense>
 
-      {/* Mini revenue chart */}
+      {/* Revenue chart (same as /admin/revenue) */}
       <Card>
         <CardHeader className="border-b">
           <CardTitle>Revenue</CardTitle>
@@ -98,8 +102,8 @@ export default async function AdminPage() {
           </CardAction>
         </CardHeader>
         <CardContent>
-          <Suspense fallback={<Skeleton className="h-52" />}>
-            <MiniRevenueChart days={chartDaysPromise} months={chartMonthsPromise} />
+          <Suspense fallback={<Skeleton className="h-72" />}>
+            <DashboardRevenueChart days={chartDaysPromise} months={chartMonthsPromise} />
           </Suspense>
         </CardContent>
       </Card>
@@ -149,7 +153,7 @@ async function StatCards({
   const bookings = total(recent, "bookings");
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div className={STAT_CARD_GRID}>
       <StatCard
         label="Total Revenue"
         value={stats ? formatPesosFromCents(revenueCents) : "—"}
@@ -186,7 +190,7 @@ async function StatCards({
   );
 }
 
-async function MiniRevenueChart({
+async function DashboardRevenueChart({
   days: daysPromise,
   months: monthsPromise,
 }: {
@@ -194,7 +198,7 @@ async function MiniRevenueChart({
   months: Promise<MonthArr>;
 }) {
   const [days, months] = await Promise.all([daysPromise, monthsPromise]);
-  return <RevenueChartLoader days={days} months={months} mode="mini" />;
+  return <RevenueChartLoader days={days} months={months} mode="full" />;
 }
 
 async function RecentBookingsSection({ stats: statsPromise }: { stats: Promise<DashboardStats | null> }) {

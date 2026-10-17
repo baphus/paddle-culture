@@ -34,6 +34,22 @@ function pesosLong(v: number): string {
   return `₱${v.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+/** Format a YYYY-MM-DD string to a human-readable label. */
+function formatDateLabel(key: string, mode: "full" | "mini"): string {
+  if (!key) return "";
+  // Monthly keys are "YYYY-MM" without day
+  const parts = key.split("-");
+  const year = Number(parts[0]);
+  const month = Number(parts[1]);
+  const day = parts[2] ? Number(parts[2]) : 1;
+  if (isNaN(year) || isNaN(month)) return key;
+  const dt = new Date(year, month - 1, day);
+  if (mode === "mini") {
+    return dt.toLocaleString("en-PH", { month: "short", day: "numeric", year: "numeric" });
+  }
+  return dt.toLocaleString("en-PH", { month: "short", day: "numeric", year: "numeric" });
+}
+
 // ─── Custom tooltip ───────────────────────────────────────────────────────────
 
 function ChartTooltip({
@@ -43,16 +59,19 @@ function ChartTooltip({
   mode,
 }: {
   active?: boolean;
-  payload?: Array<{ name: string; value: number }>;
+  payload?: Array<{ name: string; value: number; label?: string; dateKey?: string }>;
   label?: string;
   mode: "full" | "mini";
 }) {
   if (!active || !payload?.length) return null;
   const rev = payload.find((p) => p.name === "revenue");
   const bk = payload.find((p) => p.name === "bookings");
+  // Derive the display label from payload data, falling back to Recharts' label prop
+  const dataLabel = payload[0]?.dateKey ? formatDateLabel(payload[0].dateKey, mode) :
+                    payload[0]?.label ?? label ?? "";
   return (
     <div className="rounded-lg border border-border bg-popover px-3 py-2.5 text-xs text-popover-foreground shadow-md">
-      <p className="mb-1 font-medium">{label}</p>
+      <p className="mb-1 font-medium">{dataLabel}</p>
       {rev && (
         <p className="font-semibold text-chart-2">
           {pesosLong(rev.value)}
@@ -84,7 +103,7 @@ function rollupByWeek(days: RevenueDay[]) {
   }
   return [...weeks.entries()]
     .sort((a, b) => (a[0] < b[0] ? -1 : 1))
-    .map(([key, v]) => ({ label: key.slice(5), revenue: v.revenue, bookings: v.bookings }));
+    .map(([key, v]) => ({ label: key.slice(5), dateKey: key, revenue: v.revenue, bookings: v.bookings }));
 }
 
 // Mirrors weekStartManila in lib/admin/calendar.ts — kept local so this client
@@ -120,6 +139,7 @@ export default function RevenueChart({ days, months, mode = "full" }: Props) {
     () =>
       [...days].sort((a, b) => (a.date < b.date ? -1 : 1)).map((d) => ({
         label: d.date.slice(5), // MM-DD
+        dateKey: d.date,
         revenue: d.revenueCents / 100,
         bookings: d.bookings,
       })),
@@ -133,6 +153,7 @@ export default function RevenueChart({ days, months, mode = "full" }: Props) {
         const date = new Date(Number(y), Number(mo) - 1, 1);
         return {
           label: date.toLocaleString("en-PH", { month: "short", year: "2-digit" }),
+          dateKey: m.month,
           revenue: m.revenueCents / 100,
           bookings: m.bookings,
         };
@@ -175,6 +196,13 @@ export default function RevenueChart({ days, months, mode = "full" }: Props) {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Range label */}
+      <div className={`mb-3 text-xs text-muted-foreground ${isMini ? "" : "sr-only"}`}>
+        {data.length > 0
+          ? `${formatDateLabel((data[0] as any).dateKey ?? "", mode)} – ${formatDateLabel((data[data.length - 1] as any).dateKey ?? "", mode)}`
+          : undefined}
       </div>
 
       {/* Chart */}
@@ -301,13 +329,13 @@ export default function RevenueChart({ days, months, mode = "full" }: Props) {
         </div>
       )}
 
-      {/* Full mode legend */}
-      {!isMini && hasData && (
-        <div className="mt-3 flex items-center gap-5">
-          <span className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-            <span className="inline-block h-0.5 w-4 rounded-full bg-chart-2" />
-            Revenue
-          </span>
+      {/* Legend */}
+      <div className={`mt-3 flex items-center gap-5 ${isMini ? "mb-2" : ""}`}>
+        <span className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+          <span className="inline-block h-0.5 w-4 rounded-full bg-chart-2" />
+          Revenue
+        </span>
+        {!isMini && (
           <span className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
             <span
               className="inline-block h-px w-4"
@@ -317,8 +345,8 @@ export default function RevenueChart({ days, months, mode = "full" }: Props) {
             />
             Bookings
           </span>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
