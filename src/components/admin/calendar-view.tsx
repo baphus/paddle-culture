@@ -60,13 +60,13 @@ const DAY_NAMES_MINI = ["S", "M", "T", "W", "T", "F", "S"];
 function eventColors(status: string) {
   switch (status) {
     case "Approved":
-      return { pill: "bg-primary/10 text-primary border-primary/20", dot: "bg-primary" };
+      return { pill: "bg-emerald-50 text-emerald-800 border-emerald-200", dot: "bg-emerald-500" };
     case "Pending":
-      return { pill: "bg-accent text-accent-foreground border-border", dot: "bg-accent-foreground" };
+      return { pill: "bg-amber-50 text-amber-800 border-amber-200", dot: "bg-amber-500" };
     case "Rejected":
-      return { pill: "bg-destructive/10 text-destructive border-destructive/20", dot: "bg-destructive" };
+      return { pill: "bg-rose-50 text-rose-800 border-rose-200", dot: "bg-rose-500" };
     default:
-      return { pill: "bg-muted text-muted-foreground border-border", dot: "bg-muted-foreground" };
+      return { pill: "bg-zinc-50 text-zinc-700 border-zinc-200", dot: "bg-zinc-400" };
   }
 }
 
@@ -287,7 +287,7 @@ export default function CalendarView({
                 {dayEvents.length > 0 && (
                   <span className={cn(
                     "mt-0.5 size-1 rounded-full",
-                    hasPending ? "bg-accent-foreground" : hasApproved ? "bg-primary" : "bg-destructive",
+                    hasPending ? "bg-amber-500" : hasApproved ? "bg-emerald-500" : "bg-rose-500",
                   )} />
                 )}
               </button>
@@ -568,7 +568,7 @@ function MonthlyView({
                 <div className="flex min-w-0 items-center gap-1 px-0.5">
                   <span className={cn(
                     "size-1.5 shrink-0 rounded-full",
-                    hasPending ? "bg-accent-foreground" : hasApproved ? "bg-primary" : "bg-destructive",
+                    hasPending ? "bg-amber-500" : hasApproved ? "bg-emerald-500" : "bg-rose-500",
                   )} />
                   <span className="min-w-0 truncate text-[11px] font-semibold text-foreground/70 leading-tight">
                     {dayEvents.length} booking{dayEvents.length !== 1 ? "s" : ""}
@@ -986,8 +986,8 @@ function DayPanel({
               disabled={loadingId !== null}
               onClick={() => handleOpen(ev.id)}
               className={cn(
-                "w-full rounded-xl border bg-background p-3 text-left transition-all hover:shadow-sm disabled:opacity-60",
-                "border-border",
+                "w-full rounded-xl border p-3 text-left transition-all hover:shadow-sm disabled:opacity-60",
+                c.pill,
               )}
             >
               <div className="flex items-start justify-between gap-2">

@@ -7,8 +7,9 @@
 --   1. rpc_submit_booking       — the 18-step SERIALIZABLE submit transaction
 --   2. rpc_apply_decision       — approve/reject with outbox + audit
 --   3. rpc_claim_outbox_batch   — FOR UPDATE SKIP LOCKED email outbox claim
---   4. rpc_delete_expired_holds — soft retention purge (used by retention cron)
---   5. rpc_delete_expired_proofs — 90-day payment-proof prune (proof-prune cron)
+--   4. rpc_delete_expired_holds – soft retention purge (used by retention cron)
+--   5. rpc_delete_expired_proofs – 90-day payment-proof prune (proof-prune cron)
+--   6. rpc_admin_create_booking – admin walk-in / phone booking, born approved
 --
 -- The index at the bottom of this file (holds_live_unique_idx) is the one
 -- other piece of schema this app depends on: without it two customers can
@@ -481,5 +482,219 @@ BEGIN
   SELECT coalesce(array_agg(path), '{}'::text[]) INTO v_paths FROM deleted;
 
   RETURN QUERY SELECT v_paths;
+END;
+$$;
+
+
+-- ===========================================================================
+-- 8. rpc_admin_create_booking
+--    Admin-side booking creation (walk-ins, phone bookings, internal records).
+--
+--    Differs from rpc_submit_booking in four ways, all deliberate:
+--      * No holds. The admin picks straight off the live slot grid, so there
+--        is nothing to lock and nothing to release — the row is written once.
+--      * Born 'Approved'. booking_slots are inserted already in the
+--        'approved' state, and the customer email is the *approved* template
+--        (never the "we got your request" one — it is already decided).
+--      * Conflicting holds are force-deleted (Q15). A customer mid-checkout
+--        must not be able to block a slot the front desk is selling right
+--        now. This happens *before* the booking_slots insert so
+--        booking_slots_no_overlap_idx is never violated.
+--      * Notification is optional (Q4/Q9). p_notify = false writes the audit
+--        row and returns, with no outbox entry at all.
+--
+--    Availability (open hours, closures, horizon) and pricing are enforced by
+--    the caller: POST /api/admin/bookings runs assertSlotsOpen() and
+--    recalculateTotal() before calling this, exactly like the customer path.
+--
+--    p_slots:         [{ court_id, slot_start }]
+--    p_slot_summary:  [{ courtId, courtName, slotStart }]  (outbox payload)
+--    p_proof:         { path, mime, bytes } | null
+--    Returns { booking_id, tracking_token, tracking_code, total, status,
+--              notify, deduped, evicted_holds }
+-- ===========================================================================
+CREATE OR REPLACE FUNCTION rpc_admin_create_booking(
+  p_idempotency_key  text,
+  p_tracking_token   text,
+  p_tracking_code    text,
+  p_full_name        text,
+  p_email            text,
+  p_phone            text,
+  p_total            text,
+  p_slots            jsonb,   -- [{ court_id uuid, slot_start timestamptz }]
+  p_slot_summary     jsonb,
+  p_paddle_qty       int,
+  p_paddle_hours     text,    -- nullable string
+  p_ball_fee         text,    -- nullable string
+  p_proof_path       text,    -- nullable
+  p_proof_mime       text,    -- nullable
+  p_proof_bytes      int,     -- nullable
+  p_notify           boolean, -- false -> audit only, no email
+  p_lines            jsonb,
+  p_actor_email      text
+)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  v_booking_id   uuid;
+  v_now          timestamptz := now();
+  v_claimed_key  text;
+  v_prior_bk_id  uuid;
+  v_prior_row    bookings%ROWTYPE;
+  v_evicted      int := 0;
+BEGIN
+  -- Note: SET LOCAL transaction_isolation removed — see rpc_apply_decision.
+
+  -- ── Idempotency: first writer wins ──────────────────────────────────────
+  INSERT INTO idempotency_keys (key) VALUES (p_idempotency_key)
+  ON CONFLICT (key) DO NOTHING
+  RETURNING key INTO v_claimed_key;
+
+  IF v_claimed_key IS NULL THEN
+    SELECT booking_id INTO v_prior_bk_id
+    FROM   idempotency_keys
+    WHERE  key = p_idempotency_key;
+
+    IF v_prior_bk_id IS NULL THEN
+      RAISE EXCEPTION 'IDEMPOTENCY_IN_PROGRESS: A booking with this key is already being created.'
+        USING ERRCODE = 'P0002';
+    END IF;
+
+    SELECT * INTO v_prior_row FROM bookings WHERE id = v_prior_bk_id;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'INTERNAL: Prior booking is unreadable.' USING ERRCODE = 'P0002';
+    END IF;
+
+    RETURN jsonb_build_object(
+      'booking_id',     v_prior_bk_id,
+      'tracking_token', v_prior_row.tracking_token,
+      'tracking_code',  v_prior_row.tracking_code,
+      'total',          v_prior_row.total,
+      'status',         v_prior_row.status,
+      'notify',         p_notify,
+      'deduped',        true,
+      'evicted_holds',  0
+    );
+  END IF;
+
+  -- ── Proof reuse check ───────────────────────────────────────────────────
+  IF p_proof_path IS NOT NULL THEN
+    IF EXISTS (SELECT 1 FROM payment_proofs WHERE path = p_proof_path FOR UPDATE) THEN
+      RAISE EXCEPTION 'PROOF_ALREADY_USED: This payment proof was already used.' USING ERRCODE = 'P0002';
+    END IF;
+  END IF;
+
+  -- ── Lazy expiry, then evict live holds on the requested (court, slot) ────
+  -- Lazy expiry first so a dead hold's unique-key entry cannot make the
+  -- eviction below report rows the purge was about to delete anyway.
+  DELETE FROM holds WHERE expires_at <= v_now;
+
+  WITH req AS (
+    SELECT (s->>'court_id')::uuid          AS court_id,
+           (s->>'slot_start')::timestamptz AS slot_start
+    FROM   jsonb_array_elements(p_slots) AS s
+  ), evicted AS (
+    DELETE FROM holds h
+    USING req
+    WHERE h.court_id = req.court_id
+      AND h.slot_start = req.slot_start
+    RETURNING 1
+  )
+  SELECT count(*) INTO v_evicted FROM evicted;
+
+  -- ── Clash check against live bookings (unique index is the real guard) ──
+  IF EXISTS (
+    SELECT 1
+    FROM   booking_slots bs
+    JOIN   (
+      SELECT (s->>'court_id')::uuid          AS court_id,
+             (s->>'slot_start')::timestamptz AS slot_start
+      FROM   jsonb_array_elements(p_slots) AS s
+    ) req ON bs.court_id = req.court_id AND bs.slot_start = req.slot_start
+    WHERE  bs.state IN ('held', 'pending', 'approved')
+  ) THEN
+    RAISE EXCEPTION 'SLOT_TAKEN: A selected slot is no longer available.' USING ERRCODE = '23505';
+  END IF;
+
+  -- ── Insert booking (born Approved) ───────────────────────────────────────
+  INSERT INTO bookings (tracking_token, tracking_code, status, full_name, email, phone, total)
+  VALUES (p_tracking_token, p_tracking_code, 'Approved', p_full_name, p_email, p_phone, p_total::numeric)
+  RETURNING id INTO v_booking_id;
+
+  -- ── Insert booking_slots, already approved ───────────────────────────────
+  INSERT INTO booking_slots (booking_id, court_id, slot_start, state)
+  SELECT v_booking_id,
+         (s->>'court_id')::uuid,
+         (s->>'slot_start')::timestamptz,
+         'approved'
+  FROM   jsonb_array_elements(p_slots) AS s;
+
+  -- ── Insert booking_rentals (always, zeros when none) ─────────────────────
+  INSERT INTO booking_rentals (booking_id, paddle_qty, paddle_hours, ball_fee)
+  VALUES (
+    v_booking_id,
+    p_paddle_qty,
+    CASE WHEN p_paddle_hours IS NOT NULL THEN p_paddle_hours::numeric ELSE NULL END,
+    CASE WHEN p_ball_fee     IS NOT NULL THEN p_ball_fee::numeric     ELSE NULL END
+  );
+
+  -- ── Insert payment_proofs (optional — admin may skip it) ────────────────
+  IF p_proof_path IS NOT NULL THEN
+    INSERT INTO payment_proofs (booking_id, path, mime, bytes)
+    VALUES (v_booking_id, p_proof_path, p_proof_mime, p_proof_bytes);
+  END IF;
+
+  -- ── Outbox: approved email only when the admin asked for it ─────────────
+  IF p_notify THEN
+    INSERT INTO email_outbox (booking_id, template, to_addr, payload, status, attempts, next_attempt_at)
+    VALUES (
+      v_booking_id,
+      'booking_customer_approved',
+      p_email,
+      jsonb_build_object(
+        'trackingToken', p_tracking_token,
+        'trackingCode',  p_tracking_code,
+        'fullName',      p_full_name,
+        'email',         p_email,
+        'phone',         p_phone,
+        'total',         p_total,
+        'slots',         p_slot_summary
+      ) || jsonb_build_object('lines', p_lines),
+      'pending', 0, v_now
+    );
+  END IF;
+
+  -- ── Audit row ────────────────────────────────────────────────────────────
+  INSERT INTO audit_log (actor, action, entity, entity_id, after)
+  VALUES (
+    p_actor_email,
+    'booking.admin_create',
+    'booking',
+    v_booking_id::text,
+    jsonb_build_object(
+      'trackingToken', p_tracking_token,
+      'trackingCode',  p_tracking_code,
+      'total',         p_total,
+      'status',        'Approved',
+      'notify',        p_notify,
+      'evictedHolds',  v_evicted,
+      'slots',         p_slot_summary
+    )
+  );
+
+  -- ── Stamp idempotency key with booking_id ────────────────────────────────
+  UPDATE idempotency_keys SET booking_id = v_booking_id WHERE key = p_idempotency_key;
+
+  RETURN jsonb_build_object(
+    'booking_id',     v_booking_id,
+    'tracking_token', p_tracking_token,
+    'tracking_code',  p_tracking_code,
+    'total',          p_total,
+    'status',         'Approved',
+    'notify',         p_notify,
+    'deduped',        false,
+    'evicted_holds',  v_evicted
+  );
 END;
 $$;

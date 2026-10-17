@@ -1,16 +1,17 @@
-import { randomBytes, randomInt } from "node:crypto";
 import * as Sentry from "@sentry/nextjs";
 import { NextResponse, after } from "next/server";
 import { getDb } from "@/db/client";
-import {
-  LIVE_SLOT_STATES,
-  OWNER_ALERT_EMAIL,
-} from "@/lib/booking/constants";
+import { LIVE_SLOT_STATES, OWNER_ALERT_EMAIL } from "@/lib/booking/constants";
 import { LaneError, err } from "@/lib/booking/errors";
 import { assertSlotsOpen } from "@/lib/booking/hours";
 import { recalculateTotal } from "@/lib/booking/pricing";
 import { verifyProofFile } from "@/lib/booking/proof";
 import { isFutureSlot, isOnSlotGrid } from "@/lib/booking/slots";
+import {
+  generateTrackingCode,
+  generateTrackingToken,
+  isTrackingCodeViolation,
+} from "@/lib/booking/tracking";
 import { submitBodySchema } from "@/lib/booking/validation";
 import { drainOutboxBestEffort } from "@/lib/mail/worker";
 
@@ -136,7 +137,7 @@ export async function POST(request: Request) {
     // ── Atomic write via RPC ─────────────────────────────────────────────────
     // Retry up to 5× on the rare tracking_code uniqueness collision
     // (36^5 ≈ 60M combinations; collisions are negligible in practice).
-    const trackingToken = randomBytes(32).toString("hex");
+    const trackingToken = generateTrackingToken();
     type RpcResult = {
       tracking_token: string;
       tracking_code: string;
@@ -223,32 +224,4 @@ export async function POST(request: Request) {
     Sentry.captureException(e);
     return err("INTERNAL", "Submission failed.", 500);
   }
-}
-
-/** Generates a 5-character uppercase alphanumeric tracking code (A-Z0-9).
- * randomInt is uniform — `byte % 36` would bias toward the first 16 of the
- * 36 symbols, so codes would be guessable 1.4× more often than they look. */
-function generateTrackingCode(): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  return Array.from({ length: 5 }, () =>
-    chars[randomInt(0, chars.length - 1)],
-  ).join("");
-}
-
-/** True when the error is a 23505 unique violation on the tracking_code column. */
-function isTrackingCodeViolation(e: unknown): boolean {
-  if (
-    typeof e !== "object" ||
-    e === null ||
-    !("code" in e) ||
-    (e as { code?: unknown }).code !== "23505"
-  )
-    return false;
-  const detail = (e as { detail?: unknown }).detail;
-  const constraint = (e as { constraint?: unknown }).constraint;
-  const message = (e as { message?: unknown }).message;
-  if (typeof constraint === "string" && constraint.includes("tracking_code")) return true;
-  if (typeof detail === "string" && detail.includes("tracking_code")) return true;
-  if (typeof message === "string" && message.includes("tracking_code")) return true;
-  return false;
 }

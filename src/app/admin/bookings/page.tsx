@@ -1,7 +1,9 @@
+import Link from "next/link";
 import { getDb } from "@/db/client";
 import { BOOKING_STATUSES, listBookings } from "@/lib/admin/bookings";
 import { requireAdmin } from "@/lib/admin/session";
 import PageHeader from "@/components/admin/page-header";
+import { Button } from "@/components/ui/button";
 import BookingsTable from "./bookings-table";
 
 export const dynamic = "force-dynamic";
@@ -64,7 +66,11 @@ export default async function BookingsPage({
 
   return (
     <div className="space-y-5">
-      <PageHeader title="Bookings" />
+      <PageHeader title="Bookings">
+        <Button size="sm" render={<Link href="/admin/bookings/new" />}>
+          New booking
+        </Button>
+      </PageHeader>
       <BookingsTable
         rows={rows}
         page={page}

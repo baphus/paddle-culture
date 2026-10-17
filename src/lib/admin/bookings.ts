@@ -1,8 +1,18 @@
 import { TZDate } from "@date-fns/tz";
 import { addDays } from "date-fns";
 import type { Db } from "@/db/client";
-import { MANILA_TZ } from "@/lib/booking/constants";
+import { MANILA_TZ, VENUE_PHONE_DISPLAY } from "@/lib/booking/constants";
+import { LaneError } from "@/lib/booking/errors";
 import { manilaDateStr, manilaWallClock } from "@/lib/booking/slots";
+import {
+  generateTrackingCode,
+  generateTrackingToken,
+  isTrackingCodeViolation,
+} from "@/lib/booking/tracking";
+import type { AdminCreateBookingBody } from "@/lib/booking/validation";
+import { normalizePhone } from "@/lib/booking/phone";
+import type { AdminSession } from "./session";
+import type { TotalLine } from "@/lib/booking/pricing";
 
 // All Drizzle ORM imports replaced with @supabase/supabase-js HTTP client.
 
@@ -517,5 +527,172 @@ export async function getBookingById(
     paddleHours: rental?.paddle_hours ?? null,
     hasBall: rental?.ball_fee != null,
     proofPath: ((proofsResult.data ?? []) as { path: string }[])[0]?.path ?? null,
+  };
+}
+
+// ── Admin booking creation ───────────────────────────────────────────────────
+
+export interface CreatedBooking {
+  id: string;
+  status: string;
+  trackingCode: string;
+  trackingToken: string;
+  total: string;
+  notify: boolean;
+  deduped: boolean;
+  evictedHolds: number;
+}
+
+export interface CreateBookingAdminInput {
+  /** Validated request body (adminCreateBookingBodySchema). */
+  body: AdminCreateBookingBody;
+  /** Server-recalculated total — never the client's number. */
+  total: string;
+  /** Pricing lines from recalculateTotal, echoed into the outbox payload. */
+  lines: TotalLine[];
+  /** Optional verified proof (null when the admin attached none). */
+  proof: { path: string; mime: string; bytes: number } | null;
+  /** Court names resolved by the caller, for the outbox payload. */
+  courtNames: Map<string, string>;
+}
+
+/**
+ * Create an admin booking (Q1–Q16). Mirrors applyDecision(): one RPC call,
+ * Postgres exception messages translated back into LaneErrors.
+ *
+ * Availability (open hours, horizon, clashes) and pricing are checked by the
+ * route handler before this runs — same order as POST /api/submit. What this
+ * adds is the admin-only write shape: slots born `approved`, no holds, an
+ * optional proof, and an optional customer email.
+ */
+export async function createBookingAdmin(
+  db: Db,
+  admin: AdminSession,
+  input: CreateBookingAdminInput,
+): Promise<CreatedBooking> {
+  const { body } = input;
+  const notify = body.notify;
+  const slotPairs = body.slots.map((s) => ({
+    courtId: s.courtId,
+    start: new Date(s.slotStart),
+  }));
+
+  // Q13: when the customer is not being notified there is no real identity to
+  // collect, so the booking is attributed to the admin and the free-text
+  // description becomes the name. `phone` must still be a non-empty string
+  // only if the schema demands it — it does not, so '' is allowed.
+  const fullName = notify
+    ? (body.customer?.fullName ?? body.description)
+    : body.description;
+  const email = notify
+    ? (body.customer?.email ?? admin.email).toLowerCase()
+    : admin.email.toLowerCase();
+  const phone = notify
+    ? normalizePhone(body.customer?.phone ?? "")
+    : normalizePhone(VENUE_PHONE_DISPLAY);
+
+  const slotSummary = slotPairs.map((p) => ({
+    courtId: p.courtId,
+    courtName: input.courtNames.get(p.courtId) ?? p.courtId,
+    slotStart: p.start.toISOString(),
+  }));
+
+  // Same rental defaults as the customer path: paddleHours falls back to the
+  // slot count, ball fee is whatever the pricing engine charged.
+  const paddleHoursStr =
+    body.rentals.paddleQty > 0
+      ? String(body.rentals.paddleHours ?? slotPairs.length)
+      : null;
+  const ballFeeStr = body.rentals.ball
+    ? (input.lines.find((l) => l.kind === "ball")?.amount ?? null)
+    : null;
+
+  const trackingToken = generateTrackingToken();
+
+  type RpcResult = {
+    booking_id: string;
+    tracking_token: string;
+    tracking_code: string;
+    total: string;
+    status: string;
+    notify: boolean;
+    deduped: boolean;
+    evicted_holds: number;
+  };
+
+  let rpcResult: RpcResult | null = null;
+  let lastError: { message?: string; code?: string } | null = null;
+
+  // Retry up to 5× on a tracking_code collision, exactly like /api/submit.
+  for (let attempt = 0; attempt <= 4; attempt++) {
+    const { data, error } = await db.rpc("rpc_admin_create_booking", {
+      p_idempotency_key: body.idempotencyKey,
+      p_tracking_token: trackingToken,
+      p_tracking_code: generateTrackingCode(),
+      p_full_name: fullName,
+      p_email: email,
+      p_phone: phone,
+      p_total: input.total,
+      p_slots: slotPairs.map((p) => ({
+        court_id: p.courtId,
+        slot_start: p.start.toISOString(),
+      })),
+      p_slot_summary: slotSummary,
+      p_paddle_qty: body.rentals.paddleQty,
+      p_paddle_hours: paddleHoursStr,
+      p_ball_fee: ballFeeStr,
+      p_proof_path: input.proof?.path ?? null,
+      p_proof_mime: input.proof?.mime ?? null,
+      p_proof_bytes: input.proof?.bytes ?? null,
+      p_notify: notify,
+      p_lines: input.lines,
+      p_actor_email: admin.email,
+    });
+
+    if (!error) {
+      rpcResult = data as RpcResult;
+      break;
+    }
+    if (isTrackingCodeViolation(error) && attempt < 4) continue;
+    lastError = error;
+    break;
+  }
+
+  if (lastError || !rpcResult) {
+    const msg = lastError?.message ?? "";
+    if (msg.includes("SLOT_TAKEN") || lastError?.code === "23505") {
+      throw new LaneError(
+        "SLOT_TAKEN",
+        "A selected slot is no longer available.",
+        409,
+      );
+    }
+    if (msg.includes("PROOF_ALREADY_USED")) {
+      throw new LaneError(
+        "PROOF_ALREADY_USED",
+        "This payment proof was already used for another booking.",
+        409,
+      );
+    }
+    if (msg.includes("IDEMPOTENCY_IN_PROGRESS")) {
+      throw new LaneError(
+        "IDEMPOTENCY_IN_PROGRESS",
+        "A booking with this key is already being processed. Retry shortly.",
+        409,
+      );
+    }
+    console.error("rpc_admin_create_booking failed", lastError);
+    throw new LaneError("INTERNAL", "Could not create the booking.", 500);
+  }
+
+  return {
+    id: rpcResult.booking_id,
+    status: rpcResult.status,
+    trackingCode: rpcResult.tracking_code,
+    trackingToken: rpcResult.tracking_token,
+    total: rpcResult.total,
+    notify: rpcResult.notify,
+    deduped: rpcResult.deduped,
+    evictedHolds: rpcResult.evicted_holds ?? 0,
   };
 }
