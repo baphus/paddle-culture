@@ -156,6 +156,7 @@ function PaginationLink({
     <Button
       variant={variant}
       className={cls}
+      nativeButton={false}
       render={<Link href={href} />}
       {...rest}
     >

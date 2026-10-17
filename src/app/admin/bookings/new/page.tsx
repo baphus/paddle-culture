@@ -18,7 +18,12 @@ export default async function NewBookingPage() {
         title="New booking"
         description="Create a booking directly. Slots are approved immediately."
       >
-        <Button variant="outline" size="sm" render={<Link href="/admin/bookings" />}>
+        <Button
+          variant="outline"
+          size="sm"
+          nativeButton={false}
+          render={<Link href="/admin/bookings" />}
+        >
           Back to bookings
         </Button>
       </PageHeader>

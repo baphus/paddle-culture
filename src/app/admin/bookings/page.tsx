@@ -67,7 +67,11 @@ export default async function BookingsPage({
   return (
     <div className="space-y-5">
       <PageHeader title="Bookings">
-        <Button size="sm" render={<Link href="/admin/bookings/new" />}>
+        <Button
+          size="sm"
+          nativeButton={false}
+          render={<Link href="/admin/bookings/new" />}
+        >
           New booking
         </Button>
       </PageHeader>
