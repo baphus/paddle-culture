@@ -24,7 +24,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { BookingStatusBadge } from "@/components/admin/status-badge";
-import type { BookingDetail } from "@/lib/admin/bookings";
+import { formatBookingDate, type BookingDetail } from "@/lib/admin/bookings";
 
 function pesos(total: string): string {
   return `₱${Number(total).toLocaleString("en-PH", {
@@ -160,7 +160,7 @@ export default function BookingActions({ booking }: { booking: BookingDetail }) 
             {/* Booking details */}
             <div className="space-y-2 rounded-xl border p-4">
               <DetailRow label="Courts" value={booking.courts || "—"} />
-              <DetailRow label="Date" value={booking.date} />
+              <DetailRow label="Date" value={formatBookingDate(booking.date)} />
               <DetailRow label="Slots" value={booking.slotLabels.join(", ") || "—"} />
               <DetailRow
                 label="Paddles"

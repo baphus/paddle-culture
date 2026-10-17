@@ -2,7 +2,7 @@
 
 import type { ColumnDef } from "@tanstack/react-table";
 import { BookingStatusBadge } from "@/components/admin/status-badge";
-import type { BookingDetail } from "@/lib/admin/bookings";
+import { formatBookingDate, type BookingDetail } from "@/lib/admin/bookings";
 import BookingActions from "./booking-actions";
 
 function pesos(total: string): string {
@@ -46,7 +46,9 @@ export const columns: ColumnDef<BookingDetail>[] = [
     accessorKey: "date",
     header: "Date",
     cell: ({ row }) => (
-      <span className="text-sm text-muted-foreground">{row.original.date}</span>
+      <span className="text-sm text-muted-foreground">
+        {formatBookingDate(row.original.date)}
+      </span>
     ),
   },
   {

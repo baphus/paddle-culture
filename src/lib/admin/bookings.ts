@@ -39,15 +39,51 @@ function manilaDayStart(dateStr: string): Date {
   return manilaWallClock(dateStr);
 }
 
-function hourLabel(h: number): string {
+function hourLabelMinutes(h: number, min: number): string {
   const h12 = h % 12 === 0 ? 12 : h % 12;
-  return `${h12}${h < 12 ? "AM" : "PM"}`;
+  return `${h12}:${String(min).padStart(2, "0")}${h < 12 ? "AM" : "PM"}`;
 }
 
-export function slotLabel(start: Date): string {
-  const z = new TZDate(start, MANILA_TZ);
-  const h = z.getHours();
-  return `${hourLabel(h)}–${hourLabel((h + 1) % 24)}`;
+/**
+ * Collapse a booking's slots into display ranges: dedupes equal starts
+ * (two courts, same hour), sorts, and merges runs of consecutive hours —
+ * ["1:00PM–5:00PM", "5:00PM–6:00PM"].
+ */
+/** Manila calendar date, rendered as "October 19, 2026" (UTC-pinned, no drift). */
+export function formatBookingDate(dateStr: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+  return new Date(`${dateStr}T00:00:00Z`).toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/** One slot's display range, e.g. "1:00PM–2:00PM" (Manila wall clock). */
+export function slotRangeLabel(startIso: string): string {
+  return formatSlotRanges([startIso])[0]!;
+}
+
+export function formatSlotRanges(slotStarts: string[]): string[] {
+  const ts = [...new Set(slotStarts.map((s) => new Date(s).getTime()))].sort(
+    (a, b) => a - b,
+  );
+  if (ts.length === 0) return [];
+  const label = (t: number) => {
+    const z = new TZDate(new Date(t), MANILA_TZ);
+    return hourLabelMinutes(z.getHours(), z.getMinutes());
+  };
+  const runs: string[] = [];
+  let start = ts[0]!;
+  for (let i = 1; i <= ts.length; i++) {
+    const next = ts[i];
+    if (next === undefined || next - ts[i - 1]! !== 3_600_000) {
+      runs.push(`${label(start)}–${label(ts[i - 1]! + 3_600_000)}`);
+      if (next !== undefined) start = next;
+    }
+  }
+  return runs;
 }
 
 export interface BookingListParams {
@@ -242,7 +278,7 @@ export async function listBookings(
       trackingToken: b.tracking_token,
       courts: courtNames,
       date: rawSlots.length > 0 ? manilaDateStr(new Date(rawSlots[0]!.slot_start)) : "—",
-      slotLabels: rawSlots.map((s) => slotLabel(new Date(s.slot_start))),
+      slotLabels: formatSlotRanges(rawSlots.map((s) => s.slot_start)),
       slots: rawSlots.map((s) => ({
         courtId: s.court_id,
         courtName: courtName(s),
@@ -471,7 +507,7 @@ export async function getBookingById(
     trackingToken: b.tracking_token,
     courts: courtNames,
     date: rawSlots.length > 0 ? manilaDateStr(new Date(rawSlots[0]!.slot_start)) : "—",
-    slotLabels: rawSlots.map((s) => slotLabel(new Date(s.slot_start))),
+    slotLabels: formatSlotRanges(rawSlots.map((s) => s.slot_start)),
     slots: rawSlots.map((s) => ({
       courtId: s.court_id,
       courtName: courtName(s),

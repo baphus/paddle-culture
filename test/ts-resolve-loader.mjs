@@ -20,20 +20,30 @@ const nextServerUrl = pathToFileURL(
 export async function resolve(specifier, context, next) {
   if (specifier === "next/server") return next(nextServerUrl, context);
 
+  // "@/x" is Next's alias for "<cwd>/src/x"; rewrite it to a relative
+  // specifier so the extensionless .ts lookup below applies to it too.
   if (specifier.startsWith("@/")) {
-    const root = pathToFileURL(process.cwd() + "/src/").href;
-    return next(specifier.slice(2), { ...context, parentURL: root });
+    return resolveRelative(
+      `./${specifier.slice(2)}`,
+      pathToFileURL(process.cwd() + "/src/").href,
+      context,
+      next,
+    );
   }
 
   if (specifier.startsWith(".") || specifier.startsWith("/")) {
-    const base = context.parentURL
-      ? new URL(specifier, context.parentURL)
-      : pathToFileURL(process.cwd() + "/");
-    for (const candidate of [specifier, `${specifier}.ts`, `${specifier}/index.ts`]) {
-      const url = new URL(candidate, base);
-      if (url.protocol !== "file:") continue;
-      if (existsSync(fileURLToPath(url))) return next(candidate, context);
-    }
+    return resolveRelative(specifier, context.parentURL, context, next);
   }
   return next(specifier, context);
+}
+
+async function resolveRelative(specifier, parentURL, context, next) {
+  const base = parentURL ?? pathToFileURL(process.cwd() + "/");
+  for (const candidate of [specifier, `${specifier}.ts`, `${specifier}/index.ts`]) {
+    const url = new URL(candidate, base);
+    if (url.protocol !== "file:") continue;
+    if (existsSync(fileURLToPath(url)))
+      return next(candidate, { ...context, parentURL: base });
+  }
+  return next(specifier, { ...context, parentURL: base });
 }

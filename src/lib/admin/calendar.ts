@@ -3,6 +3,7 @@ import { addMonths } from "date-fns";
 import type { Db } from "@/db/client";
 import { MANILA_TZ } from "@/lib/booking/constants";
 import { manilaDateStr, manilaWallClock } from "@/lib/booking/slots";
+import { formatSlotRanges, slotRangeLabel } from "@/lib/admin/bookings";
 
 // All Drizzle ORM imports replaced with @supabase/supabase-js HTTP client.
 
@@ -17,43 +18,8 @@ export interface CalendarEvent {
   total: string;
 }
 
-function h12(n: number): string {
-  const v = n % 12 === 0 ? 12 : n % 12;
-  return `${v}${n < 12 ? "AM" : "PM"}`;
-}
-
-function hourLabel(start: Date): string {
-  const z = new TZDate(start, MANILA_TZ);
-  const h = z.getHours();
-  return `${h12(h)}–${h12((h + 1) % 24)}`;
-}
-
 export function formatConsecutiveSlots(slotStarts: string[]): string {
-  if (slotStarts.length === 0) return "—";
-  const sorted = [...slotStarts].sort(
-    (a, b) => new Date(a).getTime() - new Date(b).getTime(),
-  );
-  const runs: Date[][] = [[new Date(sorted[0]!)]];
-  for (let i = 1; i < sorted.length; i++) {
-    const prev = runs[runs.length - 1]!;
-    const gap =
-      new Date(sorted[i]!).getTime() - prev[prev.length - 1]!.getTime();
-    if (gap === 3_600_000) {
-      prev.push(new Date(sorted[i]!));
-    } else {
-      runs.push([new Date(sorted[i]!)]);
-    }
-  }
-  return runs
-    .map((run) => {
-      if (run.length === 1) return hourLabel(run[0]!);
-      const startZ = new TZDate(run[0]!, MANILA_TZ);
-      const endZ = new TZDate(run[run.length - 1]!, MANILA_TZ);
-      const startH = startZ.getHours();
-      const endHours = endZ.getHours() + 1;
-      return `${h12(startH)}–${h12(endHours % 24)}`;
-    })
-    .join(", ");
+  return formatSlotRanges(slotStarts).join(", ") || "—";
 }
 
 async function buildEvents(
@@ -107,11 +73,9 @@ async function buildEvents(
     const courtNameVal = getCourtName(s);
     entry.courtNames.add(courtNameVal);
     const start = new Date(s.slot_start);
-    const tz = new TZDate(start, MANILA_TZ);
-    const h = tz.getHours();
     entry.slots.push({
       t: start.getTime(),
-      label: `${h12(h)}–${h12((h + 1) % 24)}`,
+      label: slotRangeLabel(s.slot_start),
       iso: s.slot_start,
     });
     acc.set(s.booking_id, entry);
