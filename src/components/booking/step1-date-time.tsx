@@ -182,11 +182,18 @@ export default function Step1DateTime({
 
   const selectedSet = useMemo(() => new Set(selected), [selected]);
 
+  // Distinct courts actually booked — the summary counts these, not the whole
+  // grid's column set (`courtIds`), which always holds every court.
+  const selectedCourtIds = useMemo(() => {
+    const ids = new Set(selected.map((pair) => pair.split("|")[0] as string));
+    return [...ids];
+  }, [selected]);
+
   // Notify parent of live state changes — passes unique slot ISOs for summary
   useEffect(() => {
-    onLiveUpdate?.({ courtIds, selectedDate, selectedSlots: selectedSlotIsos, paddleQty, ball });
+    onLiveUpdate?.({ courtIds: selectedCourtIds, selectedDate, selectedSlots: selectedSlotIsos, paddleQty, ball });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [courtIds, selectedDate, selectedSlotIsos, paddleQty, ball]);
+  }, [selectedCourtIds, selectedDate, selectedSlotIsos, paddleQty, ball]);
 
   const courtsKey = useMemo(() => [...courtIds].sort().join(","), [courtIds]);
 
