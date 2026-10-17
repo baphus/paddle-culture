@@ -449,7 +449,7 @@ export default function Step1DateTime({
   const handleHoldExpired = useCallback(() => {
     setHold(null);
     if (onHoldExpired) onHoldExpired();
-    toast.error('Your hold expired — tap "Hold & Continue" again.', { duration: 8000 });
+    toast.error('Your hold expired — tap "Continue" again.', { duration: 8000 });
   }, [onHoldExpired]);
 
   function handleContinueCta() {
@@ -889,7 +889,7 @@ export default function Step1DateTime({
             ) : hold ? (
               <>Continue to Equipment <ArrowRight className="size-4" /></>
             ) : (
-              <>Hold &amp; Continue <ArrowRight className="size-4" /></>
+              <>Continue <ArrowRight className="size-4" /></>
             )}
           </button>
         </div>

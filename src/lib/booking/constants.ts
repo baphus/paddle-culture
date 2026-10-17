@@ -37,7 +37,7 @@ export const OWNER_ALERT_EMAIL = "ckgrounds1@gmail.com";
 
 // Venue contact number for user-facing pages + email footers.
 export const VENUE_PHONE_DISPLAY = "0961 633 3337";
-export const VENUE_PHONE_LINK = "tel:+639616333337";
+export const VENUE_PHONE_LINK = "tel:09616333337";
 
 // Booking slot states considered "live" for overlap + availability. No writer
 // produces "held" (rpc_submit_booking writes "pending"; rpc_apply_decision

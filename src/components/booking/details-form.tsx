@@ -13,6 +13,7 @@ import {
   User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { normalizePhone } from "@/lib/booking/phone";
 import { LoadingAnimation } from "@/components/ui/loading-animation";
 
 export interface DetailsValues {
@@ -28,7 +29,13 @@ function makeDetailsSchema(_maxHours?: number) {
   return z.object({
     fullName: z.string().trim().min(1, "Enter your full name.").max(100),
     email: z.string().trim().email("Enter a valid email address.").max(254),
-    phone: z.string().trim().min(1, "Enter a contact number.").max(30),
+    phone: z
+      .string()
+      .trim()
+      .min(1, "Enter a contact number.")
+      .max(30)
+      .transform(normalizePhone)
+      .refine((v) => v.length > 0, "Enter a contact number."),
   });
 }
 
@@ -126,7 +133,7 @@ export default function DetailsForm({
             <input
               id="phone"
               autoComplete="tel"
-              placeholder="e.g. 0917 123 4567"
+              placeholder="e.g. 09123456789"
               {...form.register("phone")}
               className={cn(
                 "h-12 w-full rounded-xl border bg-cream/30 px-4 text-sm font-medium text-ink transition-all placeholder:text-warm-muted/60 focus:bg-white focus:outline-none",
@@ -198,7 +205,7 @@ export default function DetailsForm({
             {busy ? (
               <><LoadingAnimation size="compact" label="Preparing payment" /> <span>Preparing payment…</span></>
             ) : (
-              <><span>Continue to Payment</span><ArrowRight className="size-4" /></>
+              <><span>Payment</span><ArrowRight className="size-4" /></>
             )}
         </button>
       </div>

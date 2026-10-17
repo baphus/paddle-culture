@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { MAX_SLOTS_PER_BOOKING, PROOF_ALLOWED_MIME, PROOF_MAX_BYTES } from "./constants";
+import { normalizePhone } from "./phone";
 import {
   BOOKING_HORIZON_MONTHS,
   isWithinBookingHorizon,
@@ -59,7 +60,13 @@ export const submitBodySchema = z.object({
   customer: z.object({
     fullName: z.string().trim().min(1).max(100),
     email: z.string().trim().email().max(254),
-    phone: z.string().trim().min(1).max(30),
+    phone: z
+      .string()
+      .trim()
+      .min(1, "Enter a contact number.")
+      .max(30)
+      .transform(normalizePhone)
+      .refine((v) => v.length > 0, "Enter a contact number."),
   }),
   rentals: z
     .object({

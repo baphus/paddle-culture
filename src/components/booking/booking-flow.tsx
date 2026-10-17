@@ -313,11 +313,11 @@ export default function BookingFlow({
     step === "select"
       ? {
           targetId: "step1-advance",
-          label: hold ? "Continue to Details" : "Hold & Continue",
+          label: hold ? "Continue to Details" : "Continue",
           disabled: selectedSlots.length === 0,
         }
       : step === "details"
-        ? { targetId: "details-advance", label: "Continue to Payment", disabled: false }
+        ? { targetId: "details-advance", label: "Payment", disabled: false }
         : step === "payment"
           ? { targetId: "payment-advance", label: "Submit Booking", disabled: false }
           : null;
