@@ -978,7 +978,7 @@ export default function Step1DateTime({
                                 isSel ? "text-flame" : isToday ? "text-flame" : "text-warm-muted/70 font-semibold",
                               )}
                             >
-                              {isSel ? "Selected" : isToday ? "Soonest" : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][weekdayManila(dateStr)]}
+                              {isSel ? "Selected" : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][weekdayManila(dateStr)]}
                             </span>
                           </button>
                         </div>
