@@ -72,27 +72,26 @@ export async function verifyProofFile(args: {
   }
 
   const supabase = createClient(url, serviceKey);
-  const slash = args.path.lastIndexOf("/");
-  const folder = slash < 0 ? "" : args.path.slice(0, slash);
-  const name = slash < 0 ? args.path : args.path.slice(slash + 1);
-  // ponytail: listing the folder finds the object's real size/mime, but
-  // `limit: 100` + search on a name prefix. incoming/<32hex> is a unique
-  // per-upload name so the only files matching `search` are the one being
-  // verified and any other upload that happens to share its prefix — the
-  // exact `f.name === name` check below keeps that safe. If this ever moves
-  // to a shared folder with more than ~100 same-prefix objects, switch to
-  // storage.info(path), which reads metadata directly with no listing.
-  const { data, error } = await supabase.storage
-    .from(PROOF_BUCKET)
-    .list(folder, { limit: 100, search: name });
+  // storage.info(path) reads this object's metadata directly — no folder
+  // listing, so no `limit: 100` truncation and no prefix collision with other
+  // uploads. The API returns camelCased fields (contentType, size) plus a
+  // `metadata` block; read both because the two Storage API generations
+  // populate slightly different shapes.
+  const { data, error } = await supabase.storage.from(PROOF_BUCKET).info(args.path);
   if (error) {
+    // A missing object is the customer's problem (upload didn't finish); any
+    // other failure is ours. StorageError carries a statusCode for 404.
+    const status = (error as { statusCode?: string | number }).statusCode;
+    if (String(status) === "404" || /not found/i.test(error.message)) {
+      throw new LaneError("PROOF_NOT_FOUND", "Payment proof file not found. Upload it first.", 422);
+    }
     throw new LaneError("PROOF_LOOKUP_FAILED", "Could not verify payment proof.", 500);
   }
-  const file = (data ?? []).find((f) => f.name === name);
-  const meta = file?.metadata as { size?: number; mimetype?: string } | null | undefined;
-  const actualBytes = meta?.size;
-  const actualMime = meta?.mimetype ? normalizeMime(meta.mimetype) : null;
-  if (!file || actualBytes == null || !actualMime) {
+  const meta = data?.metadata as { mimetype?: string } | null | undefined;
+  const actualBytes = data?.size;
+  const rawMime = data?.contentType ?? meta?.mimetype ?? null;
+  const actualMime = rawMime ? normalizeMime(rawMime) : null;
+  if (actualBytes == null || !actualMime) {
     throw new LaneError("PROOF_NOT_FOUND", "Payment proof file not found. Upload it first.", 422);
   }
   if (!(PROOF_ALLOWED_MIME as readonly string[]).includes(actualMime)) {
@@ -109,6 +108,23 @@ export async function verifyProofFile(args: {
     );
   }
   return { path: args.path, mime: actualMime, bytes: actualBytes };
+}
+
+/**
+ * Best-effort delete of an `incoming/` proof object the customer uploaded but
+ * whose submit failed. Without this the object lingers until the 90-day prune
+ * (finding #8). Never throws — the caller is already handling a failure and a
+ * failed cleanup must not change the response. Only touches paths that pass
+ * the scoped-path gate, so it can never delete a proof attached to a booking.
+ */
+export async function discardProofObject(path: string): Promise<void> {
+  if (!isScopedProofPath(path)) return;
+  try {
+    const supabase = getStorageAdmin();
+    await supabase.storage.from(PROOF_BUCKET).remove([path]);
+  } catch (e) {
+    console.error("proof orphan cleanup failed", e);
+  }
 }
 
 /**

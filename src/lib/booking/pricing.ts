@@ -41,6 +41,24 @@ function toCentavos(amount: string): number {
   return Math.round(n * 100);
 }
 
+/**
+ * Wrap a rule amount for pricing math. A malformed `amount` in the DB is a
+ * data/config fault the owner must fix — not a "no rate configured" case. We
+ * surface it as PRICE_INVALID (500) so the error text points at the row
+ * instead of telling the customer to try again.
+ */
+function amountOrThrow(rule: PricingRule): number {
+  try {
+    return toCentavos(rule.amount);
+  } catch {
+    throw new LaneError(
+      "PRICE_INVALID",
+      `Pricing rule ${rule.id} has a non-numeric amount (${JSON.stringify(rule.amount)}). Fix it in pricing_rules.`,
+      500,
+    );
+  }
+}
+
 function fromCentavos(cents: number): string {
   return (cents / 100).toFixed(2);
 }
@@ -95,7 +113,8 @@ export async function recalculateTotal(
 
   const { data, error } = await db
     .from("pricing_rules")
-    .select("id,court_id,day_type,time_band,item_type,unit,amount");
+    .select("id,court_id,day_type,time_band,item_type,unit,amount")
+    .order("id", { ascending: true });
 
   if (error) throw new LaneError("DB_ERROR", error.message, 500);
 
@@ -123,7 +142,7 @@ export async function recalculateTotal(
         503,
       );
     }
-    const unit = toCentavos(rule.amount);
+    const unit = amountOrThrow(rule);
     cents += unit;
     lines.push({
       kind: "court",
@@ -159,7 +178,7 @@ export async function recalculateTotal(
       );
     }
     const hours = input.paddleHours ?? input.slots.length;
-    const lineCents = toCentavos(rule.amount) * input.paddleQty * hours;
+    const lineCents = amountOrThrow(rule) * input.paddleQty * hours;
     cents += lineCents;
     lines.push({
       kind: "paddle",
@@ -187,7 +206,7 @@ export async function recalculateTotal(
         503,
       );
     }
-    const lineCents = toCentavos(rule.amount);
+    const lineCents = amountOrThrow(rule);
     cents += lineCents;
     lines.push({
       kind: "ball",

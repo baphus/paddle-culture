@@ -44,16 +44,19 @@ interface SmtpFailure {
   code?: unknown;
 }
 
-// ADR-05 Gmail taxonomy (unchanged from Drizzle version).
+// ADR-05 Gmail taxonomy.
 function classifyFailure(err: unknown): Verdict {
   const e = (err ?? {}) as SmtpFailure;
   const response = typeof e.response === "string" ? e.response : "";
+  // 5.4.5 is Gmail's rate-limit response — throttle for an hour and back off.
   if (/5\.4\.5/.test(response)) return "rate_limit";
   const code =
     typeof e.responseCode === "number" ? e.responseCode : undefined;
   if (code === 535 || code === 534 || code === 553) return "dead";
   if (code === 550 && /5\.7\./.test(response)) return "dead";
   if (e.code === "EAUTH") return "dead";
+  // 421 (service not available / connection dropped) is a genuine transient
+  // outage — normal exponential backoff, no owner alert.
   return "transient";
 }
 
@@ -147,6 +150,13 @@ async function processRow(
           next_attempt_at: new Date(Date.now() + 3600_000).toISOString(),
         })
         .eq("id", row.id);
+      // Alert on the *first* throttle, not only after 8 retries dead-letter:
+      // a sustained Gmail rate limit delays customer confirmations by hours,
+      // and the owner needs to know now, not when the row finally fails.
+      await alert(
+        "Gmail is rate-limiting outgoing mail (5.4.5)",
+        `Outbox row ${row.id} to ${row.to_addr} (template ${row.template}) hit a Gmail rate limit (5.4.5) and was pushed back an hour. Confirmation emails will be delayed until the throttle clears. Consider spacing out sends or checking the Gmail account's sending limits. Last error: ${String(e)}`,
+      );
       return "retried";
     }
     if (row.attempts >= OUTBOX_MAX_ATTEMPTS) {
@@ -204,5 +214,30 @@ export async function drainOutboxBestEffort(): Promise<void> {
     await processOutboxBatch();
   } catch (e) {
     console.error("immediate outbox drain failed (cron will retry)", e);
+  }
+}
+
+/**
+ * Drain with a hard deadline, for the submit path. `after()` gives no signal
+ * back to the request, so the confirmation screen shows before any mail is
+ * confirmed sent. Awaiting a bounded drain lets the common case (Gmail healthy)
+ * actually deliver before we return, while a slow/broken mailer still can't
+ * hold the request past `timeoutMs` — the cron backstop finishes the rest.
+ * Never throws; returns whether every claimed row was handled in time.
+ */
+export async function drainOutboxWithin(timeoutMs: number): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const timeout = new Promise<"timeout">((resolve) => {
+      timer = setTimeout(() => resolve("timeout"), timeoutMs);
+    });
+    const drain = drainOutboxBestEffort().then(() => "done" as const);
+    const winner = await Promise.race([drain, timeout]);
+    return winner === "done";
+  } catch (e) {
+    console.error("bounded outbox drain failed (cron will retry)", e);
+    return false;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }

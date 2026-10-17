@@ -18,8 +18,17 @@ function fakeDb(rules: unknown[]): any {
     from(table: string) {
       assert.equal(table, "pricing_rules");
       return {
+        // Mimic supabase-js: select() returns a thenable query builder whose
+        // .order() is chainable and itself resolves to { data, error }.
         select() {
-          return Promise.resolve({ data: rules, error: null });
+          const result = Promise.resolve({ data: rules, error: null });
+          const builder = {
+            order: () => builder,
+            then: result.then.bind(result),
+            catch: result.catch.bind(result),
+            finally: result.finally.bind(result),
+          };
+          return builder;
         },
       };
     },

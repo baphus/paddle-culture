@@ -84,6 +84,43 @@ html.dark {
   color-scheme: dark;
 }
 
+/* Wipe transition for the theme toggle. The View Transitions API captures
+   before/after snapshots of the page; we override the default crossfade
+   with a circular `clip-path` reveal that expands from the toggle icon
+   (origin set via --wipe-x / --wipe-y on :root by ThemeToggle). The old
+   snapshot sits underneath, unmoved, so the new theme's colors wipe in
+   smoothly over it — no full-screen white/black flash. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-old(root) {
+  z-index: 1;
+}
+
+::view-transition-new(root) {
+  z-index: 9999;
+  clip-path: circle(0% at var(--wipe-x, 50%) var(--wipe-y, 50%));
+  animation: theme-wipe-reveal 0.45s ease-out forwards;
+}
+
+@keyframes theme-wipe-reveal {
+  to {
+    clip-path: circle(150% at var(--wipe-x, 50%) var(--wipe-y, 50%));
+  }
+}
+
+/* Respect users who prefer reduced motion: skip the wipe, flip instantly. */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+    clip-path: none;
+  }
+}
+
 @theme {
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 
@@ -319,14 +356,26 @@ html.dark {
   }
 }
 
-/* Toast responsive positioning — bottom-right on desktop, top-center on mobile */
-@media (max-width: 639px) {
+/* Toast responsive positioning — bottom-right on desktop, top-center on mobile.
+
+   Sonner already handles the mobile case itself: below 600px it pins the
+   toaster with `left: var(--mobile-offset-left); right: var(--mobile-offset-right)`
+   and sizes each toast to the remaining width. That is what makes the toast
+   span the viewport minus its gutter.
+
+   The previous override fought that contract: it forced `left: 50%` plus a
+   `translateX(-50%)`, and because sonner still styled the toast as
+   `width: calc(100% - var(--mobile-offset-left) * 2)` *of the absolutely
+   positioned toaster*, the toast rendered flush to the left edge instead of
+   centered. Driving the offsets also keeps the toast above a safe area on
+   notched phones. */
+@media (max-width: 600px) {
   [data-sonner-toaster] {
-    /* shortcut: env() resolves to 0 until a viewport-fit=cover viewport is exported in layout.tsx */
-    top: max(16px, env(safe-area-inset-top)) !important;
-    bottom: auto !important;
-    left: 50% !important;
-    right: auto !important;
-    transform: translateX(-50%) !important;
+    /* shortcut: env() resolves to 0 unless the viewport is viewport-fit=cover,
+       which layout.tsx already exports. */
+    --mobile-offset-top: max(16px, env(safe-area-inset-top));
+    --mobile-offset-right: 16px;
+    --mobile-offset-bottom: 16px;
+    --mobile-offset-left: 16px;
   }
 }

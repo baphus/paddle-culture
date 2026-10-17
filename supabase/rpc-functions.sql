@@ -4,7 +4,8 @@
 --
 -- These functions move the three transactional paths that cannot be expressed
 -- as supabase-js HTTP calls into Postgres functions:
---   1. rpc_submit_booking       — the 18-step SERIALIZABLE submit transaction
+--   1. rpc_submit_booking       — the 18-step atomic submit transaction
+--                              (READ COMMITTED + row locks + unique indexes)
 --   2. rpc_apply_decision       — approve/reject with outbox + audit
 --   3. rpc_claim_outbox_batch   — FOR UPDATE SKIP LOCKED email outbox claim
 --   4. rpc_delete_expired_holds – soft retention purge (used by retention cron)
@@ -68,8 +69,82 @@ END;
 $$;
 
 -- ===========================================================================
+-- 2b. rpc_reclaim_holds
+--     Atomically revive an owner's expired holds (ADR-03 amendment).
+--
+--     The JS path in hold-owner.ts checks availability, clashes, and closures
+--     and then does DELETE-then-INSERT as two separate HTTP statements. Two
+--     statements means a window where the hold is gone: a concurrent submit's
+--     FOR UPDATE, or another session's insert for the same slot, can slip
+--     between them. This function does the swap in one transaction.
+--
+--     It is deliberately *not* a re-implementation of the whole eligibility
+--     ladder — the caller (reclaimHolds) still owns availability, closures,
+--     and the "is this inside the grace window" rule, because those need
+--     reads of other tables and the availability engine. This function only
+--     performs the atomic row swap for a set the caller has already proven
+--     eligible. It re-checks the one thing that must never be raced: the
+--     (court_id, slot_start) unique index.
+--
+--     p_owner_token: the owner capability minted in the browser.
+--     p_pairs: jsonb [{ court_id uuid, slot_start timestamptz }]
+--     p_expires_at: the new deadline (caller computes now + TTL)
+--     p_new_tokens: text[]  — one fresh token per pair, in the same order.
+--     Returns the inserted rows.
+-- ===========================================================================
+CREATE OR REPLACE FUNCTION rpc_reclaim_holds(
+  p_owner_token text,
+  p_pairs       jsonb,
+  p_expires_at  timestamptz,
+  p_new_tokens  text[]
+)
+RETURNS TABLE (hold_token text, court_id uuid, slot_start timestamptz, expires_at timestamptz)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  v_pair_count int := jsonb_array_length(p_pairs);
+BEGIN
+  IF v_pair_count = 0 THEN
+    RAISE EXCEPTION 'RECLAIM_EMPTY: No pairs to reclaim.' USING ERRCODE = 'P0002';
+  END IF;
+  IF array_length(p_new_tokens, 1) <> v_pair_count THEN
+    RAISE EXCEPTION 'RECLAIM_ARITY: Token/pair count mismatch.' USING ERRCODE = 'P0002';
+  END IF;
+
+  -- Drop this owner's dead rows for exactly these pairs. Scoped by owner_token
+  -- AND the pair, so a row another session revived for the same slot under a
+  -- different owner is never touched here.
+  DELETE FROM holds h
+  USING  (SELECT (p->>'court_id')::uuid AS court_id,
+                 (p->>'slot_start')::timestamptz AS slot_start
+          FROM   jsonb_array_elements(p_pairs) AS p) AS req
+  WHERE  h.owner_token = p_owner_token
+    AND  h.court_id   = req.court_id
+    AND  h.slot_start = req.slot_start
+    AND  h.expires_at <= now();
+
+  -- Insert the fresh rows. holds_court_slot_unique_idx arbitrates a race with
+  -- another session; a 23505 here is surfaced to the caller as SLOT_TAKEN.
+  INSERT INTO holds (hold_token, court_id, slot_start, expires_at, owner_token)
+  SELECT t.token,
+         (p->>'court_id')::uuid,
+         (p->>'slot_start')::timestamptz,
+         p_expires_at,
+         p_owner_token
+  FROM   jsonb_array_elements(p_pairs) WITH ORDINALITY AS p(p, ord)
+  JOIN   unnest(p_new_tokens) WITH ORDINALITY AS t(token, ord) ON t.ord = p.ord;
+
+  RETURN QUERY
+    SELECT h.hold_token, h.court_id, h.slot_start, h.expires_at
+    FROM   holds h
+    WHERE  h.owner_token = p_owner_token
+      AND  h.hold_token = ANY(p_new_tokens);
+END;
+$$;
+
+-- ===========================================================================
 -- 3. rpc_apply_decision
---    Approve or reject a booking in one SERIALIZABLE transaction.
+--    Approve or reject a booking in one atomic transaction.
 --    Returns a JSON object with { id, status, tracking_token, deduped }.
 -- ===========================================================================
 CREATE OR REPLACE FUNCTION rpc_apply_decision(
@@ -194,7 +269,7 @@ $$;
 
 -- ===========================================================================
 -- 4. rpc_submit_booking
---    Full SERIALIZABLE submit transaction.
+--    Atomic submit transaction (READ COMMITTED + row locks + unique indexes).
 --    p_slots: [{ court_id, slot_start }]
 --    p_rentals: { paddle_qty, paddle_hours, ball }
 --    p_proof: { path, mime, bytes }
@@ -276,17 +351,28 @@ BEGIN
     );
   END IF;
 
-  -- ── Lazy expiry: drop dead holds ────────────────────────────────────────
-  DELETE FROM holds WHERE expires_at <= now();
+  -- ── Lazy expiry: drop dead holds *in this token set* ────────────────────
+  -- Scoped, not blanket: a concurrent reclaimHolds in another session can
+  -- revive rows for this same owner_token, and a table-wide DELETE would
+  -- wipe that revival before our FOR UPDATE runs. The weekly cron handles
+  -- abandoned holds; this only clears the tokens the caller already named
+  -- so the count + lock below sees the rows exactly as the caller expects.
+  DELETE FROM holds
+  WHERE  hold_token = ANY(p_hold_tokens)
+    AND  expires_at <= now();
 
-  -- ── Lock holds FOR UPDATE ───────────────────────────────────────────────
-  -- Verify all tokens are present (already validated by caller, but we
-  -- lock them here to prevent races).
+  -- ── Lock holds FOR UPDATE (expiry re-check) ───────────────────────────
+  -- Verify all tokens are present AND still live (already validated by
+  -- caller, but we lock them here to prevent races and re-check expiry so
+  -- a row that expired between the route's read and this RPC is rejected).
   PERFORM 1 FROM holds
   WHERE   hold_token = ANY(p_hold_tokens)
+    AND   expires_at > now()
   FOR UPDATE;
 
-  IF (SELECT count(*) FROM holds WHERE hold_token = ANY(p_hold_tokens))
+  IF (SELECT count(*) FROM holds
+      WHERE hold_token = ANY(p_hold_tokens)
+        AND expires_at > now())
      < array_length(p_hold_tokens, 1)
   THEN
     RAISE EXCEPTION 'HOLD_INVALID: One or more holds are missing or expired.'
@@ -404,11 +490,11 @@ $$;
 -- Plain UNIQUE is therefore the same rule, minus the lie.
 --
 -- So an expired hold still blocks its slot until a DELETE reaches it. Three
--- things do that: rpc_submit_booking purges every expired row (see the
--- "lazy hold expiry" step), rpc_delete_expired_holds runs weekly, and
--- POST /api/holds deletes the expired rows for the pairs it is about to
--- insert. Without that last step an abandoned hold could pin a slot for a
--- week. Keep them in sync.
+-- things do that: rpc_submit_booking purges the expired rows in the submitted
+-- token set (see the "scoped lazy expiry" step), rpc_delete_expired_holds
+-- runs weekly, and POST /api/holds deletes the expired rows for the pairs it
+-- is about to insert. Without that last step an abandoned hold could pin a
+-- slot for a week. Keep them in sync.
 -- ===========================================================================
 CREATE UNIQUE INDEX IF NOT EXISTS holds_court_slot_unique_idx
   ON holds (court_id, slot_start);
@@ -430,23 +516,30 @@ DROP INDEX IF EXISTS holds_court_slot_idx;
 
 
 -- ===========================================================================
--- 6. holds_expires_at_idx + payment_proofs_path_idx — the two full scans
+-- 6. holds_expires_at_idx + payment_proofs_path_uniq — the two scans
 --
 -- holds_expires_at_idx:  the unique index above cannot answer an expiry scan
 -- (expires_at is not in it), so both purge paths read the whole holds table:
 -- rpc_delete_expired_holds (DELETE ... WHERE expires_at < p_cutoff) and the
--- lazy-expiry step in rpc_submit_booking (DELETE ... WHERE expires_at <= now()).
+-- scoped-expiry step in rpc_submit_booking (DELETE ... WHERE hold_token =
+-- ANY(p_hold_tokens) AND expires_at <= now()).
 --
--- payment_proofs_path_idx:  the proof-reuse check in rpc_submit_booking
--- (SELECT 1 FROM payment_proofs WHERE path = p_proof_path FOR UPDATE) had no
--- index on path; the table's only index is the booking_id PK.
+-- payment_proofs_path_uniq:  the proof-reuse check in rpc_submit_booking
+-- (SELECT 1 FROM payment_proofs WHERE path = p_proof_path FOR UPDATE) needs a
+-- *unique* index so two concurrent submits of the same path cannot both pass
+-- the check at READ COMMITTED. The FOR UPDATE only locks rows that already
+-- exist; without uniqueness the second INSERT still succeeds. A unique index
+-- turns the second INSERT into a 23505 that the route maps to
+-- PROOF_ALREADY_USED. One proof path → one booking, enforced at the DB.
 --
--- Both are plain, non-unique: they only have to find rows, and neither column
--- carries a uniqueness rule (many holds share an expiry; path is unique only
--- as a side effect of one proof per booking_id PK).
+-- holds_expires_at_idx is plain, non-unique: many holds share an expiry.
 -- ===========================================================================
 CREATE INDEX IF NOT EXISTS holds_expires_at_idx ON holds (expires_at);
-CREATE INDEX IF NOT EXISTS payment_proofs_path_idx ON payment_proofs (path);
+CREATE UNIQUE INDEX IF NOT EXISTS payment_proofs_path_uniq ON payment_proofs (path);
+-- The Drizzle migration created a non-unique index on the same column
+-- (payment_proofs_path_idx). The unique one answers every query it did, so
+-- drop the duplicate instead of paying for it on every proof insert.
+DROP INDEX IF EXISTS payment_proofs_path_idx;
 
 
 -- ===========================================================================
@@ -490,6 +583,29 @@ CREATE INDEX IF NOT EXISTS holds_owner_token_idx
 
 
 -- ===========================================================================
+-- 6b. pricing_rules guards — money correctness
+--
+-- The runtime reads the whole table and picks the first matching rule. That is
+-- safe against a non-numeric amount (the column is numeric(12,2) NOT NULL), but
+-- two things it cannot guard against are (a) an amount of 0 or below, which
+-- silently prices a slot at nothing, and (b) two rules for the same
+-- (court_id, day_type, time_band, item_type) key — the *first* one wins by
+-- table order, so a newer edit inserted as a new row can be shadowed by an
+-- older one. These two constraints close both.
+--
+-- NULLS NOT DISTINCT (Postgres 15+) makes the unique index also treat the
+-- global rows (court_id IS NULL) as one key, so there can be exactly one
+-- global rule per (day_type, time_band, item_type). On PG14 or older, replace
+-- the index with a COALESCE expression index on a sentinel uuid.
+-- ===========================================================================
+ALTER TABLE pricing_rules
+  ADD CONSTRAINT pricing_rules_amount_positive CHECK (amount > 0);
+
+CREATE UNIQUE INDEX IF NOT EXISTS pricing_rules_key_uniq
+  ON pricing_rules (court_id, day_type, time_band, item_type) NULLS NOT DISTINCT;
+
+
+-- ===========================================================================
 -- 7. rpc_delete_expired_proofs
 --    90-day payment-proof prune, called by the proof-prune cron
 --    (vercel.json: /api/cron/proof-prune, 1st of the month 03:00 UTC).
@@ -503,9 +619,12 @@ CREATE INDEX IF NOT EXISTS holds_owner_token_idx
 --    booking_id PK / ON DELETE CASCADE), so unlike a bookings delete this can
 --    never be blocked by email_outbox or idempotency_keys FKs.
 --
---    A proof whose booking is still 'Pending' is pruned too: a submission
---    undecided for 90 days is abandoned, and the checkout rule is that old
---    screenshots do not get to live forever.
+--    A proof whose booking is still 'Pending' is NOT pruned: a submission
+--    undecided for 90 days is still in the admin queue, and deleting its
+--    screenshot removes the evidence the owner needs to decide. Approved /
+--    Rejected / Cancelled bookings don't need their proof kept forever, so
+--    only those are pruned. (If you genuinely want to abandon a Pending
+--    booking after N days, run rpc_apply_decision('Rejected', ...) first.)
 -- ===========================================================================
 CREATE OR REPLACE FUNCTION rpc_delete_expired_proofs(p_cutoff timestamptz)
 RETURNS TABLE (deleted_paths text[])
@@ -517,6 +636,9 @@ BEGIN
   WITH deleted AS (
     DELETE FROM payment_proofs
     WHERE uploaded_at < p_cutoff
+      AND booking_id NOT IN (
+        SELECT id FROM bookings WHERE status = 'Pending'
+      )
     RETURNING path
   )
   SELECT coalesce(array_agg(path), '{}'::text[]) INTO v_paths FROM deleted;

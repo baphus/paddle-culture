@@ -7,3 +7,13 @@ export function normalizePhone(raw: string): string {
   if (digits.length === 10 && digits.startsWith("9")) return `0${digits}`;
   return digits;
 }
+
+/**
+ * True for a normalised PH mobile number: `09` + 9 digits (11 total), which is
+ * the only shape a customer can actually be reached on. Landlines are not
+ * accepted — a booking nobody can be called about is a support ticket, not a
+ * booking. Runs on the *output* of normalizePhone.
+ */
+export function isValidPhMobile(normalized: string): boolean {
+  return /^09\d{9}$/.test(normalized);
+}

@@ -192,7 +192,12 @@ export default function BookingFlow({
     restoredDraft?.idempotencyKey ?? null,
   );
   const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<{ trackingToken: string; trackingCode: string; total: string } | null>(null);
+  const [result, setResult] = useState<{
+    trackingToken: string;
+    trackingCode: string;
+    total: string;
+    emailDeferred?: boolean;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [paymentData, setPaymentData] = useState<{ trackingToken: string; total: string } | null>(null);
   // Stable per-tab capability that ties this browsing session to its holds.
@@ -305,6 +310,11 @@ export default function BookingFlow({
             }
           : prev,
       );
+      // A revived hold has brand-new tokens. The old idempotency key belonged
+      // to a submit attempt against the dead tokens; reusing it could return a
+      // prior result (or IDEMPOTENCY_IN_PROGRESS) for what is now a different
+      // hold. Mint a fresh key so this attempt is its own submission.
+      setIdempotencyKey(crypto.randomUUID());
       setError(null);
     },
     [],
@@ -725,6 +735,7 @@ export default function BookingFlow({
           trackingToken={result.trackingToken}
           trackingCode={result.trackingCode}
           total={result.total}
+          emailDeferred={result.emailDeferred ?? false}
           courtNames={courtNames}
           slotStarts={selectedSlots}
           slotGroups={slotGroups}

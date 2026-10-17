@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { Check, Maximize2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -145,7 +146,7 @@ export function BookingDetailDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden rounded-xl p-0 sm:max-w-md">
+        <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden rounded-xl p-0 sm:max-w-2xl">
           {booking ? (
             <>
               <DialogHeader className="gap-1 border-b px-5 py-4 pr-10">
@@ -167,15 +168,39 @@ export function BookingDetailDialog({
                 <BookingSummary booking={booking} />
 
                 <div>
-                  <p className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  <p className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">
                     Payment proof
+                    <span className="inline-flex items-center gap-1 font-normal normal-case text-muted-foreground/80 sm:hidden">
+                      <Maximize2 className="size-3" />
+                      Tap to view fullscreen
+                    </span>
                   </p>
-                  <ProofThumb
-                    proofUrl={proofUrl}
-                    failed={proofFailed || !booking.proofPath}
-                    onExpand={() => setProofExpanded(true)}
-                    showExpandButton
-                  />
+                  {proofUrl ? (
+                    <button
+                      type="button"
+                      onClick={() => setProofExpanded(true)}
+                      className="group/proof relative mx-auto block aspect-[3/4] w-full max-w-xs cursor-zoom-in overflow-hidden rounded-lg border bg-muted/30"
+                      title="Expand payment proof"
+                    >
+                      <img
+                        src={proofUrl}
+                        alt="Payment proof"
+                        className="size-full object-cover"
+                      />
+                      <span className="absolute inset-0 hidden items-center justify-center gap-1.5 bg-black/50 text-xs font-medium text-white opacity-0 transition-opacity group-hover/proof:opacity-100 sm:flex">
+                        <Maximize2 className="size-4" />
+                        Click to view fullscreen
+                      </span>
+                    </button>
+                  ) : proofFailed || !booking.proofPath ? (
+                    <div className="flex aspect-[3/4] w-full max-w-xs items-center justify-center rounded-lg border bg-muted/30 text-center text-xs text-muted-foreground">
+                      Proof unavailable.
+                    </div>
+                  ) : (
+                    <div className="flex aspect-[3/4] w-full max-w-xs items-center justify-center rounded-lg border bg-muted/30">
+                      <LoadingAnimation size="compact" label="Loading payment proof" />
+                    </div>
+                  )}
                 </div>
 
                 {pending && (
@@ -199,25 +224,7 @@ export function BookingDetailDialog({
                 )}
               </div>
 
-              {proofExpanded && proofUrl && (
-                <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/95 p-4">
-                  <img
-                    src={proofUrl}
-                    alt="Payment proof, expanded"
-                    className="max-h-[70dvh] w-auto max-w-full object-contain"
-                  />
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className="absolute top-2 right-2"
-                    onClick={() => setProofExpanded(false)}
-                    title="Collapse proof"
-                  >
-                    <X className="size-4" />
-                    <span className="sr-only">Collapse proof</span>
-                  </Button>
-                </div>
-              )}
+
             </>
           ) : (
             <>
@@ -228,91 +235,110 @@ export function BookingDetailDialog({
             </>
           )}
         </DialogContent>
+      </Dialog>
 
-        {/* Approve / reject confirmation dialog */}
-        <Dialog
-          open={decision !== null}
-          onOpenChange={(o) => {
-            if (!o && busy === null) closeDecision();
-          }}
+      {/* Approve / reject confirmation dialog — sibling, not nested, so its
+          backdrop renders independently. */}
+      <Dialog
+        open={decision !== null}
+        onOpenChange={(o) => {
+          if (!o && busy === null) closeDecision();
+        }}
+      >
+        <DialogContent
+          className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden rounded-xl p-0 sm:max-w-2xl"
         >
-          <DialogContent
-            className="flex max-h-[calc(100dvh-2rem)] flex-col gap-1 overflow-hidden p-0 sm:max-w-md"
-            // Stacked over the detail dialog: its backdrop already dims the
-            // page, so this one must not darken it a second time.
-            overlayClassName="bg-transparent"
-          >
-            <DialogHeader className="gap-1 px-4 pt-4 pr-10">
-              <DialogTitle>
-                {decision === "reject" ? "Reject booking" : "Approve booking"}
-              </DialogTitle>
-              <DialogDescription>
-                {decision === "reject"
-                  ? "This rejects the booking and emails the customer. A reason is required."
-                  : `This approves the booking and emails a confirmation to ${booking?.email ?? "the customer"}.`}
-              </DialogDescription>
-            </DialogHeader>
+          <DialogHeader className="gap-1 border-b px-5 py-4 pr-10">
+            <DialogTitle>
+              {decision === "reject" ? "Reject booking" : "Approve booking"}
+            </DialogTitle>
+            <DialogDescription>
+              {decision === "reject"
+                ? "This rejects the booking and emails the customer. A reason is required."
+                : `This approves the booking and emails a confirmation to ${booking?.email ?? "the customer"}.`}
+            </DialogDescription>
+          </DialogHeader>
 
-            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pt-3">
-              {booking && <BookingSummary booking={booking} />}
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+            <p className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              Payment proof
+              <span className="inline-flex items-center gap-1 font-normal normal-case text-muted-foreground/80 sm:hidden">
+                <Maximize2 className="size-3" />
+                Tap to view fullscreen
+              </span>
+            </p>
+            {proofUrl ? (
+              <button
+                type="button"
+                onClick={() => setProofExpanded(true)}
+                className="group/proof relative mx-auto block aspect-[3/4] w-full max-w-xs cursor-zoom-in overflow-hidden rounded-lg border bg-muted/30"
+                title="Expand payment proof"
+              >
+                <img
+                  src={proofUrl}
+                  alt="Payment proof"
+                  className="size-full object-cover"
+                />
+                <span className="absolute inset-0 hidden items-center justify-center gap-1.5 bg-black/50 text-xs font-medium text-white opacity-0 transition-opacity group-hover/proof:opacity-100 sm:flex">
+                  <Maximize2 className="size-4" />
+                  Click to view fullscreen
+                </span>
+              </button>
+            ) : proofFailed || !booking?.proofPath ? (
+              <div className="flex aspect-[3/4] w-full max-w-xs items-center justify-center rounded-lg border bg-muted/30 text-center text-xs text-muted-foreground">
+                Proof unavailable.
+              </div>
+            ) : (
+              <div className="flex aspect-[3/4] w-full max-w-xs items-center justify-center rounded-lg border bg-muted/30">
+                <LoadingAnimation size="compact" label="Loading payment proof" />
+              </div>
+            )}
 
-              <div>
-                <p className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Payment proof
-                </p>
-                <ProofThumb
-                  proofUrl={proofUrl}
-                  failed={proofFailed || !booking?.proofPath}
-                  onExpand={() => setProofExpanded(true)}
+            {decision === "reject" && booking && (
+              <div className="mt-4 space-y-1.5">
+                <Label htmlFor={`reason-${booking.id}`}>
+                  Rejection reason (required)
+                </Label>
+                <Input
+                  id={`reason-${booking.id}`}
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder="Reason for rejection…"
                 />
               </div>
+            )}
+          </div>
 
-              {decision === "reject" && booking && (
-                <div className="space-y-1.5">
-                  <Label htmlFor={`reason-${booking.id}`}>
-                    Rejection reason (required)
-                  </Label>
-                  <Input
-                    id={`reason-${booking.id}`}
-                    value={reason}
-                    onChange={(e) => setReason(e.target.value)}
-                    placeholder="Reason for rejection…"
-                  />
-                </div>
+          <DialogFooter className="mx-0 mb-0 mt-1 flex-row justify-end rounded-b-xl border-t bg-muted/50 px-5 py-3">
+            <Button
+              variant="outline"
+              disabled={busy !== null}
+              onClick={closeDecision}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant={decision === "reject" ? "destructive" : "default"}
+              disabled={busy !== null}
+              onClick={() => decision && decide(decision)}
+            >
+              {busy !== null ? (
+                <span className="flex items-center gap-1.5">
+                  <LoadingAnimation size="compact" label="Saving" />
+                  {decision === "reject" ? "Rejecting…" : "Approving…"}
+                </span>
+              ) : decision === "reject" ? (
+                <span className="flex items-center gap-1.5">
+                  <X className="size-3.5" /> Reject
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5">
+                  <Check className="size-3.5" /> Approve
+                </span>
               )}
-            </div>
-
-            <DialogFooter className="mx-0 mb-0 mt-1 flex-row justify-end rounded-b-xl border-t bg-muted/50 px-4 py-3">
-              <Button
-                variant="outline"
-                disabled={busy !== null}
-                onClick={closeDecision}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant={decision === "reject" ? "destructive" : "default"}
-                disabled={busy !== null}
-                onClick={() => decision && decide(decision)}
-              >
-                {busy !== null ? (
-                  <span className="flex items-center gap-1.5">
-                    <LoadingAnimation size="compact" label="Saving" />
-                    {decision === "reject" ? "Rejecting…" : "Approving…"}
-                  </span>
-                ) : decision === "reject" ? (
-                  <span className="flex items-center gap-1.5">
-                    <X className="size-3.5" /> Reject
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1.5">
-                    <Check className="size-3.5" /> Approve
-                  </span>
-                )}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
 
       {proofExpanded && proofUrl && (
@@ -351,88 +377,9 @@ function BookingSummary({ booking }: { booking: BookingDetail }) {
 }
 
 /**
- * Small informational proof preview. Clicking (or the expand affordance) opens
- * the in-app fullscreen viewer — never a new tab with the raw image.
- */
-function ProofThumb({
-  proofUrl,
-  failed,
-  onExpand,
-  showExpandButton,
-}: {
-  proofUrl: string | null;
-  failed: boolean;
-  onExpand?: () => void;
-  /** Always-visible expand button, for touch devices with no hover. */
-  showExpandButton?: boolean;
-}) {
-  const frame =
-    "size-16 shrink-0 overflow-hidden rounded-lg border bg-muted/30 sm:size-20";
-
-  let preview: ReactNode;
-  if (proofUrl) {
-    const img = (
-      <img
-        src={proofUrl}
-        alt="Payment proof"
-        className="size-full object-cover"
-      />
-    );
-    preview = onExpand ? (
-      <button
-        type="button"
-        onClick={onExpand}
-        className={`${frame} group/proof relative cursor-zoom-in`}
-        title="Expand payment proof"
-      >
-        {img}
-        <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover/proof:opacity-100">
-          <Maximize2 className="size-4 text-white" />
-        </span>
-      </button>
-    ) : (
-      <div className={frame}>{img}</div>
-    );
-  } else if (failed) {
-    preview = (
-      <div
-        className={`${frame} flex items-center justify-center px-1 text-center text-[10px] leading-tight text-muted-foreground`}
-      >
-        Proof unavailable.
-      </div>
-    );
-  } else {
-    preview = (
-      <div className={`${frame} flex items-center justify-center`}>
-        <LoadingAnimation size="compact" label="Loading payment proof" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex items-center gap-3">
-      {preview}
-      <div className="min-w-0 space-y-1.5">
-        <p className="text-xs text-muted-foreground">
-          {proofUrl
-            ? "Tap or click the preview to view it fullscreen."
-            : failed
-              ? "No proof was uploaded for this booking."
-              : "Loading…"}
-        </p>
-        {proofUrl && onExpand && showExpandButton && (
-          <Button variant="outline" size="xs" onClick={onExpand}>
-            <Maximize2 className="size-3" /> View fullscreen
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/**
  * In-app fullscreen proof viewer: a fixed overlay over the whole viewport with
- * the image contained, closeable by backdrop click, Esc, or the close button.
+ * the image contained, closeable by backdrop click or Esc. Rendered through a
+ * portal to document.body so it always stacks above the booking dialogs.
  */
 function ProofFullscreen({ src, onClose }: { src: string; onClose: () => void }) {
   useEffect(() => {
@@ -440,20 +387,17 @@ function ProofFullscreen({ src, onClose }: { src: string; onClose: () => void })
       if (e.key === "Escape") onClose();
     }
     window.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
-    };
+    return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
       aria-label="Payment proof"
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-3 sm:p-6"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 p-3 sm:p-6"
       onClick={onClose}
     >
       <img
@@ -462,20 +406,8 @@ function ProofFullscreen({ src, onClose }: { src: string; onClose: () => void })
         className="max-h-full max-w-full object-contain"
         onClick={(e) => e.stopPropagation()}
       />
-      <Button
-        variant="secondary"
-        size="icon"
-        className="absolute top-3 right-3 sm:top-5 sm:right-5"
-        onClick={(e) => {
-          e.stopPropagation();
-          onClose();
-        }}
-        title="Close preview"
-      >
-        <X className="size-4" />
-        <span className="sr-only">Close preview</span>
-      </Button>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

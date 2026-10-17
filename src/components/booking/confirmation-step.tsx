@@ -26,6 +26,8 @@ export interface ConfirmationProps {
   trackingToken: string;
   trackingCode: string;
   total: string;
+  /** True when the confirmation email could not be confirmed sent in time. */
+  emailDeferred?: boolean;
   courtNames: string[];
   slotStarts: string[];
   /** Per-court slot attribution — forwarded to the invoice for per-court time lines. */
@@ -41,6 +43,7 @@ export default function ConfirmationStep({
   trackingToken,
   trackingCode,
   total,
+  emailDeferred = false,
   courtNames,
   slotStarts,
   slotGroups,
@@ -266,7 +269,22 @@ export default function ConfirmationStep({
           </li>
           <li className="flex items-start gap-2.5">
             <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-pine text-[11px] font-bold text-white">2</span>
-            <span><strong>Approval Email:</strong> You&apos;ll receive an official confirmation to <strong className="text-ink">{details.email}</strong>.</span>
+            <span>
+              <strong>Approval Email:</strong>{" "}
+              {emailDeferred ? (
+                <>
+                  A confirmation is <strong className="text-ink">on its way</strong> to{" "}
+                  <strong className="text-ink">{details.email}</strong> — usually within a few
+                  minutes. If it hasn&apos;t arrived in 10 minutes, check your spam folder or
+                  contact us with your tracking code above.
+                </>
+              ) : (
+                <>
+                  You&apos;ll receive an official confirmation to{" "}
+                  <strong className="text-ink">{details.email}</strong>.
+                </>
+              )}
+            </span>
           </li>
           <li className="flex items-start gap-2.5">
             <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-pine text-[11px] font-bold text-white">3</span>

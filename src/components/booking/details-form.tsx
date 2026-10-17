@@ -13,7 +13,7 @@ import {
   User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { normalizePhone } from "@/lib/booking/phone";
+import { isValidPhMobile, normalizePhone } from "@/lib/booking/phone";
 import { LoadingAnimation } from "@/components/ui/loading-animation";
 import { suggestEmailDomain } from "@/lib/booking/email";
 
@@ -36,7 +36,7 @@ function makeDetailsSchema(_maxHours?: number) {
       .min(1, "Enter a contact number.")
       .max(30)
       .transform(normalizePhone)
-      .refine((v) => v.length > 0, "Enter a contact number."),
+      .refine(isValidPhMobile, "Enter a valid PH mobile number (e.g. 0917 123 4567)."),
   });
 }
 

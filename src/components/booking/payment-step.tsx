@@ -91,7 +91,12 @@ export default function PaymentStep({
   busy: boolean;
   setBusy: (b: boolean) => void;
   onBack: () => void;
-  onSuccess: (result: { trackingToken: string; trackingCode: string; total: string }) => void;
+  onSuccess: (result: {
+    trackingToken: string;
+    trackingCode: string;
+    total: string;
+    emailDeferred?: boolean;
+  }) => void;
   onHoldExpired: () => void;
   /** Called after a successful reclaim with the hold's refreshed tokens. */
   onHoldReclaimed: (hold: { tokens: string[]; deadlineMs: number; expiresAt: string }) => void;
@@ -245,6 +250,14 @@ export default function PaymentStep({
             // them re-pick so submit can never reference a stale upload.
             setProof(null);
           }
+        } catch {
+          // A thrown PUT (network drop mid-upload) leaves the pre-reclaim proof
+          // handle in place, minted against tokens that no longer exist. Null it
+          // so submit can't reference a dead upload — same rule as !ok above.
+          setProof(null);
+          toast.error("Couldn't re-attach your screenshot. Please upload it again.", {
+            duration: 8000,
+          });
         } finally {
           setUploading(false);
         }
@@ -291,7 +304,12 @@ export default function PaymentStep({
         return;
       }
 
-      const body = (await res.json()) as { trackingToken: string; trackingCode: string; total: string };
+      const body = (await res.json()) as {
+        trackingToken: string;
+        trackingCode: string;
+        total: string;
+        emailDeferred?: boolean;
+      };
       onSuccess(body);
     } catch {
       toast.error("Submission failed. Check your connection and retry.");
@@ -312,9 +330,36 @@ export default function PaymentStep({
   const reclaimExpired =
     summary.reclaimableUntilMs !== null && summary.reclaimableUntilMs <= nowMs;
   const canReclaim = holdLapsed && !reclaimExpired && !!ownerToken;
+  // Stop accepting submits slightly *before* the deadline. The server rejects
+  // expires_at <= now() on its own clock; browser/server skew plus the submit
+  // round-trip means a click at deadline-500ms can arrive after the deadline
+  // and bounce a paying customer back to step 1. The reclaim card below is the
+  // path for anyone who lands in this buffer.
+  const SUBMIT_SAFETY_MS = 8_000;
+  const holdExpiring =
+    summary.holdDeadlineMs !== null &&
+    summary.holdDeadlineMs - SUBMIT_SAFETY_MS <= nowMs;
 
   return (
     <div className="space-y-6">
+      {/* Hold about to end but still live — submit is paused in the safety
+          buffer so a click can't cross the server deadline mid-flight. */}
+      {holdExpiring && !holdLapsed && (
+        <div
+          role="status"
+          className="rounded-2xl border border-flame/40 bg-flame-light/30 px-4 py-3 text-xs text-ink sm:text-sm"
+        >
+          <p className="flex items-center gap-2 font-bold">
+            <Timer className="size-4" />
+            <span>Hold ending — pausing submit for a moment.</span>
+          </p>
+          <p className="mt-1 leading-relaxed">
+            Submit resumes automatically, or tap “Hold my slots again” below once the
+            timer hits zero to get a fresh 10 minutes.
+          </p>
+        </div>
+      )}
+
       {/* Hold lapsed — the customer most likely left for their banking app.
           Restoring beats restarting: their payment is already sent. */}
       {holdLapsed && (
@@ -549,7 +594,7 @@ export default function PaymentStep({
           type="button"
           id="payment-advance"
           onClick={handleSubmit}
-          disabled={reclaimerBusy || !proof || (holdLapsed && !canReclaim)}
+          disabled={reclaimerBusy || !proof || holdExpiring}
           className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-flame px-7 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:opacity-50"
         >
           {busy ? (
@@ -557,10 +602,10 @@ export default function PaymentStep({
               <LoadingAnimation size="compact" label="Submitting booking" />
               <span>Submitting Booking…</span>
             </>
-          ) : holdLapsed && canReclaim ? (
+          ) : holdExpiring ? (
             <>
-              <Lock className="size-4" />
-              <span>Hold my slots first</span>
+              <Timer className="size-4" />
+              <span>{holdLapsed ? "Hold my slots first" : "Hold ending — restoring"}</span>
             </>
           ) : (
             <>

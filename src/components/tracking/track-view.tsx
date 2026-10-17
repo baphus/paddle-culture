@@ -122,7 +122,7 @@ export default function TrackView({
 
       {/* ── Status Card ── */}
       <div className="rounded-3xl border border-line-warm/70 bg-white p-6 shadow-sm sm:p-8">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-line-warm/40 pb-6">
+        <div className="flex flex-col items-center gap-4 border-b border-line-warm/40 pb-6 text-center sm:flex-row sm:items-center sm:justify-between sm:text-left">
           <div>
             <span className="block text-xs font-bold tracking-wider text-warm-muted uppercase">
               Booking Status
@@ -154,10 +154,10 @@ export default function TrackView({
         </div>
 
         {/* Status Message */}
-        <div className="mt-5 rounded-2xl bg-cream/50 p-4 text-xs sm:text-sm leading-relaxed text-ink">
+        <div className="mt-5 rounded-2xl bg-cream/50 p-4 text-center text-xs leading-relaxed text-ink sm:text-sm">
           {status === "Approved" ? (
-            <p className="flex items-start gap-2 text-live-dot font-semibold">
-              <Sparkles className="size-4 shrink-0 mt-0.5" />
+            <p className="flex flex-col items-center gap-2 font-semibold text-live-dot sm:flex-row sm:items-start sm:justify-center sm:text-left">
+              <Sparkles className="size-4 shrink-0 sm:mt-0.5" />
               <span>
                 Your court reservation is confirmed! Show your QR code at the CK Grounds front desk
                 for fast check-in on your game day.
@@ -206,7 +206,7 @@ export default function TrackView({
           <QrCode className="size-5 text-flame" />
         </div>
 
-        <p className="mb-6 text-xs sm:text-sm text-warm-muted leading-relaxed">
+        <p className="mb-6 text-center text-xs leading-relaxed text-warm-muted sm:text-sm">
           Show this QR code at the CK Grounds front desk on your game day for instant check-in.
           You can also quote your tracking code to staff if you don&apos;t have your phone handy.
         </p>
@@ -221,7 +221,7 @@ export default function TrackView({
           <div className="flex w-full flex-col gap-4 sm:justify-between">
             {/* Tracking Code badge */}
             <div className="rounded-2xl border border-line-warm/60 bg-cream/60 p-4">
-              <div className="mb-1.5 flex items-center justify-between gap-1.5">
+              <div className="mb-1.5 flex items-center justify-center gap-1.5 sm:justify-between">
                 <div className="flex items-center gap-1.5">
                   <Hash className="size-3.5 text-flame" aria-hidden />
                   <span className="text-xs font-bold tracking-wider text-warm-muted uppercase">
@@ -247,12 +247,10 @@ export default function TrackView({
                   )}
                 </button>
               </div>
-              <p className="font-mono text-3xl font-black tracking-[0.25em] text-ink">
+              <p className="text-center font-mono text-3xl font-black tracking-[0.25em] text-ink sm:text-left">
                 {trackingCode}
               </p>
-              <p className="mt-1 text-[11px] text-warm-muted">
-                Quote this to front desk staff for manual look-up.
-              </p>
+              <p className="mt-1 text-center text-[11px] text-warm-muted sm:text-left">Quote this to front desk staff for manual look-up.</p>
             </div>
 
             {/* Action buttons */}

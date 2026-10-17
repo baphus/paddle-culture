@@ -5,26 +5,37 @@ import { LIVE_SLOT_STATES, OWNER_ALERT_EMAIL } from "@/lib/booking/constants";
 import { LaneError, err } from "@/lib/booking/errors";
 import { assertSlotsOpen } from "@/lib/booking/hours";
 import { recalculateTotal } from "@/lib/booking/pricing";
-import { verifyProofFile } from "@/lib/booking/proof";
+import { discardProofObject, verifyProofFile } from "@/lib/booking/proof";
 import { reclaimHolds } from "@/lib/booking/hold-owner";
 import { isFutureSlot, isOnSlotGrid } from "@/lib/booking/slots";
 import {
   generateTrackingCode,
   generateTrackingToken,
+  isProofPathViolation,
   isTrackingCodeViolation,
 } from "@/lib/booking/tracking";
 import { submitBodySchema } from "@/lib/booking/validation";
-import { drainOutboxBestEffort } from "@/lib/mail/worker";
+import { drainOutboxBestEffort, drainOutboxWithin } from "@/lib/mail/worker";
 
 export const runtime = "nodejs";
+
+// How long the submit path will wait for the confirmation email to actually
+// send before responding. Long enough for a healthy Gmail round-trip, short
+// enough that a stuck mailer never makes the customer wait on it.
+const IMMEDIATE_DRAIN_BUDGET_MS = 5_000;
 
 // POST /api/submit — stateless Supabase HTTP path.
 //
 // Pre-transaction checks (proof verification, hours, availability) are
 // performed outside the RPC as before (proof I/O is immutable, safe before
-// the write). The atomic write path is delegated to rpc_submit_booking which
-// runs inside a SERIALIZABLE Postgres transaction server-side.
+// the write). The atomic write path is delegated to rpc_submit_booking, which
+// runs as one Postgres transaction (READ COMMITTED + FOR UPDATE row locks +
+// unique indexes) server-side.
 export async function POST(request: Request) {
+  // Tracked so a terminal failure can best-effort delete the orphan proof
+  // object this customer uploaded (finding #8). Set once the proof verifies.
+  let uploadedProofPath: string | null = null;
+  let proofAttached = false;
   try {
     const parsed = submitBodySchema.safeParse(await request.json());
     if (!parsed.success) {
@@ -43,6 +54,7 @@ export async function POST(request: Request) {
 
     // Storage I/O before the transaction — proof files are immutable.
     const proof = await verifyProofFile(body.proof);
+    uploadedProofPath = proof.path;
     const email = body.customer.email.toLowerCase();
 
     // ── Load + validate holds ──────────────────────────────────────────────
@@ -61,6 +73,7 @@ export async function POST(request: Request) {
       // POST /api/holds/reclaim; the pairs are re-validated below and
       // holds_court_slot_unique_idx arbitrates the insert.
       if (!body.ownerToken) {
+        void discardProofObject(proof.path);
         return err(
           "HOLD_INVALID",
           "One or more holds are missing or expired. Re-select your slots.",
@@ -71,7 +84,12 @@ export async function POST(request: Request) {
         ownerToken: body.ownerToken,
         holdTokens: body.holdTokens,
       });
-      if (!reclaimed.ok) return err(reclaimed.code, reclaimed.message, reclaimed.status);
+      if (!reclaimed.ok) {
+        if (reclaimed.status === 409 || reclaimed.code === "RECLAIM_EXPIRED" || reclaimed.code === "SLOT_TAKEN") {
+          void discardProofObject(proof.path);
+        }
+        return err(reclaimed.code, reclaimed.message, reclaimed.status);
+      }
       holdRows = reclaimed.rows as typeof holdRows;
       // A revived hold has fresh tokens; the RPC locks exactly the tokens it
       // is given, so the submission must name the new ones.
@@ -86,6 +104,7 @@ export async function POST(request: Request) {
 
     for (const p of slotPairs) {
       if (!isOnSlotGrid(p.start) || !isFutureSlot(p.start)) {
+        void discardProofObject(proof.path);
         return err("SLOT_INVALID", "A held slot is no longer bookable.", 422);
       }
     }
@@ -105,6 +124,7 @@ export async function POST(request: Request) {
       .in("state", [...LIVE_SLOT_STATES]);
 
     if ((clashRows ?? []).length > 0) {
+      void discardProofObject(proof.path);
       return err(
         "SLOT_TAKEN",
         "A selected slot was just taken. Please pick another time.",
@@ -209,13 +229,23 @@ export async function POST(request: Request) {
       const rpcError = lastRpcError ?? { message: "unknown" };
       const msg = rpcError.message ?? "";
       if (msg.includes("HOLD_INVALID")) {
+        // Terminal: the customer must re-hold and restart, so this proof can
+        // never be attached. Drop the orphan object now instead of leaving it
+        // for the 90-day prune (finding #8).
+        void discardProofObject(proof.path);
         return err("HOLD_INVALID", "One or more holds are missing or expired. Re-select your slots.", 409);
-      }
-      if (msg.includes("SLOT_TAKEN") || (rpcError.code === "23505" && !isTrackingCodeViolation(rpcError))) {
-        return err("SLOT_TAKEN", "A selected slot was just taken. Please pick another time.", 409);
       }
       if (msg.includes("PROOF_ALREADY_USED")) {
         return err("PROOF_ALREADY_USED", "This payment proof was already used for another booking.", 409);
+      }
+      // The unique index payment_proofs_path_uniq lost a race the FOR UPDATE
+      // could not see (the other row did not exist yet at check time).
+      if (isProofPathViolation(rpcError)) {
+        return err("PROOF_ALREADY_USED", "This payment proof was already used for another booking.", 409);
+      }
+      if (msg.includes("SLOT_TAKEN") || (rpcError.code === "23505" && !isTrackingCodeViolation(rpcError))) {
+        void discardProofObject(proof.path);
+        return err("SLOT_TAKEN", "A selected slot was just taken. Please pick another time.", 409);
       }
       if (msg.includes("IDEMPOTENCY_IN_PROGRESS")) {
         return err("IDEMPOTENCY_IN_PROGRESS", "A submission with this key is already being processed. Retry shortly.", 409);
@@ -231,12 +261,31 @@ export async function POST(request: Request) {
       total: rpcResult.total,
       status: rpcResult.status,
       deduped: rpcResult.deduped,
+      // True when we couldn't confirm the mailer drained in the time budget;
+      // the UI softens "we emailed you" to "arriving shortly" in that case.
+      emailDeferred: false,
     };
+    // The proof is now owned by a booking row — never delete it as an orphan.
+    proofAttached = true;
 
-    if (!response.deduped) after(() => drainOutboxBestEffort().catch(() => {}));
+    if (!response.deduped) {
+      // Try to deliver the confirmation before responding, so a healthy mailer
+      // means the customer's email is genuinely sent when they see the
+      // confirmation screen. Budgeted: a slow/broken mailer must not hold the
+      // request. If it times out (or throws before finishing), the 02:00 cron
+      // drains the rest and we tell the UI to say "arriving shortly".
+      const drained = await drainOutboxWithin(IMMEDIATE_DRAIN_BUDGET_MS);
+      if (!drained) {
+        response.emailDeferred = true;
+        after(() => drainOutboxBestEffort().catch(() => {}));
+      }
+    }
 
     return NextResponse.json(response, { status: response.deduped ? 200 : 201 });
   } catch (e) {
+    // Unexpected failure after the proof verified but before it was attached:
+    // the object is an orphan. Best-effort delete (never throws).
+    if (uploadedProofPath && !proofAttached) void discardProofObject(uploadedProofPath);
     if (e instanceof LaneError) return err(e.code, e.message, e.status);
     console.error("submit failed", e);
     Sentry.captureException(e);

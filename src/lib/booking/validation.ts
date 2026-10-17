@@ -6,7 +6,7 @@ import {
   PROOF_ALLOWED_MIME,
   PROOF_MAX_BYTES,
 } from "./constants";
-import { normalizePhone } from "./phone";
+import { isValidPhMobile, normalizePhone } from "./phone";
 import {
   BOOKING_HORIZON_MONTHS,
   isWithinBookingHorizon,
@@ -110,7 +110,7 @@ export const submitBodySchema = z.object({
       .min(1, "Enter a contact number.")
       .max(30)
       .transform(normalizePhone)
-      .refine((v) => v.length > 0, "Enter a contact number."),
+      .refine(isValidPhMobile, "Enter a valid PH mobile number (e.g. 0917 123 4567)."),
   }),
   rentals: z
     .object({
@@ -175,7 +175,7 @@ export const adminCreateBookingBodySchema = z
           .min(1, "Enter a contact number.")
           .max(30)
           .transform(normalizePhone)
-          .refine((v) => v.length > 0, "Enter a contact number."),
+          .refine(isValidPhMobile, "Enter a valid PH mobile number (e.g. 0917 123 4567)."),
       })
       .optional(),
     rentals: z

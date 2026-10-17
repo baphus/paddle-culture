@@ -249,29 +249,20 @@ export async function reclaimHolds(
   }
 
   // ── 3. Revive: swap the dead rows for fresh rows under the same owner ────
-  const newRows = named.map((r) => ({
-    hold_token: randomBytes(16).toString("hex"),
-    court_id: r.court_id,
-    slot_start: r.slot_start,
-    expires_at: expiresIso,
-    owner_token: args.ownerToken,
-  }));
-
-  const { error: clearError } = await db
-    .from("holds")
-    .delete()
-    .in(
-      "hold_token",
-      named.map((r) => r.hold_token),
-    )
-    .lte("expires_at", nowIso);
-  if (clearError) throw new Error(clearError.message);
-
-  const { error: insertError } = await db.from("holds").insert(newRows);
-  if (insertError) {
-    // holds_court_slot_unique_idx lost the race with another session between
-    // the checks above and this insert.
-    if (isUniqueViolation(insertError)) {
+  // One atomic RPC, not DELETE-then-INSERT over two HTTP statements: the
+  // window between those two statements let a concurrent submit's FOR UPDATE
+  // or another session's insert land on the freed slot. The RPC scopes its
+  // delete to this owner_token and these exact pairs, and
+  // holds_court_slot_unique_idx arbitrates a true race as 23505.
+  const newTokens = named.map(() => randomBytes(16).toString("hex"));
+  const { error: swapError } = await db.rpc("rpc_reclaim_holds", {
+    p_owner_token: args.ownerToken,
+    p_pairs: named.map((r) => ({ court_id: r.court_id, slot_start: r.slot_start })),
+    p_expires_at: expiresIso,
+    p_new_tokens: newTokens,
+  });
+  if (swapError) {
+    if (isUniqueViolation(swapError)) {
       return {
         ok: false,
         code: "SLOT_TAKEN",
@@ -279,8 +270,15 @@ export async function reclaimHolds(
         status: 409,
       };
     }
-    throw new Error(insertError.message);
+    throw new Error(swapError.message);
   }
+
+  const newRows = named.map((r, i) => ({
+    hold_token: newTokens[i]!,
+    court_id: r.court_id,
+    slot_start: r.slot_start,
+    expires_at: expiresIso,
+  }));
 
   return {
     ok: true,
