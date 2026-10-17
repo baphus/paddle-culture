@@ -30,7 +30,13 @@ import {
 import { FALLBACK_RATES, peso, type DisplayRates } from "@/lib/pricing-display";
 import Image from "next/image";
 import LandingImage from "@/components/landing/landing-image";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 interface AvailabilitySlot {
   index: number;
@@ -68,6 +74,21 @@ const HOLD_ERROR_FRIENDLY: Record<string, string> = {
 
 function friendlyHoldError(code: string | undefined, fallback: string): string {
   return (code && HOLD_ERROR_FRIENDLY[code]) || fallback;
+}
+
+/**
+ * Release holds server-side. `keepalive` keeps the request alive across a
+ * navigation, so a release fired just before leaving still lands. Failures are
+ * swallowed — the 10-min TTL and the retention cron are the backstop.
+ */
+function releaseHoldTokens(tokens: string[]): void {
+  if (tokens.length === 0) return;
+  void fetch("/api/holds", {
+    method: "DELETE",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ holdTokens: tokens }),
+    keepalive: true,
+  }).catch(() => {});
 }
 
 function cellState(slot: AvailabilitySlot): CellState {
@@ -159,6 +180,12 @@ export default function Step1DateTime({
   );
   const [hold, setHold] = useState<HoldState | null>(existingHold ?? null);
   const [holding, setHolding] = useState(false);
+  // Confirmation before an action that releases the hold (date change, cancel)
+  const [releaseConfirm, setReleaseConfirm] = useState<{
+    message: string;
+    confirmLabel: string;
+    run: () => void;
+  } | null>(null);
 
   const [paddleQty, setPaddleQty] = useState<number>(initialPaddleQty);
   const [ball, setBall] = useState<boolean>(initialBall);
@@ -385,6 +412,8 @@ export default function Step1DateTime({
             code = b.error?.code;
             if (b.error?.message) msg = b.error.message;
           } catch {}
+          // A later group failed — free the holds this attempt already created.
+          releaseHoldTokens(allTokens);
           toast.error(friendlyHoldError(code, msg));
           return;
         }
@@ -445,12 +474,7 @@ export default function Step1DateTime({
     setView({ y: view.y + Math.floor(m / 12), m: ((m % 12) + 12) % 12 });
   }
 
-  function pickDate(dateStr: string, stayOnTimeGrid = false) {
-    if (dateStr < tomorrowStr || dateStr > maxStr) return;
-    if (dateStr === selectedDate) {
-      if (!stayOnTimeGrid) { setCourtIds(courts.map((c) => c.id)); setPanel(1); }
-      return;
-    }
+  function applyDateChange(dateStr: string, stayOnTimeGrid: boolean) {
     const freshGrid = slotsForDate(dateStr).map((s) => s.start.toISOString());
     // Carry compatible (court, slot) pairs to the new date by slot index
     const carried = selected.map((pair) => {
@@ -461,8 +485,9 @@ export default function Step1DateTime({
       return newIso ? `${cId}|${newIso}` : null;
     }).filter((p): p is string => p !== null);
     if (hold) {
+      releaseHoldTokens(hold.tokens);
       setHold(null);
-      toast("Date changed — your previous hold was released.");
+      toast("Previous hold released — those slots are free again.");
     }
     carryRef.current = carried.length > 0;
     setSelected(carried);
@@ -470,6 +495,40 @@ export default function Step1DateTime({
     setAvail(null);
     setView(partsOf(dateStr));
     if (!stayOnTimeGrid) { setCourtIds(courts.map((c) => c.id)); setPanel(1); }
+  }
+
+  function pickDate(dateStr: string, stayOnTimeGrid = false) {
+    if (dateStr < tomorrowStr || dateStr > maxStr) return;
+    if (dateStr === selectedDate) {
+      if (!stayOnTimeGrid) { setCourtIds(courts.map((c) => c.id)); setPanel(1); }
+      return;
+    }
+    if (hold) {
+      setReleaseConfirm({
+        message:
+          "Changing the date releases the slots you're holding — you'll need to pick them again on the new date.",
+        confirmLabel: "Release hold & change date",
+        run: () => applyDateChange(dateStr, stayOnTimeGrid),
+      });
+      return;
+    }
+    applyDateChange(dateStr, stayOnTimeGrid);
+  }
+
+  function handleCancel() {
+    if (hold) {
+      setReleaseConfirm({
+        message: "Leaving now releases the slots you're holding.",
+        confirmLabel: "Release hold & leave",
+        run: () => {
+          releaseHoldTokens(hold.tokens);
+          setHold(null);
+          window.location.href = "/";
+        },
+      });
+      return;
+    }
+    window.location.href = "/";
   }
 
   // Shift selected date by +/- days — stay on the time grid
@@ -517,12 +576,43 @@ export default function Step1DateTime({
 
   // ── Render ─────────────────────────────────────────────────────────
 
+  // Shared confirmation for actions that release the hold (date change, cancel)
+  const releaseDialog = (
+    <Dialog
+      open={releaseConfirm !== null}
+      onOpenChange={(open) => { if (!open) setReleaseConfirm(null); }}
+    >
+      {releaseConfirm && (
+        <DialogContent className="sm:max-w-sm">
+          <DialogTitle>Release your hold?</DialogTitle>
+          <DialogDescription>{releaseConfirm.message}</DialogDescription>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="outline" onClick={() => setReleaseConfirm(null)}>
+              Stay
+            </Button>
+            <Button
+              className="bg-flame text-white hover:bg-flame-hover"
+              onClick={() => {
+                const run = releaseConfirm.run;
+                setReleaseConfirm(null);
+                run();
+              }}
+            >
+              {releaseConfirm.confirmLabel}
+            </Button>
+          </div>
+        </DialogContent>
+      )}
+    </Dialog>
+  );
+
   // Panel 1 (time grid) is fullscreen — rendered separately from the card wrapper
   if (panel === 1) {
     const previewCourt = previewCourtId ? courts.find((c) => c.id === previewCourtId) ?? null : null;
     const previewIndex = previewCourt ? (courtIndexById.get(previewCourt.id) ?? 0) : 0;
     return (
       <div className="flex flex-col">
+        {releaseDialog}
         <Dialog open={previewCourt !== null} onOpenChange={(open) => { if (!open) setPreviewCourtId(null); }}>
           {previewCourt && (
             <DialogContent className="max-w-lg overflow-hidden p-0">
@@ -601,7 +691,7 @@ export default function Step1DateTime({
                 <LoadingAnimation size="compact" label="Holding slots" />
               ) : (
                 <>
-                  <span className="hidden sm:inline">Hold</span>
+                  <span>Hold</span>
                   {selected.length > 0 && (
                     <span className="rounded-full bg-white/25 px-1.5 py-0.5 text-[11px] font-extrabold">
                       {selected.length}
@@ -810,6 +900,7 @@ export default function Step1DateTime({
   // ── Panels 0, 2 (card layout) ──────────────────────────────────
   return (
     <div className="bg-cream border border-line-warm/60 rounded-2xl p-5 sm:p-7 shadow-sm">
+      {releaseDialog}
       {/* Stepper header */}
       <div className="mb-6">
         <div className="flex items-center justify-between gap-3">
@@ -1127,12 +1218,13 @@ export default function Step1DateTime({
             <ChevronLeft className="size-4" aria-hidden /> Back
           </button>
         ) : (
-          <a
-            href="/"
+          <button
+            type="button"
+            onClick={handleCancel}
             className="inline-flex min-h-[44px] items-center text-xs font-semibold text-warm-muted transition-colors hover:text-ink"
           >
             Cancel
-          </a>
+          </button>
         )}
 
         {panel === 0 && (

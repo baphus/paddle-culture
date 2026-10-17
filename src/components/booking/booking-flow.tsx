@@ -19,6 +19,13 @@ import DetailsForm, { type DetailsValues } from "./details-form";
 import PaymentStep from "./payment-step";
 import Step1DateTime, { type HoldState } from "./step1-date-time";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import {
   BookingSummaryDesktop,
   BookingSummaryMobile,
   type SummaryAdvance,
@@ -131,6 +138,7 @@ export default function BookingFlow({
   // Wizard state
   const [step, setStep] = useState<Step>("select");
   const [hold, setHold] = useState<HoldState | null>(null);
+  const [confirmBack, setConfirmBack] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [courtIds, setCourtIds] = useState<string[]>(() =>
     initialCourts.length > 0 ? [initialCourts[0].id] : [],
@@ -228,15 +236,37 @@ export default function BookingFlow({
       method: "DELETE",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ holdTokens: holdToRelease.tokens }),
-    });
+      keepalive: true,
+    }).catch(() => {});
   }, []);
 
+  // Going back to step 1 releases the hold — confirm first, then await the
+  // release so the remounted step-1 availability read can't race it.
   const returnToTimeSlots = useCallback(() => {
-    releaseHold(hold);
+    if (!hold) {
+      setStep("select");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+    setConfirmBack(true);
+  }, [hold]);
+
+  const confirmReturnToTimeSlots = useCallback(async () => {
+    setConfirmBack(false);
+    if (hold) {
+      try {
+        await fetch("/api/holds", {
+          method: "DELETE",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ holdTokens: hold.tokens }),
+          keepalive: true,
+        });
+      } catch {}
+    }
     setHold(null);
     setStep("select");
     window.scrollTo({ top: 0, behavior: "smooth" });
-  }, [hold, releaseHold]);
+  }, [hold]);
 
   const startOver = () => {
     releaseHold(hold);
@@ -467,6 +497,26 @@ export default function BookingFlow({
           onBookAnother={startOver}
         />
       )}
+
+      <Dialog open={confirmBack} onOpenChange={(open) => { if (!open) setConfirmBack(false); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogTitle>Release your hold?</DialogTitle>
+          <DialogDescription>
+            Going back to pick times releases your current hold — you&apos;ll need to select those slots again.
+          </DialogDescription>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="outline" onClick={() => setConfirmBack(false)}>
+              Stay
+            </Button>
+            <Button
+              className="bg-flame text-white hover:bg-flame-hover"
+              onClick={() => void confirmReturnToTimeSlots()}
+            >
+              Release &amp; go back
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -436,11 +436,11 @@ export function BookingSummaryMobile({ data, advance }: { data: SummaryData; adv
         />
       )}
 
-      {/* Bottom sheet — collapsed = pill only (body hidden), always flush at viewport bottom */}
-      <div className="fixed inset-x-0 bottom-0 z-50 lg:hidden">
+      {/* Floating pill — sits above the bottom edge; expands into the summary body */}
+      <div className="fixed inset-x-0 bottom-0 z-50 px-3 pb-[env(safe-area-inset-bottom)] lg:hidden">
         <div
           className={cn(
-            "mx-auto max-w-lg rounded-t-2xl border border-b-0 shadow-[0_-8px_32px_rgba(66,48,45,0.18)]",
+            "mx-auto mb-3 max-w-lg overflow-hidden rounded-2xl border shadow-[0_8px_32px_rgba(66,48,45,0.22)]",
             isHeld && holdDeadlineMs !== null && urgent
               ? "border-error/40 bg-error/10"
               : isHeld && holdDeadlineMs !== null
@@ -448,16 +448,15 @@ export function BookingSummaryMobile({ data, advance }: { data: SummaryData; adv
                 : "border-line-warm/60 bg-cream",
           )}
         >
-          {/* Pill header — always visible; centered grabber + chevron, tall touch target */}
-          <button
-            type="button"
-            onClick={() => setOpen((o) => !o)}
-            aria-expanded={open}
-            aria-controls="mobile-summary-body"
-            className="flex min-h-[68px] w-full flex-col items-center justify-center gap-1 px-4 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2"
-          >
-            <span aria-hidden className="h-1.5 w-12 shrink-0 rounded-full bg-ink/15" />
-            <span className="flex w-full min-w-0 flex-1 items-center gap-3">
+          {/* Pill row — tap the left side to expand, the right-side CTA advances the step */}
+          <div className="flex items-center gap-2 py-2 pl-3 pr-2">
+            <button
+              type="button"
+              onClick={() => setOpen((o) => !o)}
+              aria-expanded={open}
+              aria-controls="mobile-summary-body"
+              className="flex min-h-[48px] min-w-0 flex-1 items-center gap-2.5 rounded-xl text-left"
+            >
               <span
                 className={cn(
                   "grid size-7 shrink-0 place-items-center rounded-full text-white",
@@ -471,7 +470,7 @@ export function BookingSummaryMobile({ data, advance }: { data: SummaryData; adv
                 )}
               </span>
               {/* Show countdown in pill when held */}
-              <span className="min-w-0 flex-1 text-left">
+              <span className="min-w-0 flex-1">
                 {isHeld && holdDeadlineMs !== null ? (
                   <span role="timer" aria-live="polite" className="block min-w-0">
                     <span className={cn("block text-sm font-bold leading-tight", urgent ? "text-error" : "text-amber-800")}>
@@ -497,25 +496,44 @@ export function BookingSummaryMobile({ data, advance }: { data: SummaryData; adv
                 ) : (
                   <span className="block truncate text-sm font-semibold text-ink">Booking Summary</span>
                 )}
+                {!open && (
+                  <span className="mt-0.5 block text-[10px] font-semibold text-warm-muted">
+                    Tap to view summary
+                  </span>
+                )}
               </span>
               {isHeld && holdDeadlineMs === null && (
                 <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
                   Held
                 </span>
               )}
-            </span>
-            {open ? (
-              <ChevronDown className="size-4 shrink-0 text-warm-muted" aria-hidden />
-            ) : (
-              <ChevronUp className="size-4 shrink-0 text-warm-muted" aria-hidden />
+              {open ? (
+                <ChevronDown className="size-4 shrink-0 text-warm-muted" aria-hidden />
+              ) : (
+                <ChevronUp className="size-4 shrink-0 text-warm-muted" aria-hidden />
+              )}
+            </button>
+
+            {/* Step CTA — always visible; fires the step's own button so hold/
+                validation/payment logic is never duplicated here */}
+            {advance && (
+              <button
+                type="button"
+                onClick={() => document.getElementById(advance.targetId)?.click()}
+                disabled={advance.disabled}
+                className="inline-flex min-h-[40px] shrink-0 items-center justify-center gap-1 rounded-xl bg-flame px-3 text-xs font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
+              >
+                <span>{advance.label}</span>
+                <ArrowRight className="size-3.5" aria-hidden />
+              </button>
             )}
-          </button>
+          </div>
 
           {/* Expanded body */}
           <div
             id="mobile-summary-body"
             hidden={!open}
-            className="border-t border-line-warm/40 px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4"
+            className="border-t border-line-warm/40 px-4 pb-4 pt-4"
           >
             {/* Timer row */}
             {isHeld && holdDeadlineMs !== null && (
@@ -624,25 +642,12 @@ export function BookingSummaryMobile({ data, advance }: { data: SummaryData; adv
                 </div>
               </div>
             )}
-
-            {/* Continue — fires the step's own CTA, so hold/validation/payment logic stays in one place */}
-            {advance && (
-              <button
-                type="button"
-                onClick={() => document.getElementById(advance.targetId)?.click()}
-                disabled={advance.disabled}
-                className="mt-4 inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-flame px-6 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
-              >
-                <span>{advance.label}</span>
-                <ArrowRight className="size-4" aria-hidden />
-              </button>
-            )}
           </div>
         </div>
       </div>
 
       {/* Spacer */}
-      <div className="h-20 lg:hidden" aria-hidden />
+      <div className="h-24 lg:hidden" aria-hidden />
     </>
   );
 }
