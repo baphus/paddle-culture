@@ -427,17 +427,18 @@ export function BookingSummaryMobile({ data, advance }: { data: SummaryData; adv
 
   return (
     <>
-      {/* Backdrop */}
+      {/* Backdrop. `m-0` opts out of the parent's `space-y-*`, which would otherwise
+          add 24px of margin and shrink this fixed box, leaving an undimmed strip. */}
       {open && (
         <div
-          className="fixed inset-0 z-40 bg-black/40 lg:hidden"
+          className="fixed inset-0 z-[60] m-0 bg-black/40 lg:hidden"
           aria-hidden
           onClick={() => setOpen(false)}
         />
       )}
 
       {/* Floating pill — sits above the bottom edge; expands into the summary body */}
-      <div className="fixed inset-x-0 bottom-0 z-50 px-3 pb-[env(safe-area-inset-bottom)] lg:hidden">
+      <div className="fixed inset-x-0 bottom-0 z-[70] m-0 px-3 pb-[env(safe-area-inset-bottom)] lg:hidden">
         <div
           className={cn(
             "mx-auto mb-3 max-w-lg overflow-hidden rounded-2xl border shadow-[0_8px_32px_rgba(66,48,45,0.22)]",

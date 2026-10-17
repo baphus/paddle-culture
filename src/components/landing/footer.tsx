@@ -122,7 +122,7 @@ export default function Footer({ rates = FALLBACK_RATES }: { rates?: DisplayRate
 
         <div className="mt-10 flex flex-col gap-2 border-t border-line pt-5 text-xs text-ink/60 sm:flex-row sm:items-center sm:justify-between">
           <p>
-            © 2025 CK Grounds. All rights reserved. · Website & booking system built by{" "}
+            © 2026 CK Grounds. All rights reserved. · Website & booking system built by{" "}
             <a
               href={SEPHUS_PORTFOLIO_URL}
               target="_blank"
@@ -135,8 +135,8 @@ export default function Footer({ rates = FALLBACK_RATES }: { rates?: DisplayRate
           <nav className="flex flex-wrap items-center gap-x-4 gap-y-1" aria-label="Legal">
             {[
               { href: "/#faq", label: "Court Rules" },
-              { href: "/#faq", label: "Terms of Service" },
-              { href: "/#faq", label: "Privacy Policy" },
+              { href: "/terms", label: "Terms of Service" },
+              { href: "/privacy", label: "Privacy Policy" },
               { href: "/#contact", label: "Contact Support" },
             ].map((l) => (
               <a key={l.label} href={l.href} className="hover:text-flame hover:underline">

@@ -7,6 +7,9 @@ const PORTFOLIO_URL = "https://www.sephus.tech";
 
 export default function DeveloperPromo() {
   const [open, setOpen] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+
+  if (dismissed) return null;
 
   return (
     <div className="fixed right-4 bottom-4 z-50">
@@ -18,8 +21,8 @@ export default function DeveloperPromo() {
             </p>
             <button
               type="button"
-              onClick={() => setOpen(false)}
-              aria-label="Dismiss"
+              onClick={() => setDismissed(true)}
+              aria-label="Close"
               className="shrink-0 rounded-full p-0.5 text-ink/50 hover:text-flame"
             >
               <X className="size-4" aria-hidden />

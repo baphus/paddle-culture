@@ -41,7 +41,7 @@ export default async function HowItWorksPage() {
     },
     {
       q: "Can I book for today?",
-      a: "Yes — same-day booking is allowed for future slots only. Anything that already started is marked Past and can't be picked. You can also book up to 12 months ahead.",
+      a: "No — online booking starts from tomorrow. Today is walk-in only, so drop by and we'll set you up if a court is free. You can book any date from tomorrow up to 12 months ahead.",
     },
     {
       q: "Can I cancel or get a refund?",
@@ -85,8 +85,8 @@ export default async function HowItWorksPage() {
               </div>
               <h2 className="mt-5 text-xl font-bold text-pine">Select Court & Time</h2>
               <p className="mt-2 flex-1 text-sm leading-relaxed text-warm-muted">
-                Pick a date, a court, and any hours on the live grid. Same-day booking
-                counts for any slot that hasn&apos;t started yet.
+                Pick a date, a court, and any hours on the live grid. Book any day
+                from tomorrow up to 12 months ahead.
               </p>
               <p className="mt-5 flex items-center justify-between border-t border-line pt-4 text-[12px] font-bold text-flame">
                 <span>{peso(rates.morning)}/hr · 6AM–6PM</span>
@@ -225,7 +225,7 @@ export default async function HowItWorksPage() {
               Questions, answered
             </h2>
             <p className="text-sm leading-6 text-warm-muted">
-              Everything about holds, payments, rates, and same-day booking.
+              Everything about holds, payments, rates, and the booking window.
             </p>
           </div>
           <div className="mx-auto mt-8 max-w-3xl space-y-3">
