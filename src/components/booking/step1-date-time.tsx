@@ -51,6 +51,9 @@ interface CourtAvailability {
   slots: AvailabilitySlot[];
 }
 
+/** dateStr → courtId → slots, as returned for one month. */
+type MonthDays = Record<string, Record<string, AvailabilitySlot[]>>;
+
 export interface HoldState {
   tokens: string[];
   deadlineMs: number;
@@ -58,6 +61,12 @@ export interface HoldState {
   /** Inputs the hold was created for — used to detect stale holds. */
   courtIds: string[];
   slotStarts: string[];
+  /**
+   * Browser-session capability that owns these rows. Lets the customer (and
+   * only the customer) restore this exact hold after a refresh — see
+   * POST /api/holds/reclaim. Absent on holds created before it existed.
+   */
+  ownerToken?: string;
 }
 
 type CellState = "open" | "held" | "booked" | "closed" | "past";
@@ -108,6 +117,13 @@ function partsOf(dateStr: string): { y: number; m: number } {
   return { y: y as number, m: (m as number) - 1 };
 }
 
+/** "YYYY-MM" shifted by N months. */
+function shiftMonth(month: string, delta: number): string {
+  const [y, m] = month.split("-").map(Number);
+  const idx = (y as number) * 12 + ((m as number) - 1) + delta;
+  return `${Math.floor(idx / 12)}-${pad2((idx % 12) + 1)}`;
+}
+
 export interface Step1DateTimeProps {
   initialCourts: CourtOption[];
   initialRates?: DisplayRates;
@@ -117,6 +133,8 @@ export interface Step1DateTimeProps {
   initialSelectedSlots?: string[];
   initialPaddleQty?: number;
   initialBall?: boolean;
+  /** Browser-session owner token, stamped on every hold this step creates. */
+  ownerToken?: string;
   onHoldSuccess?: (
     hold: HoldState,
     courtIds: string[],
@@ -151,6 +169,7 @@ export default function Step1DateTime({
   initialSelectedSlots,
   initialPaddleQty = 0,
   initialBall = false,
+  ownerToken,
   onHoldSuccess,
   onHoldExpired,
   onCancel,
@@ -170,7 +189,9 @@ export default function Step1DateTime({
   const rates = initialRates;
   const [selectedDate, setSelectedDate] = useState<string | null>(initialSelectedDate ?? null);
   const [view, setView] = useState(() => partsOf(initialSelectedDate ?? todayStr));
-  const [avail, setAvail] = useState<CourtAvailability[] | null>(null);
+  // Month cache: "courtIdsKey|YYYY-MM" → dateStr → per-court slot lists.
+  // One fetch fills a whole month, so switching days within it costs nothing.
+  const [monthCache, setMonthCache] = useState<Map<string, MonthDays>>(() => new Map());
   const [loadingAvail, setLoadingAvail] = useState(false);
   const [availFailed, setAvailFailed] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
@@ -243,64 +264,125 @@ export default function Step1DateTime({
 
   const courtsKey = useMemo(() => [...courtIds].sort().join(","), [courtIds]);
 
-  // Availability fetch when date or courts change
+  const selectedMonth = selectedDate ? selectedDate.slice(0, 7) : null;
+  const cacheKey = selectedMonth ? `${courtsKey}|${selectedMonth}` : null;
+
+  /** Fetch one month (courts × month) and store it. Resolves to its days. */
+  const fetchMonth = useCallback(
+    async (month: string, ids: string[], signal?: AbortSignal): Promise<MonthDays> => {
+      const qs = new URLSearchParams({ month });
+      for (const id of ids) qs.append("courtId", id);
+      const r = await fetch(`/api/availability/month?${qs.toString()}`, { signal });
+      if (!r.ok) {
+        let msg = "Could not load availability.";
+        try {
+          const b = (await r.json()) as { error?: { message?: string } };
+          if (b.error?.message) msg = b.error.message;
+        } catch {}
+        throw new Error(msg);
+      }
+      const b = (await r.json()) as { days: MonthDays };
+      return b.days;
+    },
+    [],
+  );
+
+  // Availability: one request per month. Switching days inside the month is a
+  // pure cache read, so the day arrows cost zero requests.
   useEffect(() => {
-    if (courtIds.length === 0 || !selectedDate) {
-      setAvail(null);
+    if (courtIds.length === 0 || !selectedMonth || !cacheKey) return;
+    const ids = [...courtIds].sort();
+    if (monthCache.has(cacheKey)) {
+      // Already cached (or fresh from prefetch) — nothing to do.
       setAvailFailed(false);
       return;
     }
-    const ids = [...courtIds].sort();
     const ctrl = new AbortController();
     setLoadingAvail(true);
     setAvailFailed(false);
-    const qs = new URLSearchParams({ date: selectedDate });
-    for (const id of ids) qs.append("courtId", id);
-    fetch(`/api/availability?${qs.toString()}`, { signal: ctrl.signal })
-      .then(async (r) => {
-        if (!r.ok) {
-          let msg = "Could not load availability.";
-          try {
-            const b = (await r.json()) as { error?: { message?: string } };
-            if (b.error?.message) msg = b.error.message;
-          } catch {}
-          throw new Error(msg);
-        }
-        return r.json() as Promise<{ courts: CourtAvailability[] }>;
-      })
-      .then((b) => {
-        setAvail(b.courts);
-        if (carryRef.current) {
-          carryRef.current = false;
-          const fresh = new Map(
-            b.courts.map((c) => [c.courtId, new Map(c.slots.map((s) => [s.start, s]))]),
-          );
-          const prev = selectedRef.current;
-          const kept = prev.filter((pair) => {
-            const [courtId, iso] = pair.split("|") as [string, string];
-            const s = fresh.get(courtId)?.get(iso);
-            return !!s && cellState(s) === "open";
-          });
-          if (kept.length !== prev.length) {
-            setSelected(kept);
-            toast(
-              kept.length === 0
-                ? "Those hours aren't open on the new date — pick your time again."
-                : "Some hours aren't open on the new date — kept the ones that are.",
-            );
-          }
-        }
+    fetchMonth(selectedMonth, ids, ctrl.signal)
+      .then((days) => {
+        setMonthCache((prev) => new Map(prev).set(cacheKey, days));
       })
       .catch((e: unknown) => {
         if (e instanceof DOMException && e.name === "AbortError") return;
         toast.error(e instanceof Error ? e.message : "Could not load availability.");
-        setAvail(null);
         setAvailFailed(true);
       })
       .finally(() => setLoadingAvail(false));
     return () => ctrl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate, courtsKey, retryKey]);
+  }, [selectedMonth, courtsKey, retryKey]);
+
+  // Warm the neighbouring months once the current one lands, so crossing a
+  // month boundary is instant. Failures are silent — the visible month wins.
+  // Keyed on the current month being present, not on the whole cache, so a
+  // prefetch completing can't re-trigger this.
+  const currentCached = cacheKey !== null && monthCache.has(cacheKey);
+  useEffect(() => {
+    if (!selectedMonth || !currentCached) return;
+    const ids = [...courtIds].sort();
+    const minMonth = tomorrowStr.slice(0, 7);
+    const maxMonth = maxStr.slice(0, 7);
+    for (const adj of [shiftMonth(selectedMonth, 1), shiftMonth(selectedMonth, -1)]) {
+      if (adj < minMonth || adj > maxMonth) continue;
+      const adjKey = `${courtsKey}|${adj}`;
+      void fetchMonth(adj, ids)
+        .then((adjDays) =>
+          setMonthCache((p) => (p.has(adjKey) ? p : new Map(p).set(adjKey, adjDays))),
+        )
+        .catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMonth, courtsKey, currentCached]);
+
+  // Today's slice of the cache — the grid renders from this.
+  const avail = useMemo<CourtAvailability[] | null>(() => {
+    if (!cacheKey || !selectedDate) return null;
+    const days = monthCache.get(cacheKey);
+    const forDate = days?.[selectedDate];
+    if (!forDate) return null;
+    return Object.entries(forDate).map(([courtId, slots]) => ({ courtId, slots }));
+  }, [monthCache, cacheKey, selectedDate]);
+
+  // Carry selected cells to the new date once that date's data is present.
+  useEffect(() => {
+    if (!carryRef.current || !avail) return;
+    carryRef.current = false;
+    const fresh = new Map(
+      avail.map((c) => [c.courtId, new Map(c.slots.map((s) => [s.start, s]))]),
+    );
+    const prev = selectedRef.current;
+    const kept = prev.filter((pair) => {
+      const [courtId, iso] = pair.split("|") as [string, string];
+      const s = fresh.get(courtId)?.get(iso);
+      return !!s && cellState(s) === "open";
+    });
+    if (kept.length !== prev.length) {
+      setSelected(kept);
+      toast(
+        kept.length === 0
+          ? "Those hours aren't open on the new date — pick your time again."
+          : "Some hours aren't open on the new date — kept the ones that are.",
+      );
+    }
+  }, [avail]);
+
+  // A cached month can go stale while the tab is hidden — drop it on refocus.
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState !== "visible") return;
+      const prefix = `${courtsKey}|`;
+      setMonthCache((prev) => {
+        const next = new Map(prev);
+        for (const k of next.keys()) if (k.startsWith(prefix)) next.delete(k);
+        return next;
+      });
+      setRetryKey((k) => k + 1);
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [courtsKey]);
 
   // Cell state per "courtId|slotIso" — computed once per availability payload
   const cellStates = useMemo(() => {
@@ -421,7 +503,7 @@ export default function Step1DateTime({
         const res = await fetch("/api/holds", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ courtIds: groupCourts.sort(), slotStarts }),
+          body: JSON.stringify({ courtIds: groupCourts.sort(), slotStarts, ownerToken }),
         });
         if (!res.ok) {
           let code: string | undefined;
@@ -454,6 +536,7 @@ export default function Step1DateTime({
         expiresAt: sharedExpiresAt,
         courtIds: [...new Set(allCourtIds)].sort(),
         slotStarts: [...new Set(allSlotStarts)].sort(),
+        ...(ownerToken ? { ownerToken } : {}),
       };
       setHold(holdState);
       toast.success("Slots held — add equipment or continue to details.");
@@ -511,7 +594,6 @@ export default function Step1DateTime({
     carryRef.current = carried.length > 0;
     setSelected(carried);
     setSelectedDate(dateStr);
-    setAvail(null);
     setView(partsOf(dateStr));
     if (!stayOnTimeGrid) { setCourtIds(courts.map((c) => c.id)); setPanel(1); }
   }
@@ -746,7 +828,15 @@ export default function Step1DateTime({
               <p className="text-sm text-warm-muted">Could not load availability for this date.</p>
               <button
                 type="button"
-                onClick={() => setRetryKey((k) => k + 1)}
+                onClick={() => {
+                  // Drop the failed month so the effect refetches it.
+                  setMonthCache((prev) => {
+                    const next = new Map(prev);
+                    if (cacheKey) next.delete(cacheKey);
+                    return next;
+                  });
+                  setRetryKey((k) => k + 1);
+                }}
                 className="mt-3 inline-flex min-h-[44px] items-center font-bold text-flame hover:underline"
               >
                 Retry

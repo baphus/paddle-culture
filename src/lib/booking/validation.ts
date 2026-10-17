@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { MAX_SLOTS_PER_BOOKING, PROOF_ALLOWED_MIME, PROOF_MAX_BYTES } from "./constants";
+import {
+  HOLD_OWNER_TOKEN_MAX_LENGTH,
+  HOLD_OWNER_TOKEN_MIN_LENGTH,
+  MAX_SLOTS_PER_BOOKING,
+  PROOF_ALLOWED_MIME,
+  PROOF_MAX_BYTES,
+} from "./constants";
 import { normalizePhone } from "./phone";
 import {
   BOOKING_HORIZON_MONTHS,
@@ -16,9 +22,27 @@ const isoDateTime = z
   .string()
   .datetime({ offset: true, message: "must be an ISO-8601 datetime" });
 
+// Hold/booking capability values (hold tokens and the browser owner token):
+// unguessable random strings, bounded so nothing unbounded reaches the DB.
+const ownerToken = z
+  .string()
+  .min(HOLD_OWNER_TOKEN_MIN_LENGTH)
+  .max(HOLD_OWNER_TOKEN_MAX_LENGTH);
+const holdToken = z.string().min(16).max(128);
+
 // GET /api/availability?date=YYYY-MM-DD&courtId=<uuid>&courtId=<uuid>
 export const availabilityQuerySchema = z.object({
   date: dateStr,
+  courtIds: z.array(uuidStr).min(1).max(10),
+});
+
+// GET /api/availability/month?month=YYYY-MM&courtId=<uuid>&courtId=<uuid>
+// The booking grid fetches a whole month in one request and derives each day
+// locally, so switching days costs nothing.
+export const availabilityMonthQuerySchema = z.object({
+  month: z
+    .string()
+    .regex(/^\d{4}-(0[1-9]|1[0-2])$/, "month must be YYYY-MM"),
   courtIds: z.array(uuidStr).min(1).max(10),
 });
 
@@ -27,11 +51,18 @@ export const availabilityQuerySchema = z.object({
 // deadline). Multi-court: pass `courtIds` to reserve the SAME slotStarts on
 // every listed court. Single `courtId` still works (backwards compat);
 // exactly one of the two forms must be present.
+//
+// `ownerToken` is the browser's session token (crypto.randomUUID). It is
+// optional so an old client keeps working, but when present it is stamped on
+// every row and becomes the customer's way back to their hold after a refresh
+// (POST /api/holds/reclaim). It is a capability, not an identity: it never
+// leaves the customer's own browser.
 export const holdsBodySchema = z
   .object({
     courtId: uuidStr.optional(),
     courtIds: z.array(uuidStr).min(1).max(10).optional(),
     slotStarts: z.array(isoDateTime).min(1).max(MAX_SLOTS_PER_BOOKING),
+    ownerToken: ownerToken.optional(),
   })
   .refine((d) => (d.courtId ? 1 : 0) + (d.courtIds ? 1 : 0) === 1, {
     message: "Provide either courtId or courtIds (exactly one).",
@@ -50,12 +81,25 @@ export type HoldsBody = z.infer<typeof holdsBodySchema>;
 // DELETE /api/holds — hold tokens are unguessable capability values, so the
 // client can release only the exact rows it owns when navigating back.
 export const releaseHoldsBodySchema = z.object({
-  holdTokens: z.array(z.string().min(16).max(128)).min(1).max(MAX_SLOTS_PER_BOOKING),
+  holdTokens: z.array(holdToken).min(1).max(MAX_SLOTS_PER_BOOKING),
+});
+
+// POST /api/holds/reclaim — the customer comes back (refresh, banking-app tab
+// switch) and asks for their own hold again. The owner token is the only
+// credential: no identity is stored on a hold by design.
+export const reclaimHoldsBodySchema = z.object({
+  ownerToken,
 });
 
 // POST /api/submit
 export const submitBodySchema = z.object({
-  holdTokens: z.array(z.string().min(16).max(128)).min(1).max(12),
+  holdTokens: z.array(holdToken).min(1).max(12),
+  // Alternative credential: when the browser was away long enough for the
+  // hold to expire, the customer can still submit against the pairs their
+  // owner token owns inside the grace window. The DB transaction still
+  // re-validates the tokens, so this widens *who can name the hold*, never
+  // *whether the slots are free*.
+  ownerToken: ownerToken.optional(),
   idempotencyKey: z.string().min(8).max(128),
   customer: z.object({
     fullName: z.string().trim().min(1).max(100),
@@ -88,10 +132,13 @@ export const submitBodySchema = z.object({
 export type SubmitBody = z.infer<typeof submitBodySchema>;
 
 // POST /api/proofs/upload-url — customer-facing, unauthenticated. Minting is
-// bound to live (unexpired) hold tokens so URLs cannot be farmed without a
-// real hold/submit attempt.
+// bound to live (unexpired) hold tokens, or to an owner token whose holds are
+// inside the reclaim grace window, so URLs cannot be farmed without a real
+// hold/submit attempt — while a customer who already paid is never told to
+// re-book just to reach the upload box.
 export const proofUploadUrlBodySchema = z.object({
-  holdTokens: z.array(z.string().min(16).max(128)).min(1).max(12),
+  holdTokens: z.array(holdToken).min(1).max(12),
+  ownerToken: ownerToken.optional(),
   mime: z.enum(PROOF_ALLOWED_MIME as unknown as [string, ...string[]]),
   bytes: z.number().int().min(1).max(PROOF_MAX_BYTES),
 });

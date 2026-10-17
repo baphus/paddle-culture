@@ -43,6 +43,9 @@ import { RevenueRangeFilter } from "./revenue-range-filter";
 
 export const dynamic = "force-dynamic";
 
+const PAGE_DESCRIPTION =
+  "Track earnings and booking volume for the selected period.";
+
 type DayReport = Awaited<ReturnType<typeof revenueByDay>>;
 type MonthReport = Awaited<ReturnType<typeof revenueByMonth>>;
 
@@ -100,6 +103,7 @@ export default async function RevenuePage({
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-semibold tracking-tight">Revenue</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{PAGE_DESCRIPTION}</p>
         <p className="text-sm text-muted-foreground">Database is not configured.</p>
       </div>
     );
@@ -112,9 +116,11 @@ export default async function RevenuePage({
 
   return (
     <div className="space-y-5">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">Revenue</h1>
-
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Revenue</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{PAGE_DESCRIPTION}</p>
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-2">
             {presets.map(({ days: d, href, active }) =>

@@ -450,6 +450,46 @@ CREATE INDEX IF NOT EXISTS payment_proofs_path_idx ON payment_proofs (path);
 
 
 -- ===========================================================================
+-- 6b. holds.owner_token — hold reclaim after a refresh (ADR-03 amendment)
+--
+-- Every bit of booking-wizard state used to live only in React memory, and a
+-- hold row carried no owner. So a customer who left the page for their banking
+-- app and came back to a reload landed on step 1 with everything gone: their
+-- hold tokens were lost with the page, the slots stayed 'held' (blocked for
+-- everyone else) until expiry, and /api/proofs/upload-url + /api/submit both
+-- refused to work without live tokens — leaving a customer who had already
+-- paid with no way to deliver the proof.
+--
+-- owner_token is a browser-session capability (crypto.randomUUID) stamped on
+-- every row a session creates. It is NOT an identity: nothing about the person
+-- is stored with it, and it never widens who may book a slot — every write
+-- path still re-validates availability and holds_court_slot_unique_idx still
+-- arbitrates the insert. It only widens who can *name* a hold row, which is
+-- what POST /api/holds/reclaim needs.
+--
+-- Reclaim rules (src/lib/booking/hold-owner.ts):
+--   live     -> push expires_at out to a full HOLD_TTL_MINUTES
+--   expired  -> re-insert the same (court, slot) pairs, but only inside
+--               HOLD_GRACE_MINUTES of expiry and only if every pair is still
+--               free. Past that the slots are genuinely released.
+-- The grace window bounds how long a paid-but-unsubmitted booking can pin
+-- inventory: HOLD_TTL_MINUTES + HOLD_GRACE_MINUTES = 40 minutes worst case.
+--
+-- Nullable on purpose: rows written before this column existed simply have no
+-- reclaim path and keep the old TTL behaviour.
+-- ===========================================================================
+ALTER TABLE holds ADD COLUMN IF NOT EXISTS owner_token text;
+
+-- Reclaim looks rows up by owner token alone (the browser holds no row ids).
+-- Partial: only rows that actually carry a token are ever searchable, and the
+-- majority of recent rows do, so the index stays useful without carrying the
+-- legacy NULL rows.
+CREATE INDEX IF NOT EXISTS holds_owner_token_idx
+  ON holds (owner_token)
+  WHERE owner_token IS NOT NULL;
+
+
+-- ===========================================================================
 -- 7. rpc_delete_expired_proofs
 --    90-day payment-proof prune, called by the proof-prune cron
 --    (vercel.json: /api/cron/proof-prune, 1st of the month 03:00 UTC).

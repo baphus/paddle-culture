@@ -11,6 +11,21 @@ export const MAX_SLOTS_PER_BOOKING = 12;
 // expires_at > now() on every read).
 export const HOLD_TTL_MINUTES = 10;
 
+// Reclaim window (ADR-03). A hold row now carries an `owner_token` minted in
+// the browser, so the customer who created it can restore it after a refresh
+// or a trip to their banking app — but only for this long past expires_at.
+// Inside the window POST /api/holds/reclaim re-inserts the same (court, slot)
+// pairs if they are still free; outside it the slots are genuinely released
+// and the customer has to book again. Bounds how long a paid-but-unsubmitted
+// booking can hold inventory: HOLD_TTL_MINUTES + this = 40 min worst case.
+export const HOLD_GRACE_MINUTES = 30;
+
+// Session-scoped owner token carried by POST /api/holds and used as the
+// alternative credential for reclaim / proof-upload / submit. 128-bit uuid
+// from crypto.randomUUID(), so it is unguessable like a hold token.
+export const HOLD_OWNER_TOKEN_MIN_LENGTH = 16;
+export const HOLD_OWNER_TOKEN_MAX_LENGTH = 128;
+
 // Payment-proof hard gate (ADR-02, frozen).
 export const PROOF_BUCKET = "proofs";
 export const PROOF_MAX_BYTES = 5 * 1024 * 1024;

@@ -5,7 +5,7 @@ import { LayoutGridIcon, ListIcon } from "lucide-react"
 import { cn } from "cn"
 import { Button } from "@/components/ui/button"
 
-/** List/grid segmented switch. The thumb is positioned for the `icon-sm` size. */
+/** List/grid segmented switch. The thumb is inset by the container padding. */
 export function ViewToggle({
   view,
   onViewChange,
@@ -14,11 +14,11 @@ export function ViewToggle({
   onViewChange: (view: "list" | "grid") => void
 }) {
   return (
-    <div className="relative flex items-center rounded-full bg-muted p-0.5">
+    <div className="relative flex h-9 items-center rounded-full bg-muted p-1">
       <span
         aria-hidden
         className={cn(
-          "absolute top-0.5 left-0.5 size-7 rounded-full bg-background shadow-sm transition-transform",
+          "absolute top-1 left-1 size-7 rounded-full bg-background shadow-sm transition-transform",
           view === "grid" && "translate-x-7"
         )}
       />
@@ -29,7 +29,7 @@ export function ViewToggle({
         aria-pressed={view === "list"}
         onClick={() => onViewChange("list")}
         className={cn(
-          "relative z-10 rounded-full hover:bg-transparent",
+          "relative z-10 size-7 rounded-full hover:bg-transparent",
           view === "list" ? "text-foreground" : "text-muted-foreground"
         )}
       >
@@ -42,7 +42,7 @@ export function ViewToggle({
         aria-pressed={view === "grid"}
         onClick={() => onViewChange("grid")}
         className={cn(
-          "relative z-10 rounded-full hover:bg-transparent",
+          "relative z-10 size-7 rounded-full hover:bg-transparent",
           view === "grid" ? "text-foreground" : "text-muted-foreground"
         )}
       >

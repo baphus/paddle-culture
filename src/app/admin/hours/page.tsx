@@ -4,6 +4,9 @@ import HoursManager from "./hours-manager";
 
 export const dynamic = "force-dynamic";
 
+const PAGE_DESCRIPTION =
+  "Set operating hours and manage closures for each court.";
+
 export default async function HoursPage() {
   let db;
   try {
@@ -12,6 +15,7 @@ export default async function HoursPage() {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-semibold tracking-tight">Hours &amp; Closures</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{PAGE_DESCRIPTION}</p>
         <p className="text-sm text-muted-foreground">Database is not configured.</p>
       </div>
     );
@@ -31,6 +35,7 @@ export default async function HoursPage() {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-semibold tracking-tight">Hours &amp; Closures</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{PAGE_DESCRIPTION}</p>
         <p className="text-sm text-muted-foreground">
           Could not load data. Check your database connection and try again.
         </p>
@@ -42,10 +47,7 @@ export default async function HoursPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Hours &amp; Closures</h1>
-        <p className="text-sm text-muted-foreground">
-          A court with zero hours rows is treated as open all day. Closures always
-          override hours.
-        </p>
+        <p className="mt-1 text-sm text-muted-foreground">{PAGE_DESCRIPTION}</p>
       </div>
       <HoursManager initialHours={hours} initialClosures={closures} courts={courts} />
     </div>

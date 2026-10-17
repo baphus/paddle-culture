@@ -8,6 +8,9 @@ export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 25;
 
+const PAGE_DESCRIPTION =
+  "A record of actions taken across the admin dashboard.";
+
 function first(v: string | string[] | undefined): string {
   return Array.isArray(v) ? (v[0] ?? "") : (v ?? "");
 }
@@ -40,7 +43,7 @@ export default async function ActivityPage({
   } catch {
     return (
       <div className="space-y-6">
-        <PageHeader title="Activity" />
+        <PageHeader title="Activity" description={PAGE_DESCRIPTION} />
         <p className="text-sm text-muted-foreground">Database is not configured.</p>
       </div>
     );
@@ -74,7 +77,7 @@ export default async function ActivityPage({
     console.error("[activity] query failed:", err);
     return (
       <div className="space-y-6">
-        <PageHeader title="Activity" />
+        <PageHeader title="Activity" description={PAGE_DESCRIPTION} />
         <p className="text-sm text-muted-foreground">
           Could not load the activity log. Check your database connection and try
           again.
@@ -94,7 +97,7 @@ export default async function ActivityPage({
       console.error("[activity] query failed:", error.message);
       return (
         <div className="space-y-6">
-          <PageHeader title="Activity" />
+          <PageHeader title="Activity" description={PAGE_DESCRIPTION} />
           <p className="text-sm text-muted-foreground">
             Could not load the activity log. Check your database connection and try
             again.
@@ -107,7 +110,7 @@ export default async function ActivityPage({
 
   return (
     <div className="space-y-5">
-      <PageHeader title="Activity" />
+      <PageHeader title="Activity" description={PAGE_DESCRIPTION} />
       <ActivityTimeline
         rows={rows}
         page={page}

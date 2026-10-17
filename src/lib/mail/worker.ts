@@ -119,6 +119,7 @@ async function processRow(
       subject: rendered.subject,
       text: rendered.text,
       html: rendered.html,
+      attachments: rendered.attachments,
     })) as { messageId?: unknown };
     const messageId =
       typeof info?.messageId === "string" ? info.messageId : null;

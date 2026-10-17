@@ -11,9 +11,7 @@ import {
   useReactTable,
   type ColumnDef,
   type ColumnFiltersState,
-  type ColumnMeta,
   type PaginationState,
-  type RowData,
   type SortingState,
   type Table as TanstackTable,
   type Updater,
@@ -43,39 +41,17 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-/**
- * Pin a column to the right edge so row actions stay reachable while the rest
- * of the table scrolls horizontally. Opt in per column with `meta: { sticky: "right" }`.
- */
-declare module "@tanstack/react-table" {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  interface ColumnMeta<TData extends RowData, TValue> {
-    sticky?: "right"
-  }
-}
-
-// `-mx-px` hides the cell's own left border under the pinned edge; the shadow
-// gives cells something to scroll under once content passes the seam.
-const STICKY_HEAD =
-  "sticky right-0 z-20 -mx-px border-l border-border bg-background text-right shadow-[-4px_0_8px_-6px_rgb(0_0_0/0.25)]"
-const STICKY_CELL =
-  "sticky right-0 z-10 -mx-px border-l border-border bg-background shadow-[-4px_0_8px_-6px_rgb(0_0_0/0.25)] group-hover:bg-muted/50"
-
-function stickyClass<TData>(
-  table: TanstackTable<TData>,
-  column: { id: string; columnDef: { meta?: ColumnMeta<TData, unknown> } }
-): string | false {
-  if (column.columnDef.meta?.sticky !== "right") return false
-  const visible = table.getVisibleLeafColumns()
-  // Only the right-most visible column can pin to the right edge.
-  return visible[visible.length - 1]?.id === column.id ? STICKY_CELL : false
-}
-
-function ColumnVisibilityMenu<TData>({ table }: { table: TanstackTable<TData> }) {
+function ColumnVisibilityMenu<TData>({
+  table,
+}: {
+  table: TanstackTable<TData>
+}) {
   return (
     <MenuPrimitive.Root>
-      <MenuPrimitive.Trigger render={<Button variant="outline" size="sm" />}>
-        <SlidersHorizontalIcon />
+      <MenuPrimitive.Trigger
+        render={<Button variant="outline" className="h-9 rounded-full" />}
+      >
+        <SlidersHorizontalIcon className="size-4" />
         Columns
       </MenuPrimitive.Trigger>
       <MenuPrimitive.Portal>
@@ -130,6 +106,7 @@ export function DataTable<TData, TValue>({
   searchValue,
   onSearchChange,
   actions,
+  toolbarActions,
   gridCard,
   view: controlledView,
   showColumnToggle = true,
@@ -150,6 +127,8 @@ export function DataTable<TData, TValue>({
   onSearchChange?: (value: string) => void
   /** Extra toolbar controls, rendered in the search row right after the input. */
   actions?: React.ReactNode
+  /** Toolbar controls pinned to the row's right end, next to the view toggle. */
+  toolbarActions?: React.ReactNode
   /** Render a row as a card; enables the list/grid toolbar toggle. */
   gridCard?: (row: TData) => React.ReactNode
   /** Controlled view (the parent renders its own toggle, e.g. in a card header). */
@@ -222,24 +201,34 @@ export function DataTable<TData, TValue>({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          {showSearch && (
-            <Input
-              value={onSearchChange ? (searchValue ?? "") : search}
-              onChange={(e) => onSearch(e.target.value)}
-              placeholder={placeholder}
-              className="max-w-xs"
-            />
-          )}
+      {/* Phones: the search field owns the first line and the rest of the
+          controls share a second one, wrapping if they still do not fit.
+          Everything here refuses to shrink (a search box under its placeholder
+          width, or an icon button at 0px, is worse than a second line), so
+          without this the row's min-content width exceeds the screen and the
+          trailing actions — "New booking" — get pushed out of the box and
+          clipped by the shell. From `sm` up there is room for one line again. */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        {showSearch && (
+          <Input
+            value={onSearchChange ? (searchValue ?? "") : search}
+            onChange={(e) => onSearch(e.target.value)}
+            placeholder={placeholder}
+            className="h-9 w-full sm:w-56"
+          />
+        )}
+        <div className="flex flex-wrap items-center gap-2 sm:min-w-0 sm:flex-1">
           {actions}
-        </div>
-        <div className="flex items-center gap-2">
-          {gridCard && controlledView === undefined && (
-            <ViewToggle view={view} onViewChange={setInternalView} />
-          )}
           {showColumnToggle && view === "list" && (
             <ColumnVisibilityMenu table={table} />
+          )}
+          {(toolbarActions || (gridCard && controlledView === undefined)) && (
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              {gridCard && controlledView === undefined && (
+                <ViewToggle view={view} onViewChange={setInternalView} />
+              )}
+              {toolbarActions}
+            </div>
           )}
         </div>
       </div>
@@ -260,41 +249,35 @@ export function DataTable<TData, TValue>({
         )
       ) : (
         <div className="overflow-hidden rounded-lg border">
-          <Table>
+          <Table className="z-0 isolate">
             <TableHeader>
               {table.getHeaderGroups().map((headerGroup) => (
                 <TableRow key={headerGroup.id}>
-                  {headerGroup.headers.map((header) => {
-                    const sticky = stickyClass(table, header.column)
-                    return (
-                      <TableHead
-                        key={header.id}
-                        className={cn("px-4", sticky && STICKY_HEAD)}
-                      >
-                        {header.isPlaceholder ? null : (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="-ml-2"
-                            disabled={!header.column.getCanSort()}
-                            onClick={header.column.getToggleSortingHandler()}
-                          >
-                            {flexRender(
-                              header.column.columnDef.header,
-                              header.getContext()
-                            )}
-                            {header.column.getCanSort() &&
-                              ({
-                                asc: <ArrowUpIcon />,
-                                desc: <ArrowDownIcon />,
-                              }[header.column.getIsSorted() as string] ?? (
-                                <ArrowUpDownIcon />
-                              ))}
-                          </Button>
-                        )}
-                      </TableHead>
-                    )
-                  })}
+                  {headerGroup.headers.map((header) => (
+                    <TableHead key={header.id} className="px-4">
+                      {header.isPlaceholder ? null : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="-ml-2"
+                          disabled={!header.column.getCanSort()}
+                          onClick={header.column.getToggleSortingHandler()}
+                        >
+                          {flexRender(
+                            header.column.columnDef.header,
+                            header.getContext()
+                          )}
+                          {header.column.getCanSort() &&
+                            ({
+                              asc: <ArrowUpIcon />,
+                              desc: <ArrowDownIcon />,
+                            }[header.column.getIsSorted() as string] ?? (
+                              <ArrowUpDownIcon />
+                            ))}
+                        </Button>
+                      )}
+                    </TableHead>
+                  ))}
                 </TableRow>
               ))}
             </TableHeader>
@@ -302,20 +285,14 @@ export function DataTable<TData, TValue>({
               {table.getRowModel().rows.length ? (
                 table.getRowModel().rows.map((row) => (
                   <TableRow key={row.id} className="group">
-                    {row.getVisibleCells().map((cell) => {
-                      const sticky = stickyClass(table, cell.column)
-                      return (
-                        <TableCell
-                          key={cell.id}
-                          className={cn("px-4", sticky && STICKY_CELL)}
-                        >
-                          {flexRender(
-                            cell.column.columnDef.cell,
-                            cell.getContext()
-                          )}
-                        </TableCell>
-                      )
-                    })}
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id} className="px-4">
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext()
+                        )}
+                      </TableCell>
+                    ))}
                   </TableRow>
                 ))
               ) : (
@@ -340,20 +317,20 @@ export function DataTable<TData, TValue>({
         </span>
         <Button
           variant="outline"
-          size="icon-sm"
+          className="size-9"
           onClick={() => table.previousPage()}
           disabled={!table.getCanPreviousPage()}
         >
-          <ChevronLeftIcon />
+          <ChevronLeftIcon className="size-4" />
           <span className="sr-only">Previous page</span>
         </Button>
         <Button
           variant="outline"
-          size="icon-sm"
+          className="size-9"
           onClick={() => table.nextPage()}
           disabled={!table.getCanNextPage()}
         >
-          <ChevronRightIcon />
+          <ChevronRightIcon className="size-4" />
           <span className="sr-only">Next page</span>
         </Button>
       </div>

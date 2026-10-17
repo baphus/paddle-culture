@@ -105,6 +105,13 @@ export const holds = pgTable(
       .references(() => courts.id),
     slotStart: timestamp("slot_start", { withTimezone: true }).notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    // Browser-session capability that created this row. It is what lets the
+    // customer come back to their own hold after a refresh or a banking-app
+    // detour (POST /api/holds/reclaim) instead of finding the slot stuck as
+    // "held" with no way back in. Nullable: rows created before this column
+    // existed (and any client that does not send it) simply have no reclaim
+    // path and fall back to the pre-existing TTL behaviour.
+    ownerToken: text("owner_token"),
   },
   (t) => [
     // One hold per (court, slot). Deliberately NOT partial: the natural rule
@@ -118,6 +125,9 @@ export const holds = pgTable(
     // expired holds, the retention cron purges weekly, and POST /api/holds
     // deletes the expired rows for the pairs it is about to insert.
     uniqueIndex("holds_court_slot_unique_idx").on(t.courtId, t.slotStart),
+    // Reclaim looks a booking up by owner token alone (the browser holds no
+    // row ids), so this is the read path's index.
+    index("holds_owner_token_idx").on(t.ownerToken),
   ],
 );
 

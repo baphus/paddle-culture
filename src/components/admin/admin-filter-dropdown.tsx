@@ -147,16 +147,15 @@ export function AdminFilterDropdown({
       <Button
         type="button"
         variant="outline"
-        size="sm"
         onClick={() => {
           setOpen((prev) => !prev);
           setValidationError(null);
         }}
-        className="rounded-full"
+        className="h-9 rounded-full"
         aria-expanded={open}
         aria-haspopup="dialog"
       >
-        <SlidersHorizontal className="size-3.5" />
+        <SlidersHorizontal className="size-4" />
         {label}
         {count > 0 && (
           <span className="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold leading-none text-primary-foreground">

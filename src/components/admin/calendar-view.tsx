@@ -213,6 +213,9 @@ export default function CalendarView({
     closures: initialClosures,
   });
   const [loading, setLoading] = useState(false);
+  // There can be more than one month in flight (a fast next/prev click). Count
+  // them so the first one to land does not clear the spinner for the rest.
+  const inFlight = useRef(0);
 
   // Fetch (or reuse) a month's data; returns the payload.
   const ensureMonth = useCallback(
@@ -220,6 +223,7 @@ export default function CalendarView({
       const key = monthKey(y, m);
       const cached = cacheRef.current.get(key);
       if (cached) return cached;
+      inFlight.current += 1;
       setLoading(true);
       try {
         const res = await fetch(`/api/admin/calendar/events?year=${y}&month=${m}`);
@@ -234,7 +238,8 @@ export default function CalendarView({
       } catch {
         return null;
       } finally {
-        setLoading(false);
+        inFlight.current -= 1;
+        if (inFlight.current <= 0) setLoading(false);
       }
     },
     [],

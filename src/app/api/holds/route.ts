@@ -105,12 +105,16 @@ export async function POST(request: Request) {
     const pairs = courtIds.flatMap((courtId) =>
       starts.map((start) => ({ courtId, start })),
     );
+    const ownerToken = parsed.data.ownerToken ?? null;
     const buildRows = () =>
       pairs.map((p) => ({
         hold_token: randomBytes(16).toString("hex"),
         court_id: p.courtId,
         slot_start: p.start.toISOString(),
         expires_at: expiresAt.toISOString(),
+        // Stamped so the customer can come back to this exact hold after a
+        // refresh (POST /api/holds/reclaim). See src/lib/booking/hold-owner.ts.
+        owner_token: ownerToken,
       }));
 
     // Expired holds live until a DELETE reaches them, and a lingering row

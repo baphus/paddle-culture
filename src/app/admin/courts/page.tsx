@@ -4,6 +4,9 @@ import CourtsPricingManager from "./courts-pricing-manager";
 
 export const dynamic = "force-dynamic";
 
+const PAGE_DESCRIPTION =
+  "Manage courts, their status, and rate settings.";
+
 export default async function CourtsPage() {
   let db;
   try {
@@ -12,6 +15,7 @@ export default async function CourtsPage() {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-semibold tracking-tight">Courts &amp; Pricing</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{PAGE_DESCRIPTION}</p>
         <p className="text-sm text-muted-foreground">Database is not configured.</p>
       </div>
     );
@@ -26,6 +30,7 @@ export default async function CourtsPage() {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-semibold tracking-tight">Courts &amp; Pricing</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{PAGE_DESCRIPTION}</p>
         <p className="text-sm text-muted-foreground">
           Could not load data. Check your database connection and try again.
         </p>
@@ -37,10 +42,7 @@ export default async function CourtsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Courts &amp; Pricing</h1>
-        <p className="text-sm text-muted-foreground">
-          Rates are editable in place — day-type / time-band vocabulary is fixed and
-          every change is audit-logged.
-        </p>
+        <p className="mt-1 text-sm text-muted-foreground">{PAGE_DESCRIPTION}</p>
       </div>
       <CourtsPricingManager courts={courts} rules={rules} />
     </div>

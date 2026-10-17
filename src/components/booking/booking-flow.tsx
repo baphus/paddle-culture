@@ -14,6 +14,8 @@ import { toast } from "sonner";
 import { formatCountdown, type CourtOption, type CourtSlotGroup } from "@/lib/courts";
 import { FALLBACK_RATES, type DisplayRates } from "@/lib/pricing-display";
 import { cn } from "@/lib/utils";
+import { clearDraft, loadDraft, newOwnerToken, saveDraft, type BookingDraft } from "@/lib/booking/draft";
+import { HOLD_GRACE_MINUTES } from "@/lib/booking/constants";
 import ConfirmationStep from "./confirmation-step";
 import DetailsForm, { type DetailsValues } from "./details-form";
 import PaymentStep from "./payment-step";
@@ -135,30 +137,123 @@ export default function BookingFlow({
   const [courts, setCourts] = useState<CourtOption[]>(initialCourts);
   const [rates, setRates] = useState<DisplayRates>(initialRates);
 
-  // Wizard state
-  const [step, setStep] = useState<Step>("select");
-  const [hold, setHold] = useState<HoldState | null>(null);
-  const [confirmBack, setConfirmBack] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [courtIds, setCourtIds] = useState<string[]>(() =>
-    initialCourts.length > 0 ? [initialCourts[0].id] : [],
+  // Restore an interrupted booking before first paint. Reading sessionStorage
+  // in a lazy initialiser (not an effect) means a returning customer never
+  // sees step 1 flash past before landing back on payment. Remember that we
+  // restored, so a leftover step-1 selection hint shows and the draft is
+  // flagged once.
+  const [restoredDraft] = useState<BookingDraft | null>(() =>
+    typeof window === "undefined" ? null : loadDraft(),
   );
-  const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
+  // A draft may only re-enter the flow at or beyond the details step if it
+  // carries everything those steps render. Anything less falls back to the
+  // booking grid (with the details kept), never to a blank screen.
+  const restoredStep: Step = (() => {
+    const d = restoredDraft;
+    if (!d) return "select";
+    if (d.step === "payment" && d.hold && d.details && d.idempotencyKey) return "payment";
+    if (d.step === "details" && d.hold) return "details";
+    return "select";
+  })();
+  const [resumedNotice, setResumedNotice] = useState<string | null>(() => {
+    const d = restoredDraft;
+    if (!d?.details) return null;
+    if (restoredStep !== "select") return "We restored your booking — nothing was lost.";
+    return "Welcome back — your details are saved. Re-confirm your slots to continue.";
+  });
+
+  // Wizard state
+  const [step, setStep] = useState<Step>(restoredStep);
+  const [hold, setHold] = useState<HoldState | null>(restoredDraft?.hold ?? null);
+  const [confirmBack, setConfirmBack] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<string | null>(
+    restoredDraft?.selectedDate ?? null,
+  );
+  const [courtIds, setCourtIds] = useState<string[]>(() =>
+    restoredDraft?.courtIds?.length
+      ? restoredDraft.courtIds
+      : initialCourts.length > 0
+        ? [initialCourts[0].id]
+        : [],
+  );
+  const [selectedSlots, setSelectedSlots] = useState<string[]>(
+    restoredDraft?.selectedSlots ?? [],
+  );
   // Per-court slot attribution — kept for display only (summary + invoice);
   // pricing and hold/submit payloads stay keyed off the flat arrays above.
-  const [slotGroups, setSlotGroups] = useState<CourtSlotGroup[]>([]);
+  const [slotGroups, setSlotGroups] = useState<CourtSlotGroup[]>(
+    restoredDraft?.slotGroups ?? [],
+  );
   // Equipment — live from step 1 panel 4, pre-fills DetailsForm
-  const [livePaddleQty, setLivePaddleQty] = useState(0);
-  const [liveBall, setLiveBall] = useState(false);
-  const [details, setDetails] = useState<DetailsValues | null>(null);
-  const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
+  const [livePaddleQty, setLivePaddleQty] = useState(restoredDraft?.paddleQty ?? 0);
+  const [liveBall, setLiveBall] = useState(restoredDraft?.ball ?? false);
+  const [details, setDetails] = useState<DetailsValues | null>(restoredDraft?.details ?? null);
+  const [idempotencyKey, setIdempotencyKey] = useState<string | null>(
+    restoredDraft?.idempotencyKey ?? null,
+  );
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ trackingToken: string; trackingCode: string; total: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [paymentData, setPaymentData] = useState<{ trackingToken: string; total: string } | null>(null);
+  // Stable per-tab capability that ties this browsing session to its holds.
+  // Stable across reloads is the whole point — it is what a refreshed page
+  // uses to reclaim its own slots.
+  const [ownerToken] = useState<string>(() => restoredDraft?.ownerToken ?? newOwnerToken());
+  // Latest step for callbacks created once (the hold timer's onExpired).
+  const stepRef = useRef<Step>(step);
+  stepRef.current = step;
 
-  // Refresh courts and pricing live
+  // Keep the draft in step with the wizard. sessionStorage is per-tab and dies
+  // with it; a reload (the banking-app round trip) is exactly what it survives.
+  // Confirmation is deliberately not persisted: a completed booking must not
+  // resurrect a stale wizard.
   useEffect(() => {
+    if (step === "confirmation") {
+      clearDraft();
+      return;
+    }
+    saveDraft({
+      v: 1,
+      ownerToken,
+      step,
+      hold,
+      selectedDate,
+      courtIds,
+      selectedSlots,
+      slotGroups,
+      paddleQty: livePaddleQty,
+      ball: liveBall,
+      details,
+      idempotencyKey,
+    });
+  }, [
+    step,
+    ownerToken,
+    hold,
+    selectedDate,
+    courtIds,
+    selectedSlots,
+    slotGroups,
+    livePaddleQty,
+    liveBall,
+    details,
+    idempotencyKey,
+  ]);
+
+  // Refresh courts and pricing live. The page already SSR'd both, so only
+  // fetch when the server handed us the empty/failed fallback — otherwise
+  // these two requests on every mount buy nothing.
+  const needsCourtRefresh = initialCourts.length === 0;
+  // Value compare, not reference — a genuinely loaded rate card never equals
+  // the fallback on all four fields.
+  const needsRateRefresh =
+    initialRates.morning === FALLBACK_RATES.morning &&
+    initialRates.evening === FALLBACK_RATES.evening &&
+    initialRates.paddle === FALLBACK_RATES.paddle &&
+    initialRates.ball === FALLBACK_RATES.ball;
+
+  useEffect(() => {
+    if (!needsCourtRefresh) return;
     fetch("/api/courts")
       .then((r) => (r.ok ? r.json() : null))
       .then((b: { courts?: CourtOption[] } | null) => {
@@ -172,9 +267,10 @@ export default function BookingFlow({
         }
       })
       .catch(() => {});
-  }, []);
+  }, [needsCourtRefresh]);
 
   useEffect(() => {
+    if (!needsRateRefresh) return;
     fetch("/api/pricing")
       .then((r) => (r.ok ? r.json() : null))
       .then((b: DisplayRates | null) => {
@@ -194,15 +290,96 @@ export default function BookingFlow({
         }
       })
       .catch(() => {});
-  }, []);
+  }, [needsRateRefresh]);
+
+  /** Refresh the hold after POST /api/holds/reclaim handed it back. */
+  const handleHoldReclaimed = useCallback(
+    (refreshed: { tokens: string[]; deadlineMs: number; expiresAt: string }) => {
+      setHold((prev) =>
+        prev
+          ? {
+              ...prev,
+              tokens: refreshed.tokens,
+              deadlineMs: refreshed.deadlineMs,
+              expiresAt: refreshed.expiresAt,
+            }
+          : prev,
+      );
+      setError(null);
+    },
+    [],
+  );
+
+  // A draft can be restored with a hold that has already lapsed — the customer
+  // was away longer than the 10-minute window. Try to revive it silently on
+  // mount (same rules as the explicit button) so they land back on payment with
+  // working slots instead of an error banner. If that fails they still keep
+  // their details and land on step 1 with a plain explanation.
+  const restoredRan = useRef(false);
+  useEffect(() => {
+    if (restoredRan.current) return;
+    restoredRan.current = true;
+    const restoredHold = restoredDraft?.hold;
+    if (!restoredHold || !restoredDraft?.details) return;
+    if (new Date(restoredHold.expiresAt).getTime() > Date.now()) return;
+    if (stepRef.current === "select") return;
+    setStep("payment");
+    void fetch("/api/holds/reclaim", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ownerToken: restoredDraft.ownerToken }),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = (await res.json().catch(() => null)) as
+            | { error?: { code?: string } }
+            | null;
+          const code = body?.error?.code;
+          setHold(null);
+          setError(
+            code === "SLOT_TAKEN"
+              ? "Someone else took one of your slots while you were away. Please pick a different time."
+              : "Your slots were released while you were away. Please pick your times again — if you've already sent the payment, contact us with your reference.",
+          );
+          setStep("select");
+          return;
+        }
+        const body = (await res.json()) as {
+          holds: { holdToken: string }[];
+          expiresAt: string;
+          deadlineMs: number;
+        };
+        handleHoldReclaimed({
+          tokens: body.holds.map((h) => h.holdToken),
+          deadlineMs: body.deadlineMs,
+          expiresAt: body.expiresAt,
+        });
+        toast.success("Welcome back — your slots are held again. Finish your booking below.", {
+          duration: 8000,
+        });
+      })
+      .catch(() => {
+        // Offline: leave the payment step up; the restore button is there.
+      });
+  }, [restoredDraft, handleHoldReclaimed]);
 
   const handleHoldExpired = useCallback(() => {
+    // On the payment step the customer is mid-payment: money may already be on
+    // its way. Do NOT wipe their hold and dump them at step 1 — the payment
+    // step shows a "hold my slots again" restore instead (POST
+    // /api/holds/reclaim), which keeps their details, proof and timer alive.
+    if (stepRef.current === "payment") {
+      toast.error("Your hold ran out. Restore your slots to finish — we kept your payment proof.", {
+        duration: 8000,
+      });
+      return;
+    }
     setHold(null);
     setError("Your hold expired. Please select your slots and hold again.");
-    setStep("select");
     toast.error("Your hold expired. Please select your slots and hold again.", {
       duration: 8000,
     });
+    setStep("select");
   }, []);
 
   const handleHoldSuccess = useCallback(
@@ -275,6 +452,8 @@ export default function BookingFlow({
 
   const startOver = () => {
     releaseHold(hold);
+    clearDraft();
+    setResumedNotice(null);
     setHold(null);
     setSelectedSlots([]);
     setSlotGroups([]);
@@ -282,6 +461,7 @@ export default function BookingFlow({
     setLivePaddleQty(0);
     setLiveBall(false);
     setDetails(null);
+    setIdempotencyKey(null);
     setResult(null);
     setError(null);
     setPaymentData(null);
@@ -390,6 +570,15 @@ export default function BookingFlow({
         <HoldTimerBar deadlineMs={hold.deadlineMs} onExpired={handleHoldExpired} />
       )}
 
+      {resumedNotice && !error && (
+        <p
+          role="status"
+          className="rounded-2xl border border-pine/30 bg-oat/60 px-4 py-3 text-xs sm:text-sm font-semibold text-pine"
+        >
+          {resumedNotice}
+        </p>
+      )}
+
       {error && (
         <p
           role="alert"
@@ -415,6 +604,7 @@ export default function BookingFlow({
                 initialSelectedSlots={selectedSlots}
                 initialPaddleQty={livePaddleQty}
                 initialBall={liveBall}
+                ownerToken={ownerToken}
                 onHoldSuccess={handleHoldSuccess}
                 onHoldExpired={handleHoldExpired}
                 onCancel={startOver}
@@ -456,10 +646,14 @@ export default function BookingFlow({
               <div className="animate-rise">
                 <PaymentStep
                   holdTokens={hold.tokens}
+                  ownerToken={hold.ownerToken ?? ownerToken}
                   summary={{
                     courtNames,
                     slotStarts: selectedSlots,
                     idempotencyKey,
+                    holdDeadlineMs: hold.deadlineMs,
+                    reclaimableUntilMs:
+                      new Date(hold.expiresAt).getTime() + HOLD_GRACE_MINUTES * 60_000,
                   }}
                   details={details}
                   busy={submitting}
@@ -469,11 +663,13 @@ export default function BookingFlow({
                     window.scrollTo({ top: 0, behavior: "smooth" });
                   }}
                   onHoldExpired={handleHoldExpired}
+                  onHoldReclaimed={handleHoldReclaimed}
                   onSuccess={(res) => {
                     setResult(res);
                     setPaymentData(res);
                     setHold(null);
                     setStep("confirmation");
+                    clearDraft();
                     window.scrollTo({ top: 0, behavior: "smooth" });
                   }}
                 />

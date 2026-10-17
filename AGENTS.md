@@ -46,4 +46,15 @@ Single-package Next.js 16 app (npm, `package-lock.json`). No workspaces, no CI. 
 - `deno.lock` is Netlify-edge hashes only — not app Deno usage.
 - Don't edit generated/artifacts: `.next/`, `node_modules/`, `tsconfig.tsbuildinfo`, `next-env.d.ts`, `drizzle/*.sql` + `drizzle/meta/*`, `.netlify/`, `scripts/seed-production.result.json`.
 - Frozen context in `docs/DECISIONS.md` (ADR-01..10: rates/hours/auth/email/storage) and `docs/BACKUPS.md` (manual `pg_dump` runbook). `docs/OPEN-QUESTIONS.md` has no open questions.
-- Manual end-to-end verification still needs live Supabase Postgres + Auth/Storage and a Gmail App Password or Mailpit; `npm test` covers only the pure pricing/hours functions.
+- **Never drive a browser to verify a change** — no Playwright, Chrome DevTools, headless screenshots, or the OpenChamber browser panel. There is no standing permission: ask the user first, every time, and wait for a yes (a yes covers that one request only). The user verifies UI in their own browser. `npm run dev` + `curl`/server-side HTTP checks need no permission.
+- Manual end-to-end verification still needs live Supabase Postgres + Auth/Storage and a Gmail App Password or Mailpit; `npm test` covers only the pure pricing/hours functions. That pass is the user's to run — ask them to do it rather than driving a browser yourself.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

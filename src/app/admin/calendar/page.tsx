@@ -53,6 +53,9 @@ export default async function CalendarPage({
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Booking Calendar</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          View bookings, closures, and court availability at a glance.
+        </p>
       </header>
 
       <Card className="gap-0 overflow-hidden py-0">

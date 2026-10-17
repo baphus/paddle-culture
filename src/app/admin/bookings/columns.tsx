@@ -81,8 +81,6 @@ export const columns: ColumnDef<BookingDetail>[] = [
     header: "Actions",
     enableSorting: false,
     enableHiding: false,
-    // Pinned right while the row scrolls horizontally on narrow screens.
-    meta: { sticky: "right" },
     cell: ({ row }) => <BookingActions booking={row.original} />,
   },
 ];

@@ -6,6 +6,7 @@ import { LaneError, err } from "@/lib/booking/errors";
 import { assertSlotsOpen } from "@/lib/booking/hours";
 import { recalculateTotal } from "@/lib/booking/pricing";
 import { verifyProofFile } from "@/lib/booking/proof";
+import { reclaimHolds } from "@/lib/booking/hold-owner";
 import { isFutureSlot, isOnSlotGrid } from "@/lib/booking/slots";
 import {
   generateTrackingCode,
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
     const email = body.customer.email.toLowerCase();
 
     // ── Load + validate holds ──────────────────────────────────────────────
-    const { data: holdRows, error: holdError } = await db
+    let { data: holdRows, error: holdError } = await db
       .from("holds")
       .select("hold_token,court_id,slot_start,expires_at")
       .in("hold_token", body.holdTokens)
@@ -53,11 +54,28 @@ export async function POST(request: Request) {
 
     if (holdError) return err("INTERNAL", "Could not read holds.", 500);
     if ((holdRows ?? []).length !== body.holdTokens.length) {
-      return err(
-        "HOLD_INVALID",
-        "One or more holds are missing or expired. Re-select your slots.",
-        409,
-      );
+      // The hold lapsed while the customer was paying (browser asleep, or in
+      // their banking app). If their owner token still covers these exact
+      // pairs and nobody took them, revive the hold here instead of bouncing a
+      // paying customer back to step 1. reclaimHolds applies the same rules as
+      // POST /api/holds/reclaim; the pairs are re-validated below and
+      // holds_court_slot_unique_idx arbitrates the insert.
+      if (!body.ownerToken) {
+        return err(
+          "HOLD_INVALID",
+          "One or more holds are missing or expired. Re-select your slots.",
+          409,
+        );
+      }
+      const reclaimed = await reclaimHolds(db, {
+        ownerToken: body.ownerToken,
+        holdTokens: body.holdTokens,
+      });
+      if (!reclaimed.ok) return err(reclaimed.code, reclaimed.message, reclaimed.status);
+      holdRows = reclaimed.rows as typeof holdRows;
+      // A revived hold has fresh tokens; the RPC locks exactly the tokens it
+      // is given, so the submission must name the new ones.
+      body.holdTokens = reclaimed.rows.map((r) => r.hold_token);
     }
 
     type HoldRow = { hold_token: string; court_id: string; slot_start: string; expires_at: string };

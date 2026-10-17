@@ -107,7 +107,7 @@ export default function AdminSidebar({ email, name }: Props) {
                   <SidebarMenuItem key={href}>
                     <SidebarMenuButton
                       size="lg"
-                      className="gap-3 px-3 data-active:bg-primary! data-active:text-primary-foreground! [&&_svg]:size-5! group-data-[collapsible=icon]:[&&_svg]:size-4!"
+                      className="gap-3 px-3 data-active:bg-primary! data-active:text-primary-foreground! [&&_svg]:size-5! group-data-[collapsible=icon]:[&&_svg]:size-4! group-data-[collapsible=icon]:justify-center! group-data-[collapsible=icon]:gap-0! group-data-[collapsible=icon]:px-0!"
                       render={<Link href={href} />}
                       onClick={() => setPendingHref(href)}
                       isActive={active}
@@ -134,7 +134,7 @@ export default function AdminSidebar({ email, name }: Props) {
                   <SidebarMenuItem key={href}>
                     <SidebarMenuButton
                       size="lg"
-                      className="gap-3 px-3 data-active:bg-primary! data-active:text-primary-foreground! [&&_svg]:size-5! group-data-[collapsible=icon]:[&&_svg]:size-4!"
+                      className="gap-3 px-3 data-active:bg-primary! data-active:text-primary-foreground! [&&_svg]:size-5! group-data-[collapsible=icon]:[&&_svg]:size-4! group-data-[collapsible=icon]:justify-center! group-data-[collapsible=icon]:gap-0! group-data-[collapsible=icon]:px-0!"
                       render={<Link href={href} />}
                       onClick={() => setPendingHref(href)}
                       isActive={active}

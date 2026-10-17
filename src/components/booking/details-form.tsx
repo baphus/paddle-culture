@@ -15,6 +15,7 @@ import {
 import { cn } from "@/lib/utils";
 import { normalizePhone } from "@/lib/booking/phone";
 import { LoadingAnimation } from "@/components/ui/loading-animation";
+import { suggestEmailDomain } from "@/lib/booking/email";
 
 export interface DetailsValues {
   fullName: string;
@@ -64,6 +65,12 @@ export default function DetailsForm({
       phone: defaultValues?.phone ?? "",
     },
   });
+
+  const emailValue = form.watch("email");
+  const emailSuggestion = useMemo(
+    () => suggestEmailDomain(emailValue ?? ""),
+    [emailValue],
+  );
 
   return (
     <form
@@ -176,9 +183,34 @@ export default function DetailsForm({
                 <span>{form.formState.errors.email.message}</span>
               </p>
             ) : (
-              <p className="text-[11px] text-warm-muted">
-                We&apos;ll send your instant booking confirmation &amp; QR pass to this email.
-              </p>
+              <>
+                <p className="text-[11px] text-warm-muted">
+                  We&apos;ll send your instant booking confirmation &amp; QR pass to this email.
+                </p>
+                {emailSuggestion && (
+                  <div
+                    role="status"
+                    className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800"
+                  >
+                    <span>
+                      Did you mean{" "}
+                      <strong className="font-semibold">{emailSuggestion.correctedEmail}</strong>?
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        form.setValue("email", emailSuggestion.correctedEmail, {
+                          shouldValidate: true,
+                          shouldDirty: true,
+                        })
+                      }
+                      className="rounded-md bg-amber-200/70 px-2 py-0.5 font-bold text-amber-900 transition-colors hover:bg-amber-200"
+                    >
+                      Fix it
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>

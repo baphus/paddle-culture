@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -10,6 +10,7 @@ import {
   Image as ImageIcon,
   Lock,
   QrCode,
+  Timer,
   UploadCloud,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -28,6 +29,10 @@ export interface BookingSummary {
   courtNames: string[];
   slotStarts: string[];
   idempotencyKey: string;
+  /** Hold deadline (epoch ms), so the step can offer a restore when it lapses. */
+  holdDeadlineMs: number | null;
+  /** Last moment the hold may still be restored (deadline + grace window). */
+  reclaimableUntilMs: number | null;
 }
 
 const SUBMIT_ERROR_FRIENDLY: Record<string, string> = {
@@ -35,6 +40,9 @@ const SUBMIT_ERROR_FRIENDLY: Record<string, string> = {
   SLOT_TAKEN: "A selected slot was just taken. Please pick another time.",
   SLOT_INVALID: "A held slot is no longer bookable. Please re-select your slots.",
   SLOT_CLOSED: "A selected slot is now closed. Please pick another time.",
+  RECLAIM_EXPIRED:
+    "Your slots were released because the booking window passed. Please pick your times again.",
+  HOLD_NOT_FOUND: "We couldn't find any saved slots for this session.",
   PROOF_NOT_FOUND: "Payment proof upload didn't finish. Upload it again.",
   PROOF_MISMATCH: "Proof details don't match the uploaded file. Upload it again.",
   PROOF_ALREADY_USED: "This proof was already used for another booking.",
@@ -66,6 +74,7 @@ async function readErrorMessage(
 
 export default function PaymentStep({
   holdTokens,
+  ownerToken,
   summary,
   details,
   busy,
@@ -73,8 +82,10 @@ export default function PaymentStep({
   onBack,
   onSuccess,
   onHoldExpired,
+  onHoldReclaimed,
 }: {
   holdTokens: string[];
+  ownerToken?: string;
   summary: BookingSummary;
   details: DetailsValues;
   busy: boolean;
@@ -82,6 +93,8 @@ export default function PaymentStep({
   onBack: () => void;
   onSuccess: (result: { trackingToken: string; trackingCode: string; total: string }) => void;
   onHoldExpired: () => void;
+  /** Called after a successful reclaim with the hold's refreshed tokens. */
+  onHoldReclaimed: (hold: { tokens: string[]; deadlineMs: number; expiresAt: string }) => void;
 }) {
   const [methodId, setMethodId] = useState<PaymentMethod["id"]>("gcash");
   const [qrMissing, setQrMissing] = useState(false);
@@ -90,9 +103,51 @@ export default function PaymentStep({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [proof, setProof] = useState<{ path: string; mime: string; bytes: number } | null>(null);
   const [uploading, setUploading] = useState(false);
+  // The last file the customer picked. Kept in memory (never persisted) so that
+  // after a hold reclaim we can re-mint a URL and re-upload in one tap instead
+  // of asking someone who already paid to find their screenshot again.
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [reclaiming, setReclaiming] = useState(false);
 
   const method = PAYMENT_METHODS.find((m) => m.id === methodId) ?? PAYMENT_METHODS[0]!;
   const qrExt = method.qrPath.split(".").pop() ?? "jpg";
+
+  /** Mint a URL for `file` and PUT it. Returns the stored proof handle. */
+  async function uploadFile(
+    file: File,
+    tokens: string[] = holdTokens,
+  ): Promise<{ ok: true; proof: { path: string; mime: string; bytes: number } } | { ok: false }> {
+    const urlRes = await fetch("/api/proofs/upload-url", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ holdTokens: tokens, ownerToken, mime: file.type, bytes: file.size }),
+    });
+
+    if (!urlRes.ok) {
+      const e = await readErrorMessage(urlRes, "Could not prepare upload.");
+      if (e.code === "HOLD_INVALID") onHoldExpired();
+      toast.error(friendlySubmitError(e.code, e.message));
+      return { ok: false };
+    }
+
+    const { path, signedUrl } = (await urlRes.json()) as {
+      path: string;
+      signedUrl: string;
+    };
+
+    // Direct browser -> Supabase Storage PUT
+    const putRes = await fetch(signedUrl, {
+      method: "PUT",
+      headers: { "content-type": file.type },
+      body: file,
+    });
+
+    if (!putRes.ok) {
+      toast.error("Upload to storage failed. Check your connection and retry.");
+      return { ok: false };
+    }
+    return { ok: true, proof: { path, mime: file.type, bytes: file.size } };
+  }
 
   async function handleFile(file: File) {
     const pre = precheckProofFile(file);
@@ -111,48 +166,93 @@ export default function PaymentStep({
     setProof(null);
     setFileName(file.name);
     setFileSize(file.size);
+    setPendingFile(file);
 
     // Create local object URL for instant preview
     const preview = URL.createObjectURL(file);
     setPreviewUrl(preview);
 
     try {
-      const urlRes = await fetch("/api/proofs/upload-url", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ holdTokens, mime: file.type, bytes: file.size }),
-      });
-
-      if (!urlRes.ok) {
-        const e = await readErrorMessage(urlRes, "Could not prepare upload.");
-        if (e.code === "HOLD_INVALID") onHoldExpired();
-        toast.error(friendlySubmitError(e.code, e.message));
-        return;
-      }
-
-      const { path, signedUrl } = (await urlRes.json()) as {
-        path: string;
-        signedUrl: string;
-      };
-
-      // Direct browser -> Supabase Storage PUT
-      const putRes = await fetch(signedUrl, {
-        method: "PUT",
-        headers: { "content-type": file.type },
-        body: file,
-      });
-
-      if (!putRes.ok) {
-        toast.error("Upload to storage failed. Check your connection and retry.");
-        return;
-      }
-
-      setProof({ path, mime: file.type, bytes: file.size });
+      const result = await uploadFile(file);
+      if (!result.ok) return;
+      setProof(result.proof);
       toast.success("Payment screenshot uploaded successfully!");
     } catch {
       toast.error("Upload failed. Check your connection and retry.");
     } finally {
       setUploading(false);
+    }
+  }
+
+  /**
+   * Ask the server to restore this session's hold. Used when the customer came
+   * back after the 10-minute window (typically: they left for their banking
+   * app). On success the parent gets fresh tokens and, if they had already
+   * picked a screenshot, it is re-uploaded against the restored hold.
+   */
+  async function handleReclaim() {
+    if (!ownerToken) {
+      onHoldExpired();
+      return;
+    }
+    setReclaiming(true);
+    try {
+      const res = await fetch("/api/holds/reclaim", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ownerToken }),
+      });
+      if (!res.ok) {
+        const e = await readErrorMessage(res, "Could not restore your slots.");
+        toast.error(friendlySubmitError(e.code, e.message), { duration: 8000 });
+        // A finished window or a slot someone else took is terminal: send them
+        // back to pick again rather than leaving a dead button.
+        if (e.code === "RECLAIM_EXPIRED" || e.code === "SLOT_TAKEN" || e.code === "HOLD_NOT_FOUND") {
+          onHoldExpired();
+        }
+        return;
+      }
+      const body = (await res.json()) as {
+        status: "live" | "revived";
+        holds: { holdToken: string }[];
+        expiresAt: string;
+        deadlineMs: number;
+      };
+      onHoldReclaimed({
+        tokens: body.holds.map((h) => h.holdToken),
+        deadlineMs: body.deadlineMs,
+        expiresAt: body.expiresAt,
+      });
+      toast.success(
+        body.status === "revived"
+          ? "Your slots are held again — 10 minutes to finish."
+          : "Hold extended — 10 more minutes.",
+      );
+      // Re-upload in the background: the old proof path was minted against the
+      // old tokens, and a revived hold has brand-new ones.
+      if (pendingFile) {
+        setUploading(true);
+        try {
+          const result = await uploadFile(
+            pendingFile,
+            body.holds.map((h) => h.holdToken),
+          );
+          if (result.ok) {
+            setProof(result.proof);
+            toast.success("Payment screenshot re-attached.");
+          } else {
+            // Don't leave a proof handle the customer can't vouch for — make
+            // them re-pick so submit can never reference a stale upload.
+            setProof(null);
+          }
+        } finally {
+          setUploading(false);
+        }
+      }
+    } catch {
+      toast.error("Could not restore your slots. Check your connection and retry.");
+    } finally {
+      setReclaiming(false);
     }
   }
 
@@ -168,6 +268,7 @@ export default function PaymentStep({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           holdTokens,
+          ownerToken,
           idempotencyKey: summary.idempotencyKey,
           customer: {
             fullName: details.fullName,
@@ -186,7 +287,7 @@ export default function PaymentStep({
       if (!res.ok) {
         const e = await readErrorMessage(res, "Submission failed.");
         if (e.code === "HOLD_INVALID") onHoldExpired();
-        toast.error(friendlySubmitError(e.code, e.message));
+        toast.error(friendlySubmitError(e.code, e.message), { duration: 8000 });
         return;
       }
 
@@ -199,8 +300,67 @@ export default function PaymentStep({
     }
   }
 
+  const reclaimerBusy = busy || uploading || reclaiming;
+  // The lapsed check must not freeze at first render: a customer can sit on
+  // this step while the timer runs out, and then submit against a dead hold.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const holdLapsed = summary.holdDeadlineMs !== null && summary.holdDeadlineMs <= nowMs;
+  const reclaimExpired =
+    summary.reclaimableUntilMs !== null && summary.reclaimableUntilMs <= nowMs;
+  const canReclaim = holdLapsed && !reclaimExpired && !!ownerToken;
+
   return (
     <div className="space-y-6">
+      {/* Hold lapsed — the customer most likely left for their banking app.
+          Restoring beats restarting: their payment is already sent. */}
+      {holdLapsed && (
+        <div
+          role="status"
+          className={cn(
+            "rounded-2xl border px-4 py-4 text-xs sm:text-sm",
+            canReclaim
+              ? "border-flame/40 bg-flame-light/30 text-ink"
+              : "border-error/40 bg-error/10 text-error",
+          )}
+        >
+          <p className="font-bold">
+            {canReclaim
+              ? "You were away — we can still save your slots."
+              : "Your slots have been released."}
+          </p>
+          <p className="mt-1 leading-relaxed">
+            {canReclaim
+              ? "Your 10-minute hold ran out while you were paying. Tap below to hold the same times again for another 10 minutes — your payment screenshot stays with us."
+              : "The booking window for these times has passed. Please pick your times again — if you've already sent the payment, contact us with your reference and we'll match it up."}
+          </p>
+          {canReclaim && (
+            <button
+              type="button"
+              id="payment-reclaim"
+              onClick={() => void handleReclaim()}
+              disabled={reclaimerBusy}
+              className="mt-3 inline-flex min-h-[44px] items-center gap-2 rounded-xl bg-flame px-5 text-sm font-bold text-white shadow-sm transition-all hover:bg-flame-hover active:scale-[0.99] disabled:opacity-50"
+            >
+              {reclaiming ? (
+                <>
+                  <LoadingAnimation size="compact" label="Restoring your slots" />
+                  <span>Restoring…</span>
+                </>
+              ) : (
+                <>
+                  <Timer className="size-4" />
+                  <span>Hold my slots again</span>
+                </>
+              )}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Payment Instructions Card */}
       <div className="rounded-3xl border border-line-warm/70 bg-white p-6 shadow-sm sm:p-8">
         <div className="mb-6 flex items-center justify-between border-b border-line-warm/40 pb-4">
@@ -389,13 +549,18 @@ export default function PaymentStep({
           type="button"
           id="payment-advance"
           onClick={handleSubmit}
-          disabled={busy || uploading || !proof}
+          disabled={reclaimerBusy || !proof || (holdLapsed && !canReclaim)}
           className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-flame px-7 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:opacity-50"
         >
           {busy ? (
             <>
               <LoadingAnimation size="compact" label="Submitting booking" />
               <span>Submitting Booking…</span>
+            </>
+          ) : holdLapsed && canReclaim ? (
+            <>
+              <Lock className="size-4" />
+              <span>Hold my slots first</span>
             </>
           ) : (
             <>

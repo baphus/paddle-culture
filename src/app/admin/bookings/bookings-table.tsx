@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { DataTable } from "@/components/ui/data-table";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -29,11 +31,13 @@ export default function BookingsTable({
   page,
   pageCount,
   filters,
+  newBookingHref,
 }: {
   rows: BookingDetail[];
   page: number;
   pageCount: number;
   filters: BookingsFilters;
+  newBookingHref: string;
 }) {
   const router = useRouter();
   const [q, setQ] = useState(filters.q);
@@ -134,6 +138,15 @@ export default function BookingsTable({
       placeholder="Search by name…"
       pageSize={BOOKINGS_PAGE_SIZE}
       actions={filterActions}
+      toolbarActions={
+        <Button
+          className="h-9"
+          nativeButton={false}
+          render={<Link href={newBookingHref} />}
+        >
+          New booking
+        </Button>
+      }
       gridCard={(b) => <BookingCard booking={b} />}
     />
   );

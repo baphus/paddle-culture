@@ -13,10 +13,19 @@ import {
 export const OUTBOX_TEMPLATE_CUSTOMER_APPROVED = "booking_customer_approved";
 export const OUTBOX_TEMPLATE_CUSTOMER_REJECTED = "booking_customer_rejected";
 
+/** Inline (Content-ID) attachment consumed by nodemailer. */
+export interface EmailAttachment {
+  filename: string;
+  cid: string;
+  content: Buffer;
+  contentType: string;
+}
+
 export interface RenderedEmail {
   subject: string;
   text: string;
   html: string;
+  attachments?: EmailAttachment[];
 }
 
 type Payload = Record<string, unknown>;
@@ -256,17 +265,34 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
-async function qrDataUri(url: string): Promise<string | null> {
+// Returns a PNG buffer for the QR code, or null if generation fails.
+// NOTE: we deliberately do NOT build a base64 `data:` URI. Gmail and Outlook
+// strip data-URI <img> sources, which left customers staring at the alt text
+// instead of a scannable QR. The PNG is attached inline and referenced by a
+// `cid:` URL, which every major client renders.
+async function qrPng(url: string): Promise<Buffer | null> {
   try {
-    return await QRCode.toDataURL(url, {
-      width: 220,
+    const buf = await QRCode.toBuffer(url, {
+      type: "png",
+      width: 440,
       margin: 2,
       color: { dark: "#26422a", light: "#ffffff" },
       errorCorrectionLevel: "M",
     });
-  } catch {
+    return buf;
+  } catch (err) {
+    console.error("qr generation failed", err);
     return null;
   }
+}
+
+function qrAttachment(buf: Buffer, cid: string): EmailAttachment {
+  return {
+    filename: "booking-qr.png",
+    cid,
+    content: buf,
+    contentType: "image/png",
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -507,13 +533,31 @@ function p(text: string): string {
   </p>`;
 }
 
-function qrCard(qrDataUrl: string, alt: string): string {
+function qrCard(cid: string | null, trackingUrl: string, alt: string): string {
+  // Fallback: QR could not be generated — always give the customer a way in.
+  if (!cid) {
+    return `
+    <table role="presentation" cellpadding="0" cellspacing="0" style="margin-bottom:16px;">
+      <tr>
+        <td style="background:${BRAND.cream};border:2px solid ${BRAND.line};
+                   border-radius:12px;padding:16px 20px;">
+          <p style="margin:0 0 6px;font-size:13px;color:${BRAND.muted};">
+            QR image unavailable — open your pass:
+          </p>
+          <a href="${escapeHtml(trackingUrl)}"
+             style="font-size:13px;color:${BRAND.flame};text-decoration:none;word-break:break-all;">
+            ${escapeHtml(trackingUrl)}
+          </a>
+        </td>
+      </tr>
+    </table>`;
+  }
   return `
     <table role="presentation" cellpadding="0" cellspacing="0" style="margin-bottom:16px;">
       <tr>
         <td style="background:${BRAND.white};border:2px solid ${BRAND.line};
                    border-radius:12px;padding:16px;display:inline-block;">
-          <img src="${qrDataUrl}" width="180" height="180"
+          <img src="cid:${escapeHtml(cid)}" width="180" height="180"
                alt="${escapeHtml(alt)}" style="display:block;border:0;" />
         </td>
       </tr>
@@ -557,7 +601,8 @@ export async function renderOutboxEmail(
   switch (template) {
     // -----------------------------------------------------------------------
     case OUTBOX_TEMPLATE_CUSTOMER_SUBMITTED: {
-      const qrDataUrl = url ? await qrDataUri(url) : null;
+      const qrPngBuf = url ? await qrPng(url) : null;
+      const qrCid = qrPngBuf ? `booking-qr-submitted@ckgrounds` : null;
 
       const textLines = [
         `Hi ${fullName},`,
@@ -597,7 +642,7 @@ export async function renderOutboxEmail(
           url
             ? `${sectionLabel("Track your booking")}
                ${p("Scan this QR code to check your booking status at any time.")}
-               ${qrDataUrl ? qrCard(qrDataUrl, "Booking tracking QR code") : ""}
+               ${qrCard(qrCid, url, "Booking tracking QR code")}
                ${ctaButton("View Booking Status", url)}`
             : ""
         }
@@ -613,6 +658,8 @@ export async function renderOutboxEmail(
         subject: "CK Grounds — booking received",
         text: textLines.join("\n"),
         html: emailShell({ preheader: "Your booking is pending review.", body: htmlBody }),
+        attachments:
+          qrPngBuf && qrCid ? [qrAttachment(qrPngBuf, qrCid)] : undefined,
       };
     }
 
@@ -682,7 +729,8 @@ export async function renderOutboxEmail(
 
     // -----------------------------------------------------------------------
     case OUTBOX_TEMPLATE_CUSTOMER_APPROVED: {
-      const qrDataUrl = url ? await qrDataUri(url) : null;
+      const qrPngBuf = url ? await qrPng(url) : null;
+      const qrCid = qrPngBuf ? `booking-qr-approved@ckgrounds` : null;
 
       const textLines = [
         `Hi ${fullName},`,
@@ -705,7 +753,7 @@ export async function renderOutboxEmail(
       const qrSection = url
         ? `${sectionLabel("QR check-in pass")}
            ${p("Show this at the venue to check in.")}
-           ${qrDataUrl ? qrCard(qrDataUrl, "QR check-in pass") : ""}
+           ${qrCard(qrCid, url, "QR check-in pass")}
            ${ctaButton("Open QR Pass", url)}`
         : "";
 
@@ -731,13 +779,16 @@ export async function renderOutboxEmail(
           preheader: "Your booking is confirmed — QR pass inside.",
           body: htmlBody,
         }),
+        attachments:
+          qrPngBuf && qrCid ? [qrAttachment(qrPngBuf, qrCid)] : undefined,
       };
     }
 
     // -----------------------------------------------------------------------
     case OUTBOX_TEMPLATE_CUSTOMER_REJECTED: {
       const reason = str(payload.rejectReason, "No reason provided.");
-      const qrDataUrl = url ? await qrDataUri(url) : null;
+      const qrPngBuf = url ? await qrPng(url) : null;
+      const qrCid = qrPngBuf ? `booking-qr-rejected@ckgrounds` : null;
 
       const textLines = [
         `Hi ${fullName},`,
@@ -782,7 +833,7 @@ export async function renderOutboxEmail(
           url
             ? `${sectionLabel("Booking reference")}
                ${p("Scan this QR code to view this booking's status.")}
-               ${qrDataUrl ? qrCard(qrDataUrl, "Booking reference QR code") : ""}
+               ${qrCard(qrCid, url, "Booking reference QR code")}
                ${ctaButton("View Booking", url)}`
             : ""
         }
@@ -796,6 +847,8 @@ export async function renderOutboxEmail(
           preheader: "Your booking could not be confirmed.",
           body: htmlBody,
         }),
+        attachments:
+          qrPngBuf && qrCid ? [qrAttachment(qrPngBuf, qrCid)] : undefined,
       };
     }
 

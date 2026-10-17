@@ -90,7 +90,7 @@ export default function InviteManager() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
         render={
-          <Button variant="outline" size="sm">
+          <Button variant="outline" className="h-9">
             <UserPlus />
             Invite
           </Button>

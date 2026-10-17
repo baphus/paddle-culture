@@ -94,6 +94,9 @@ export const config = {
     "/admin/:path*",
     "/login",
     "/api/holds",
+    // Reclaim is a write path that can extend or revive inventory — it gets the
+    // same per-IP budget as hold creation.
+    "/api/holds/reclaim",
     "/api/submit",
     "/api/proofs/upload-url",
   ],

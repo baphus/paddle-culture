@@ -27,6 +27,7 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { PROOF_CLIENT_ACCEPT, precheckProofFile } from "@/lib/proof-client";
 import { formatSlotRange } from "@/lib/courts";
+import { suggestEmailDomain } from "@/lib/booking/email";
 
 // ── Shapes mirrored from the server (no server-only imports here) ────────────
 
@@ -57,6 +58,9 @@ interface CourtAvailability {
   slots: AvailabilitySlot[];
 }
 
+/** One month of the month endpoint: date → courtId → slots. */
+type MonthDays = Record<string, Record<string, AvailabilitySlot[]>>;
+
 interface PickedSlot {
   courtId: string;
   courtName: string;
@@ -71,6 +75,16 @@ interface ProofRef {
 
 const MANILA_DAY_START_HOUR = 6;
 const MAX_SLOTS = 12;
+
+/** Mirrors FALLBACK_RATES — the SSR'd rates equal these only when the DB read
+ *  failed, which is the one case worth refetching from the client. */
+const FALLBACK_RATES: DisplayRates = {
+  morning: 150,
+  evening: 200,
+  paddle: 25,
+  ball: 15,
+  currency: "PHP",
+};
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -123,12 +137,27 @@ function isEvening(iso: string): boolean {
 
 // ── Component ───────────────────────────────────────────────────────────────
 
-export default function BookingCreateForm({ adminEmail }: { adminEmail: string }) {
+export default function BookingCreateForm({
+  adminEmail,
+  initialCourts,
+  initialRates,
+}: {
+  adminEmail: string;
+  initialCourts: CourtOption[];
+  initialRates: DisplayRates;
+}) {
   const router = useRouter();
 
-  const [courts, setCourts] = useState<CourtOption[] | null>(null);
-  const [rates, setRates] = useState<DisplayRates | null>(null);
+  const [courts, setCourts] = useState<CourtOption[] | null>(
+    initialCourts.length > 0 ? initialCourts : null,
+  );
+  const [rates, setRates] = useState<DisplayRates | null>(initialRates);
   const [date, setDate] = useState(manilaToday);
+  // Month payloads keyed "courtIds|YYYY-MM". A day switch inside a cached month
+  // is a plain lookup, so arrowing through dates costs no requests.
+  const [monthCache, setMonthCache] = useState<Map<string, MonthDays>>(
+    () => new Map(),
+  );
   const [availability, setAvailability] = useState<Record<string, CourtAvailability>>({});
   const [availLoading, setAvailLoading] = useState(false);
   const [availError, setAvailError] = useState<string | null>(null);
@@ -138,6 +167,7 @@ export default function BookingCreateForm({ adminEmail }: { adminEmail: string }
   const [description, setDescription] = useState("");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
+  const emailSuggestion = useMemo(() => suggestEmailDomain(email), [email]);
   const [phone, setPhone] = useState("");
   const [paddleQty, setPaddleQty] = useState(0);
   const [ball, setBall] = useState(false);
@@ -153,41 +183,58 @@ export default function BookingCreateForm({ adminEmail }: { adminEmail: string }
   const [submitting, setSubmitting] = useState(false);
 
   // ── Load courts + display rates once ─────────────────────────────────────
+  // The page SSR'd both. Only refetch what came back empty/fallback, so a
+  // healthy render costs zero requests on mount.
+  const needsCourtRefresh = initialCourts.length === 0;
+  // Value compare, not reference — a real rate card never matches all four.
+  const needsRateRefresh =
+    initialRates.morning === FALLBACK_RATES.morning &&
+    initialRates.evening === FALLBACK_RATES.evening &&
+    initialRates.paddle === FALLBACK_RATES.paddle &&
+    initialRates.ball === FALLBACK_RATES.ball;
+
   useEffect(() => {
-    let cancelled = false;
-    Promise.all([
-      fetch("/api/courts").then(async (r) => {
+    if (!needsCourtRefresh) return;
+    fetch("/api/courts")
+      .then(async (r) => {
         if (!r.ok) throw new Error("courts");
         return ((await r.json()) as { courts: CourtOption[] }).courts;
-      }),
-      fetch("/api/pricing").then(async (r) => {
+      })
+      .then((c) => setCourts(c))
+      .catch(() => toast.error("Could not load courts."));
+  }, [needsCourtRefresh]);
+
+  // Independent of courts: a good court list with a fallback rate card is a
+  // real state, and it still needs the live prices.
+  useEffect(() => {
+    if (!needsRateRefresh) return;
+    fetch("/api/pricing")
+      .then(async (r) => {
         if (!r.ok) throw new Error("pricing");
         return (await r.json()) as DisplayRates;
-      }),
-    ])
-      .then(([c, r]) => {
-        if (cancelled) return;
-        setCourts(c);
-        setRates(r);
       })
-      .catch(() => {
-        if (!cancelled) toast.error("Could not load courts and rates.");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+      .then((r) => setRates(r))
+      .catch(() => toast.error("Could not load rates."));
+  }, [needsRateRefresh]);
 
   // ── Live availability for the chosen date ────────────────────────────────
-  const loadAvailability = useCallback(
-    async (dateStr: string, courtList: CourtOption[]) => {
-      if (courtList.length === 0) return;
+  // Fetch whole months (5 DB calls each) instead of one day at a time, then
+  // slice the chosen date out of the cache.
+  const courtIdsKey = (courtList: CourtOption[]) =>
+    courtList
+      .map((c) => c.id)
+      .sort()
+      .join(",");
+
+  const loadMonth = useCallback(
+    async (month: string, courtList: CourtOption[]) => {
+      const cacheKey = `${courtIdsKey(courtList)}|${month}`;
       setAvailLoading(true);
       setAvailError(null);
       try {
-        const params = new URLSearchParams({ date: dateStr });
+        const params = new URLSearchParams({ month });
         for (const c of courtList) params.append("courtId", c.id);
-        const res = await fetch(`/api/availability?${params.toString()}`, {
+        const res = await fetch(`/api/availability/month?${params.toString()}`, {
           cache: "no-store",
         });
         if (!res.ok) {
@@ -195,10 +242,8 @@ export default function BookingCreateForm({ adminEmail }: { adminEmail: string }
           setAvailError(e.message);
           return;
         }
-        const json = (await res.json()) as { courts: CourtAvailability[] };
-        const byCourt: Record<string, CourtAvailability> = {};
-        for (const ca of json.courts) byCourt[ca.courtId] = ca;
-        setAvailability(byCourt);
+        const json = (await res.json()) as { days: MonthDays };
+        setMonthCache((prev) => new Map(prev).set(cacheKey, json.days));
       } catch {
         setAvailError("Could not load availability.");
       } finally {
@@ -208,10 +253,31 @@ export default function BookingCreateForm({ adminEmail }: { adminEmail: string }
     [],
   );
 
+  // Keyed on the month, not the day: arrowing between dates inside a loaded
+  // month never refetches.
+  const selectedMonth = date.slice(0, 7);
+  const cacheKey = courts ? `${courtIdsKey(courts)}|${selectedMonth}` : "";
+
   useEffect(() => {
-    if (!courts) return;
-    void loadAvailability(date, courts);
-  }, [courts, date, loadAvailability]);
+    if (!courts || courts.length === 0) return;
+    if (monthCache.has(cacheKey)) return;
+    void loadMonth(selectedMonth, courts);
+  }, [courts, selectedMonth, cacheKey, monthCache, loadMonth]);
+
+  // Slice the chosen day out of the cached month.
+  useEffect(() => {
+    if (!courts || courts.length === 0) return;
+    const days = monthCache.get(cacheKey);
+    if (!days) return;
+    const day = days[date];
+    if (!day) {
+      setAvailability({});
+      return;
+    }
+    const byCourt: Record<string, CourtAvailability> = {};
+    for (const c of courts) byCourt[c.id] = { courtId: c.id, slots: day[c.id] ?? [] };
+    setAvailability(byCourt);
+  }, [courts, cacheKey, date, monthCache]);
 
   // Picks belong to a date — drop them when the date changes so the grid and
   // the total can never disagree.
@@ -378,7 +444,13 @@ export default function BookingCreateForm({ adminEmail }: { adminEmail: string }
       if (!res.ok) {
         const e = await readError(res, "Could not create the booking.");
         if (e.code === "SLOT_TAKEN") {
-          void loadAvailability(date, courts ?? []);
+          // Drop the cached month so the grid re-reads instead of showing the
+          // slot the server just rejected.
+          setMonthCache((prev) => {
+            const next = new Map(prev);
+            next.delete(cacheKey);
+            return next;
+          });
         }
         toast.error(e.message);
         return;
@@ -439,7 +511,13 @@ export default function BookingCreateForm({ adminEmail }: { adminEmail: string }
                     type="button"
                     variant="outline"
                     size="xs"
-                    onClick={() => void loadAvailability(date, courts ?? [])}
+                    onClick={() =>
+                      setMonthCache((prev) => {
+                        const next = new Map(prev);
+                        next.delete(cacheKey);
+                        return next;
+                      })
+                    }
                   >
                     Retry
                   </Button>
@@ -534,6 +612,24 @@ export default function BookingCreateForm({ adminEmail }: { adminEmail: string }
                         maxLength={254}
                         disabled={busy}
                       />
+                      {emailSuggestion && (
+                        <div
+                          role="status"
+                          className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+                        >
+                          <span>
+                            Did you mean{" "}
+                            <strong className="font-semibold">{emailSuggestion.correctedEmail}</strong>?
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setEmail(emailSuggestion.correctedEmail)}
+                            className="rounded-md bg-amber-200/70 px-2 py-0.5 font-bold text-amber-900 transition-colors hover:bg-amber-200"
+                          >
+                            Fix it
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </>
                 ) : (
@@ -692,6 +788,7 @@ export default function BookingCreateForm({ adminEmail }: { adminEmail: string }
                 <Button
                   type="button"
                   variant="outline"
+                  className="h-9"
                   onClick={() => router.push("/admin/bookings")}
                   disabled={busy}
                 >
@@ -702,7 +799,7 @@ export default function BookingCreateForm({ adminEmail }: { adminEmail: string }
                   type="button"
                   onClick={() => void handleSubmit()}
                   disabled={busy || picked.length === 0}
-                  className="flex-1"
+                  className="h-9 flex-1"
                 >
                   {submitting ? (
                     <>

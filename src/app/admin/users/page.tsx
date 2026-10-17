@@ -5,6 +5,10 @@ import UsersTable from "./users-table";
 
 export const dynamic = "force-dynamic";
 
+// Shown under the page title on every render path (loading, error, ready).
+const PAGE_DESCRIPTION =
+  "Manage admin accounts and invitations.";
+
 export default async function UsersPage() {
   const session = await requireAdmin();
 
@@ -21,9 +25,7 @@ export default async function UsersPage() {
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Users</h1>
-        <p className="text-sm text-muted-foreground">
-          Manage admin accounts and invitations.
-        </p>
+        <p className="mt-1 text-sm text-muted-foreground">{PAGE_DESCRIPTION}</p>
       </div>
 
       {/* Admin accounts */}

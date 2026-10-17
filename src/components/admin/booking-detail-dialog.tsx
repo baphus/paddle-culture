@@ -236,7 +236,12 @@ export function BookingDetailDialog({
             if (!o && busy === null) closeDecision();
           }}
         >
-          <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-1 overflow-hidden p-0 sm:max-w-md">
+          <DialogContent
+            className="flex max-h-[calc(100dvh-2rem)] flex-col gap-1 overflow-hidden p-0 sm:max-w-md"
+            // Stacked over the detail dialog: its backdrop already dims the
+            // page, so this one must not darken it a second time.
+            overlayClassName="bg-transparent"
+          >
             <DialogHeader className="gap-1 px-4 pt-4 pr-10">
               <DialogTitle>
                 {decision === "reject" ? "Reject booking" : "Approve booking"}

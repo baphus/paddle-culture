@@ -18,7 +18,8 @@ export default function BookingActions({ booking }: { booking: BookingDetail }) 
 
   return (
     <div className="flex items-center gap-1.5">
-      {/* Mobile: icon-only so the pinned actions column stays narrow. */}
+      {/* Phone-width rows have little room: the label is read out to screen
+          readers and comes back from `sm` up, where the row is wider. */}
       <Button
         variant="outline"
         size="sm"

@@ -73,7 +73,7 @@ export default async function AdminPage() {
         <h1 className="text-2xl font-semibold tracking-tight">
           {`Good ${getGreeting()}, ${session.name?.split(" ")[0] ?? "Admin"}`}
         </h1>
-        <p className="text-muted-foreground">
+        <p className="mt-1 text-sm text-muted-foreground">
           Here&apos;s what&apos;s happening at CK Grounds today.
         </p>
       </div>
