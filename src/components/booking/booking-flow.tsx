@@ -150,7 +150,7 @@ export default function BookingFlow({
   const [details, setDetails] = useState<DetailsValues | null>(null);
   const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<{ trackingToken: string; total: string } | null>(null);
+  const [result, setResult] = useState<{ trackingToken: string; trackingCode: string; total: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [paymentData, setPaymentData] = useState<{ trackingToken: string; total: string } | null>(null);
 
@@ -488,6 +488,7 @@ export default function BookingFlow({
       {step === "confirmation" && result && details && (
         <ConfirmationStep
           trackingToken={result.trackingToken}
+          trackingCode={result.trackingCode}
           total={result.total}
           courtNames={courtNames}
           slotStarts={selectedSlots}

@@ -4,10 +4,8 @@ import { useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
-  Check,
-  CircleAlert,
-  Copy,
   CreditCard,
+  Download,
   FileCheck2,
   Image as ImageIcon,
   Lock,
@@ -15,7 +13,12 @@ import {
   UploadCloud,
 } from "lucide-react";
 import { toast } from "sonner";
-import { PAYMENT_METHODS, PAYMENT_NOTE, type PaymentMethod } from "@/lib/payment-methods";
+import {
+  PAYMENT_METHODS,
+  PAYMENT_NOTE,
+  PAYMENT_INSTRUCTION,
+  type PaymentMethod,
+} from "@/lib/payment-methods";
 import { PROOF_CLIENT_ACCEPT, precheckProofFile } from "@/lib/proof-client";
 import { cn } from "@/lib/utils";
 import { LoadingAnimation } from "@/components/ui/loading-animation";
@@ -77,7 +80,7 @@ export default function PaymentStep({
   busy: boolean;
   setBusy: (b: boolean) => void;
   onBack: () => void;
-  onSuccess: (result: { trackingToken: string; total: string }) => void;
+  onSuccess: (result: { trackingToken: string; trackingCode: string; total: string }) => void;
   onHoldExpired: () => void;
 }) {
   const [methodId, setMethodId] = useState<PaymentMethod["id"]>("gcash");
@@ -87,20 +90,9 @@ export default function PaymentStep({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [proof, setProof] = useState<{ path: string; mime: string; bytes: number } | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [copiedNum, setCopiedNum] = useState(false);
 
   const method = PAYMENT_METHODS.find((m) => m.id === methodId) ?? PAYMENT_METHODS[0]!;
-
-  const copyAccountNumber = async () => {
-    try {
-      await navigator.clipboard.writeText(method.accountNumber);
-      setCopiedNum(true);
-      toast.success("Account number copied!");
-      setTimeout(() => setCopiedNum(false), 2000);
-    } catch {
-      toast.error("Could not copy account number.");
-    }
-  };
+  const qrExt = method.qrPath.split(".").pop() ?? "jpg";
 
   async function handleFile(file: File) {
     const pre = precheckProofFile(file);
@@ -198,7 +190,7 @@ export default function PaymentStep({
         return;
       }
 
-      const body = (await res.json()) as { trackingToken: string; total: string };
+      const body = (await res.json()) as { trackingToken: string; trackingCode: string; total: string };
       onSuccess(body);
     } catch {
       toast.error("Submission failed. Check your connection and retry.");
@@ -261,67 +253,38 @@ export default function PaymentStep({
           })}
         </div>
 
-        {/* Method Details Box */}
-        <div className="mt-6 grid gap-6 rounded-2xl border border-line-warm/60 bg-cream/40 p-5 sm:grid-cols-12 sm:p-6">
-          <div className="space-y-4 sm:col-span-7">
-            <div>
-              <span className="block text-xs font-semibold text-warm-muted">Account Name</span>
-              <span className="block text-sm font-extrabold text-ink">{method.accountName}</span>
+        {/* Method Details Box — QR only; the account details live inside the QR */}
+        <div className="mt-6 flex flex-col items-center justify-center rounded-2xl border border-line-warm/60 bg-white p-5 text-center sm:p-6">
+          {!qrMissing ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={method.qrPath}
+              alt={`${method.label} payment QR code`}
+              className="aspect-square w-full max-w-md rounded-xl object-contain"
+              onError={() => setQrMissing(true)}
+            />
+          ) : (
+            <div className="flex aspect-square w-full max-w-md flex-col items-center justify-center rounded-xl bg-cream/60 p-6 text-xs text-warm-muted">
+              <QrCode className="size-8 text-warm-muted/50 mb-1" />
+              <span>QR image coming soon</span>
             </div>
-
-            <div>
-              <span className="block text-xs font-semibold text-warm-muted">Account Number</span>
-              <div className="mt-1 flex items-center gap-2">
-                <span className="font-mono text-base font-black text-pine select-all">
-                  {method.accountNumber}
-                </span>
-                <button
-                  type="button"
-                  onClick={copyAccountNumber}
-                  className="inline-flex size-8 items-center justify-center rounded-lg border border-line-warm bg-white text-ink transition-colors hover:bg-cream"
-                  title="Copy account number"
-                >
-                  {copiedNum ? (
-                    <Check className="size-3.5 text-live-dot" />
-                  ) : (
-                    <Copy className="size-3.5 text-warm-muted" />
-                  )}
-                </button>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-line-warm/40 bg-white/80 p-3 text-xs leading-relaxed text-warm-muted">
-              {method.instructions}
-            </div>
-
-            {!method.configured && (
-              <p className="flex items-center gap-1.5 text-xs font-medium text-amber-700">
-                <CircleAlert className="size-4 shrink-0" />
-                <span>Account details coming soon — please confirm with staff before paying.</span>
-              </p>
-            )}
-          </div>
-
-          {/* QR Code Container */}
-          <div className="flex flex-col items-center justify-center rounded-2xl border border-line-warm/60 bg-white p-4 text-center sm:col-span-5">
-            {!qrMissing ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={method.qrPath}
-                alt={`${method.label} payment QR code`}
-                className="size-40 rounded-xl object-contain"
-                onError={() => setQrMissing(true)}
-              />
-            ) : (
-              <div className="flex size-40 flex-col items-center justify-center rounded-xl bg-cream/60 p-4 text-center text-xs text-warm-muted">
-                <QrCode className="size-8 text-warm-muted/50 mb-1" />
-                <span>QR image coming soon</span>
-              </div>
-            )}
-            <span className="mt-2 text-[11px] font-semibold text-warm-muted">
-              Scan with your banking app
-            </span>
-          </div>
+          )}
+          <span className="mt-3 text-[11px] font-semibold text-warm-muted">
+            Scan with your banking app
+          </span>
+          <p className="mt-2 max-w-md text-xs leading-relaxed text-warm-muted">
+            {PAYMENT_INSTRUCTION}
+          </p>
+          {!qrMissing && (
+            <a
+              href={method.qrPath}
+              download={`${method.label}-payment-QR.${qrExt}`}
+              className="mt-4 inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-line-warm/70 bg-white px-5 text-sm font-bold text-pine transition-all hover:bg-cream active:scale-[0.99]"
+            >
+              <Download className="size-4" />
+              <span>Download QR</span>
+            </a>
+          )}
         </div>
       </div>
 

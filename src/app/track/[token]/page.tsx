@@ -45,7 +45,7 @@ export default async function TrackPage({
 
   const { data: bookingData, error: bookingError } = await db
     .from("bookings")
-    .select("id,status,full_name,total,reject_reason,tracking_code")
+    .select("id,status,full_name,email,phone,total,reject_reason,tracking_code")
     .eq("tracking_token", token)
     .single();
 
@@ -55,6 +55,8 @@ export default async function TrackPage({
     id: string;
     status: string;
     full_name: string;
+    email: string;
+    phone: string;
     total: string;
     reject_reason: string | null;
     tracking_code: string;
@@ -110,11 +112,14 @@ export default async function TrackPage({
             url={url}
             status={booking.status}
             fullName={booking.full_name}
+            email={booking.email}
+            phone={booking.phone}
             total={booking.total}
             rejectReason={booking.reject_reason}
             trackingCode={booking.tracking_code}
             slots={serializedSlots}
             rental={serializedRental}
+            rates={rates}
           />
         </div>
       </main>

@@ -1,35 +1,29 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
   BadgeCheck,
-  Calendar,
   Check,
-  Clock,
   Copy,
   Download,
-  Dumbbell,
   ExternalLink,
-  Mail,
   MapPin,
-  Phone,
   QrCode,
-  Receipt,
   RotateCcw,
   Sparkles,
-  User,
 } from "lucide-react";
-import { QRCodeSVG } from "qrcode.react";
+import { QRCodeCanvas } from "qrcode.react";
 import { toast } from "sonner";
-import { formatManilaLong, formatSlotRanges } from "@/lib/courts";
-import { timeBandFor } from "@/lib/booking/slots";
-import { FALLBACK_RATES, peso, type DisplayRates } from "@/lib/pricing-display";
+import type { DisplayRates } from "@/lib/pricing-display";
+import { VENUE_ADDRESS, VENUE_MAP_LINK } from "@/lib/venue";
+import BookingInvoice from "./booking-invoice";
 import type { DetailsValues } from "./details-form";
 
 export interface ConfirmationProps {
   trackingToken: string;
+  trackingCode: string;
   total: string;
   courtNames: string[];
   slotStarts: string[];
@@ -42,17 +36,19 @@ export interface ConfirmationProps {
 
 export default function ConfirmationStep({
   trackingToken,
+  trackingCode,
   total,
   courtNames,
   slotStarts,
   dateStr,
   details,
-  rates = FALLBACK_RATES,
+  rates,
   onBookAnother,
 }: ConfirmationProps) {
   const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
   const [bookingUrl, setBookingUrl] = useState(`/track/${trackingToken}`);
-  const qrRef = useRef<SVGSVGElement>(null);
+  const qrRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     setBookingUrl(`${window.location.origin}/track/${trackingToken}`);
@@ -69,62 +65,26 @@ export default function ConfirmationStep({
     }
   };
 
-  const downloadQr = () => {
-    const svg = qrRef.current;
-    if (!svg) return;
-    const svgData = new XMLSerializer().serializeToString(svg);
-    const blob = new Blob([svgData], { type: "image/svg+xml" });
-    const objectUrl = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = objectUrl;
-    a.download = `ck-grounds-qr-${trackingToken.slice(0, 8)}.svg`;
-    a.click();
-    URL.revokeObjectURL(objectUrl);
-    toast.success("QR code downloaded!");
+  const copyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(trackingCode);
+      setCopiedCode(true);
+      toast.success("Tracking code copied!");
+      setTimeout(() => setCopiedCode(false), 2000);
+    } catch {
+      toast.error("Could not copy code. Please copy manually.");
+    }
   };
 
-  const sortedSlots = useMemo(() => [...slotStarts].sort(), [slotStarts]);
-  const firstSlot = sortedSlots[0];
-
-  const timeRangeLabel = formatSlotRanges(sortedSlots);
-
-  const formattedDate = dateStr
-    ? formatManilaLong(dateStr)
-    : firstSlot
-      ? formatManilaLong(firstSlot.slice(0, 10))
-      : "Upcoming";
-
-  // Build invoice line items from server total (or fall back to rate-based estimate)
-  const invoiceLines = useMemo(() => {
-    let dayCount = 0;
-    let nightCount = 0;
-    for (const iso of sortedSlots) {
-      if (timeBandFor(new Date(iso)) === "evening") nightCount++;
-      else dayCount++;
-    }
-    const n = courtNames.length || 1;
-    const lines: { label: string; amount: number }[] = [];
-    if (dayCount > 0)
-      lines.push({
-        label: `Morning court (${dayCount} hr${dayCount === 1 ? "" : "s"} × ${n > 1 ? `${n} courts` : "1 court"})`,
-        amount: dayCount * rates.morning * n,
-      });
-    if (nightCount > 0)
-      lines.push({
-        label: `Evening court (${nightCount} hr${nightCount === 1 ? "" : "s"} × ${n > 1 ? `${n} courts` : "1 court"})`,
-        amount: nightCount * rates.evening * n,
-      });
-    if (details.paddleQty > 0) {
-      const ph = details.paddleHours ?? sortedSlots.length;
-      lines.push({
-        label: `Paddle rental (${details.paddleQty} × ${ph}h @ ${peso(rates.paddle)}/hr)`,
-        amount: details.paddleQty * ph * rates.paddle,
-      });
-    }
-    if (details.ball)
-      lines.push({ label: "Ball set (flat fee)", amount: rates.ball });
-    return lines;
-  }, [sortedSlots, courtNames, rates, details.paddleQty, details.paddleHours, details.ball]);
+  const downloadQr = () => {
+    const canvas = qrRef.current;
+    if (!canvas) return;
+    const a = document.createElement("a");
+    a.href = canvas.toDataURL("image/png");
+    a.download = `ck-grounds-qr-${trackingToken.slice(0, 8)}.png`;
+    a.click();
+    toast.success("QR code downloaded!");
+  };
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 animate-rise">
@@ -153,169 +113,142 @@ export default function ConfirmationStep({
       </div>
 
       {/* ── Full Booking Invoice ── */}
-      <div className="rounded-3xl border border-line-warm/70 bg-white shadow-sm overflow-hidden">
+      <BookingInvoice
+        token={trackingToken}
+        total={total}
+        courtNames={courtNames}
+        slotStarts={slotStarts}
+        dateStr={dateStr}
+        player={details}
+        equipment={details}
+        bookingUrl={bookingUrl}
+        rates={rates}
+      />
 
-        {/* Invoice header */}
-        <div className="flex items-center justify-between border-b border-line-warm/40 px-6 py-4 sm:px-7">
-          <div className="flex items-center gap-2.5">
-            <div className="grid size-9 place-items-center rounded-xl bg-flame-light text-flame">
-              <Receipt className="size-4.5" aria-hidden />
-            </div>
-            <div>
-              <h2 className="text-base font-extrabold text-ink">Booking Invoice</h2>
-              <p className="text-[11px] font-mono text-warm-muted">#{trackingToken.slice(0, 8).toUpperCase()}</p>
-            </div>
+      {/* ── Tracking pass ── */}
+      <div className="rounded-3xl border border-line-warm/60 bg-white p-6 shadow-sm sm:p-7">
+        <div className="flex items-center gap-2.5">
+          <div className="grid size-9 place-items-center rounded-xl bg-flame-light text-flame">
+            <QrCode className="size-4.5" aria-hidden />
           </div>
-          <div className="text-right">
-            <span className="block text-xs font-semibold text-warm-muted">Total Paid</span>
-            <span className="text-2xl font-black text-flame">{peso(Number(total))}</span>
+          <div>
+            <h2 className="text-base font-extrabold text-ink">Your Tracking Pass</h2>
+            <p className="text-[11px] font-semibold text-warm-muted">
+              Either one opens your booking — two ways to the same thing
+            </p>
           </div>
         </div>
 
-        <div className="grid gap-0 sm:grid-cols-2">
-
-          {/* Left column: booking details */}
-          <div className="space-y-0 border-b border-line-warm/40 p-6 sm:border-b-0 sm:border-r sm:p-7">
-            <h3 className="mb-4 text-xs font-bold uppercase tracking-widest text-warm-muted">
-              Booking Details
-            </h3>
-
-            <div className="space-y-4 text-sm">
-              <div className="flex items-start gap-3">
-                <MapPin className="mt-0.5 size-4 shrink-0 text-flame" aria-hidden />
-                <div>
-                  <span className="block text-[10px] font-semibold uppercase tracking-wide text-warm-muted">Court</span>
-                  <span className="font-bold text-ink">{courtNames.join(", ")}</span>
-                </div>
+        <div className="mt-5 space-y-4">
+          {/* QR — primary */}
+          <div className="rounded-2xl border border-line-warm/60 bg-cream/60 p-5 text-center">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-warm-muted">
+              QR code
+            </span>
+            <div className="mt-3 flex flex-col items-center gap-3">
+              <div className="rounded-2xl border-2 border-line-warm/80 bg-white p-3 shadow-xs">
+                <QRCodeCanvas
+                  ref={qrRef}
+                  value={bookingUrl}
+                  size={280}
+                  level="M"
+                  style={{ width: 140, height: 140 }}
+                />
               </div>
+              <p className="text-[11px] leading-relaxed text-warm-muted">
+                Scan it to open your booking — handy to show on arrival.
+              </p>
+            </div>
+          </div>
 
-              <div className="flex items-start gap-3">
-                <Calendar className="mt-0.5 size-4 shrink-0 text-flame" aria-hidden />
-                <div>
-                  <span className="block text-[10px] font-semibold uppercase tracking-wide text-warm-muted">Play Date</span>
-                  <span className="font-bold text-ink">{formattedDate}</span>
-                </div>
-              </div>
+          <div className="flex items-center gap-3" aria-hidden>
+            <span className="h-px flex-1 bg-line-warm/60" />
+            <span className="text-[10px] font-bold uppercase tracking-widest text-warm-muted">Or</span>
+            <span className="h-px flex-1 bg-line-warm/60" />
+          </div>
 
-              <div className="flex items-start gap-3">
-                <Clock className="mt-0.5 size-4 shrink-0 text-flame" aria-hidden />
-                <div>
-                  <span className="block text-[10px] font-semibold uppercase tracking-wide text-warm-muted">Time &amp; Duration</span>
-                  <span className="font-bold text-ink">
-                    {timeRangeLabel}
-                  </span>
-                  <span className="block text-xs text-warm-muted">
-                    {sortedSlots.length} hour{sortedSlots.length === 1 ? "" : "s"}
-                  </span>
-                </div>
-              </div>
+          {/* Tracking code — alternative */}
+          <div className="rounded-2xl border border-line-warm/60 bg-cream/60 p-5 text-center">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-warm-muted">
+              Tracking code
+            </span>
+            <div className="mt-3 flex items-center justify-center gap-2">
+              <span className="rounded-xl border border-line-warm/70 bg-white px-4 py-2 font-mono text-xl font-black tracking-[0.3em] text-ink">
+                {trackingCode}
+              </span>
+              <button
+                type="button"
+                onClick={copyCode}
+                aria-label="Copy tracking code"
+                title="Copy tracking code"
+                className="grid size-9 shrink-0 place-items-center rounded-xl border border-line-warm/70 bg-white text-ink transition-colors hover:bg-oat"
+              >
+                {copiedCode ? (
+                  <Check className="size-3.5 text-live-dot" aria-hidden />
+                ) : (
+                  <Copy className="size-3.5" aria-hidden />
+                )}
+              </button>
+            </div>
+            <p className="mt-3 text-[11px] leading-relaxed text-warm-muted">
+              Enter this code with your email to open your booking.
+            </p>
+          </div>
+        </div>
 
-              {(details.paddleQty > 0 || details.ball) && (
-                <div className="flex items-start gap-3">
-                  <Dumbbell className="mt-0.5 size-4 shrink-0 text-flame" aria-hidden />
-                  <div>
-                    <span className="block text-[10px] font-semibold uppercase tracking-wide text-warm-muted">Equipment</span>
-                    {details.paddleQty > 0 && (
-                      <span className="block font-bold text-ink">
-                        {details.paddleQty} × Paddle ({details.paddleHours ?? sortedSlots.length}h)
-                      </span>
-                    )}
-                    {details.ball && (
-                      <span className="block font-bold text-ink">Ball set</span>
-                    )}
-                  </div>
-                </div>
+        <div className="mt-5 flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={downloadQr}
+            className="inline-flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-xl bg-flame px-3 text-sm font-bold text-white shadow-sm transition-all hover:bg-flame-hover active:scale-[0.99]"
+          >
+            <Download className="size-4" aria-hidden />
+            <span>Download QR Pass</span>
+          </button>
+          <div className="flex gap-2">
+            <Link
+              href={`/track/${trackingToken}`}
+              className="inline-flex min-h-[42px] min-w-0 flex-1 items-center justify-center gap-1 rounded-xl border border-line-warm/70 bg-white px-3 text-xs font-bold whitespace-nowrap text-ink transition-colors hover:bg-cream"
+            >
+              <span>View Status</span>
+              <ExternalLink className="size-3 text-warm-muted" aria-hidden />
+            </Link>
+            <button
+              type="button"
+              onClick={copyLink}
+              className="inline-flex min-h-[42px] min-w-0 flex-1 items-center justify-center gap-1 rounded-xl border border-line-warm/70 bg-white px-3 text-xs font-bold whitespace-nowrap text-pine transition-colors hover:bg-cream"
+            >
+              {copiedLink ? (
+                <><Check className="size-3 text-live-dot" aria-hidden /><span>Copied!</span></>
+              ) : (
+                <><Copy className="size-3" aria-hidden /><span>Copy Link</span></>
               )}
-            </div>
-
-            {/* Customer details */}
-            <div className="mt-6 border-t border-line-warm/40 pt-5">
-              <h3 className="mb-3 text-xs font-bold uppercase tracking-widest text-warm-muted">
-                Player Info
-              </h3>
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center gap-2.5 text-ink">
-                  <User className="size-3.5 shrink-0 text-warm-muted" aria-hidden />
-                  <span className="font-semibold">{details.fullName}</span>
-                </div>
-                <div className="flex items-center gap-2.5 text-ink">
-                  <Mail className="size-3.5 shrink-0 text-warm-muted" aria-hidden />
-                  <span className="text-xs font-semibold">{details.email}</span>
-                </div>
-                <div className="flex items-center gap-2.5 text-ink">
-                  <Phone className="size-3.5 shrink-0 text-warm-muted" aria-hidden />
-                  <span className="text-xs font-semibold">{details.phone}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Right column: cost breakdown + QR */}
-          <div className="p-6 sm:p-7">
-            {/* Cost breakdown */}
-            <h3 className="mb-4 text-xs font-bold uppercase tracking-widest text-warm-muted">
-              Cost Breakdown
-            </h3>
-            <div className="space-y-2 text-sm">
-              {invoiceLines.map((line) => (
-                <div key={line.label} className="flex items-baseline justify-between gap-4">
-                  <span className="text-xs text-ink/80">{line.label}</span>
-                  <span className="shrink-0 font-semibold text-ink">{peso(line.amount)}</span>
-                </div>
-              ))}
-              <div className="flex items-baseline justify-between gap-4 border-t border-line-warm/60 pt-3">
-                <span className="font-bold text-ink">Total</span>
-                <span className="text-xl font-extrabold text-flame">{peso(Number(total))}</span>
-              </div>
-            </div>
-
-            {/* QR Pass */}
-            <div className="mt-6 border-t border-line-warm/40 pt-5">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-pine uppercase tracking-wider mb-3">
-                <QrCode className="size-4 text-flame" aria-hidden />
-                <span>Your Check-in QR Pass</span>
-              </div>
-              <div className="flex flex-col gap-3">
-                <div className="shrink-0 self-center rounded-2xl border-2 border-line-warm/80 bg-white p-3 shadow-xs">
-                  <QRCodeSVG ref={qrRef} value={bookingUrl} size={140} level="M" />
-                </div>
-                <div className="flex flex-1 flex-col gap-2 text-center">
-                  <p className="text-xs leading-relaxed text-warm-muted">
-                    Show this at the front desk on your game day for instant check-in.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={downloadQr}
-                    className="inline-flex min-h-[40px] w-full items-center justify-center gap-1.5 rounded-xl bg-flame px-3 text-xs font-bold text-white shadow-sm transition-all hover:bg-flame-hover active:scale-[0.98]"
-                  >
-                    <Download className="size-3.5" aria-hidden />
-                    <span>Download QR</span>
-                  </button>
-                  <div className="flex gap-2">
-                    <Link
-                      href={`/track/${trackingToken}`}
-                      className="inline-flex min-h-[38px] min-w-0 flex-1 items-center justify-center gap-1 rounded-xl border border-line-warm/70 bg-white px-2 text-xs font-bold whitespace-nowrap text-ink transition-colors hover:bg-cream"
-                    >
-                      <span>View Status</span>
-                      <ExternalLink className="size-3 text-warm-muted" aria-hidden />
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={copyLink}
-                      className="inline-flex min-h-[38px] min-w-0 flex-1 items-center justify-center gap-1 rounded-xl border border-line-warm/70 bg-white px-2 text-xs font-bold whitespace-nowrap text-pine transition-colors hover:bg-cream"
-                    >
-                      {copiedLink ? (
-                        <><Check className="size-3 text-live-dot" aria-hidden /><span>Copied!</span></>
-                      ) : (
-                        <><Copy className="size-3" aria-hidden /><span>Copy Link</span></>
-                      )}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
+            </button>
           </div>
         </div>
+      </div>
+
+      {/* ── Venue location ── */}
+      <div className="rounded-3xl border border-line-warm/60 bg-white p-6 shadow-sm sm:p-7">
+        <div className="flex items-center gap-2.5">
+          <div className="grid size-9 place-items-center rounded-xl bg-flame-light text-flame">
+            <MapPin className="size-4.5" aria-hidden />
+          </div>
+          <div>
+            <h2 className="text-base font-extrabold text-ink">Where to find us</h2>
+            <p className="text-[11px] font-semibold text-warm-muted">CK Grounds · Tabuelan, Cebu</p>
+          </div>
+        </div>
+        <p className="mt-4 text-sm font-semibold text-ink">{VENUE_ADDRESS}</p>
+        <a
+          href={VENUE_MAP_LINK}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-4 inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl bg-flame px-5 text-sm font-bold text-white shadow-sm transition-all hover:bg-flame-hover active:scale-[0.99] sm:w-auto"
+        >
+          Open in Google Maps
+          <ExternalLink className="size-4" aria-hidden />
+        </a>
       </div>
 
       {/* ── What happens next ── */}
@@ -338,16 +271,7 @@ export default function ConfirmationStep({
       </div>
 
       {/* ── Action buttons ── */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pb-4">
-        <button
-          type="button"
-          onClick={downloadQr}
-          className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-flame px-6 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99]"
-        >
-          <Download className="size-4" aria-hidden />
-          <span>Download QR Pass</span>
-        </button>
-
+      <div className="flex flex-col gap-3 pb-4 sm:flex-row sm:items-center sm:justify-end">
         <div className="flex items-center gap-2">
           <button
             type="button"

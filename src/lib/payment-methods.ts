@@ -1,40 +1,25 @@
 // ============================================================================
-// PAYMENT METHODS — ★ OWNER INPUT REQUIRED ★
+// PAYMENT METHODS — customer-facing payment config: labels and QR image paths.
+// Edit ONLY this file to change what checkout offers.
 //
-// THIS IS THE ONE AND ONLY FILE holding customer-facing payment copy:
-// account names/numbers, instructions, and QR image paths. Edit ONLY this
-// file to go live with real payment details.
+// The owner's QR images carry the account details (some characters redacted
+// for the owner's privacy), so checkout shows the QR alone — no account text.
 //
-// TODO (owner) before launch:
-//   1. Replace every "TODO_OWNER_…" accountName / accountNumber below with the
-//      real merchant account name + number for GCash, BDO, and BPI.
-//   2. Drop the matching QR images into `public/payment-qr/` with EXACTLY
-//      these filenames:  gcash.png · bdo.png · bpi.png
-//      (PNG preferred; the booking page renders `<qrPath>` and shows a
-//      graceful text fallback automatically when a file is absent, so the
-//      site still builds and runs without them.)
-//   3. Flip each method's `configured` flag to true once its details + QR
-//      are in place. Unconfigured methods render as "coming soon" and cannot
-//      be selected at checkout.
-//   4. Adjust `instructions` wording per method if needed (kept generic now).
+// QR images live in `public/payment-qr/`. `qrPath` must match the filename
+// exactly (case-sensitive on Vercel); the booking page shows a graceful
+// fallback when a file is absent, so the site builds and runs without it.
 //
-// DO NOT invent real account numbers in code — placeholders ship on purpose.
+// `configured: false` adds a "Soon" badge to the method tab at checkout.
 // ============================================================================
 
 export interface PaymentMethod {
   id: "gcash" | "bdo" | "bpi";
   label: string;
-  /** Displayed account name. TODO_OWNER_* = replace before launch. */
-  accountName: string;
-  /** Displayed account number. TODO_OWNER_* = replace before launch. */
-  accountNumber: string;
-  /** Per-method payer instructions shown at checkout. */
-  instructions: string;
-  /** Served from `public/payment-qr/*.png`; fallback shown when missing. */
+  /** Served from `public/payment-qr/`; fallback shown when missing. */
   qrPath: string;
   /** Brand mark served from `public/`. */
   logoPath: string;
-  /** Owner flips to true once details + QR image are live. */
+  /** Owner flips to true once the QR image is live. */
   configured: boolean;
 }
 
@@ -42,37 +27,29 @@ export const PAYMENT_METHODS: PaymentMethod[] = [
   {
     id: "gcash",
     label: "GCash",
-    accountName: "TODO_OWNER_GCASH_NAME",
-    accountNumber: "TODO_OWNER_GCASH_NUMBER",
-    instructions:
-      "Send the exact booking total to the GCash account below, then screenshot the confirmation and upload it as your payment proof.",
-    qrPath: "/payment-qr/gcash.png",
+    qrPath: "/payment-qr/GCASH_QR_CODE.jpg",
     logoPath: "/gcash.png",
-    configured: false,
+    configured: true,
   },
   {
     id: "bdo",
     label: "BDO",
-    accountName: "TODO_OWNER_BDO_NAME",
-    accountNumber: "TODO_OWNER_BDO_NUMBER",
-    instructions:
-      "Transfer the exact booking total to the BDO account below (InstaPay/PESONet accepted), then screenshot the confirmation and upload it as your payment proof.",
-    qrPath: "/payment-qr/bdo.png",
+    qrPath: "/payment-qr/BDO_QR_CODE.jpg",
     logoPath: "/bdo.png",
-    configured: false,
+    configured: true,
   },
   {
     id: "bpi",
     label: "BPI",
-    accountName: "TODO_OWNER_BPI_NAME",
-    accountNumber: "TODO_OWNER_BPI_NUMBER",
-    instructions:
-      "Transfer the exact booking total to the BPI account below (InstaPay/PESONet accepted), then screenshot the confirmation and upload it as your payment proof.",
-    qrPath: "/payment-qr/bpi.png",
+    qrPath: "/payment-qr/BPI_QR_CODE.jpg",
     logoPath: "/bpi.png",
-    configured: false,
+    configured: true,
   },
 ];
+
+/** Shown under the QR at checkout (same for all methods). */
+export const PAYMENT_INSTRUCTION =
+  "Send the exact booking total to the account in the QR, then upload your payment screenshot as proof.";
 
 /** Shown under every method at checkout (same for all methods). */
 export const PAYMENT_NOTE =

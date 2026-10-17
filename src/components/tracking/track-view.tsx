@@ -6,22 +6,20 @@ import {
   ArrowRight,
   BadgeAlert,
   BadgeCheck,
-  Calendar,
   Check,
   Clock,
   Copy,
   Download,
   Hash,
-  MapPin,
   QrCode,
-  Receipt,
   RotateCcw,
   Sparkles,
 } from "lucide-react";
-import { QRCodeSVG } from "qrcode.react";
+import { QRCodeCanvas } from "qrcode.react";
 import { toast } from "sonner";
-import { formatManilaLong, formatSlotRanges } from "@/lib/courts";
-import { peso } from "@/lib/pricing-display";
+import type { DisplayRates } from "@/lib/pricing-display";
+import { maskEmail, maskPhone } from "@/lib/booking/redact";
+import BookingInvoice from "@/components/booking/booking-invoice";
 
 interface SlotItem {
   courtName: string;
@@ -39,11 +37,14 @@ export interface TrackViewProps {
   url: string;
   status: "Pending" | "Approved" | "Rejected" | string;
   fullName: string;
+  email: string;
+  phone: string;
   total: string;
   rejectReason?: string | null;
   trackingCode: string;
   slots: SlotItem[];
   rental: RentalItem | null;
+  rates?: DisplayRates;
 }
 
 export default function TrackView({
@@ -51,15 +52,18 @@ export default function TrackView({
   url,
   status,
   fullName,
+  email,
+  phone,
   total,
   rejectReason,
   trackingCode,
   slots,
   rental,
+  rates,
 }: TrackViewProps) {
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
-  const qrRef = useRef<SVGSVGElement>(null);
+  const qrRef = useRef<HTMLCanvasElement>(null);
 
   const copyLink = async () => {
     try {
@@ -84,29 +88,28 @@ export default function TrackView({
   };
 
   const downloadQr = () => {
-    const svg = qrRef.current;
-    if (!svg) return;
-    const svgData = new XMLSerializer().serializeToString(svg);
-    const blob = new Blob([svgData], { type: "image/svg+xml" });
-    const objectUrl = URL.createObjectURL(blob);
+    const canvas = qrRef.current;
+    if (!canvas) return;
     const a = document.createElement("a");
-    a.href = objectUrl;
-    a.download = `ck-grounds-qr-${token.slice(0, 8)}.svg`;
+    a.href = canvas.toDataURL("image/png");
+    a.download = `ck-grounds-qr-${token.slice(0, 8)}.png`;
     a.click();
-    URL.revokeObjectURL(objectUrl);
     toast.success("QR code downloaded!");
   };
 
   // Courts list
   const courtNames = Array.from(new Set(slots.map((s) => s.courtName)));
 
-  // Date and time range
+  // Slot instants, earliest first (invoice + calendar both read this)
   const sortedStarts = slots
     .map((s) => s.slotStart)
     .sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
-  const dateStr = sortedStarts[0] ? sortedStarts[0].slice(0, 10) : null;
-  const formattedDate = dateStr ? formatManilaLong(dateStr) : "Upcoming";
-  const timeRangeLabel = slots.length === 0 ? "No slots" : formatSlotRanges(sortedStarts);
+
+  const equipment = {
+    paddleQty: rental?.paddleQty ?? 0,
+    paddleHours: rental?.paddleHours != null ? Number(rental.paddleHours) : null,
+    ball: rental?.ballFee != null,
+  };
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 animate-rise">
@@ -172,75 +175,17 @@ export default function TrackView({
         </div>
       </div>
 
-      {/* ── Booking Details ── */}
-      <div className="rounded-3xl border border-line-warm/70 bg-white p-6 shadow-sm sm:p-7">
-        <div className="mb-4 flex items-center justify-between border-b border-line-warm/40 pb-3">
-          <h2 className="text-lg font-bold text-ink">Court Reservation</h2>
-          <Receipt className="size-5 text-pine" />
-        </div>
-
-        <div className="space-y-4 text-sm">
-          <div className="flex items-start gap-3">
-            <MapPin className="mt-0.5 size-4 shrink-0 text-flame" />
-            <div>
-              <span className="block text-xs font-semibold text-warm-muted">Court(s)</span>
-              <span className="font-bold text-ink">
-                {courtNames.length > 0 ? courtNames.join(", ") : "CK Grounds Court"}
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-3">
-            <Calendar className="mt-0.5 size-4 shrink-0 text-flame" />
-            <div>
-              <span className="block text-xs font-semibold text-warm-muted">Play Date</span>
-              <span className="font-bold text-ink">{formattedDate}</span>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-3">
-            <Clock className="mt-0.5 size-4 shrink-0 text-flame" />
-            <div>
-              <span className="block text-xs font-semibold text-warm-muted">Time &amp; Duration</span>
-              <span className="font-bold text-ink">
-                {timeRangeLabel} ({slots.length} hour{slots.length === 1 ? "" : "s"})
-              </span>
-            </div>
-          </div>
-
-          {/* Rentals */}
-          {rental && (rental.paddleQty > 0 || rental.ballFee != null) && (
-            <div className="border-t border-line-warm/40 pt-3">
-              <span className="block text-xs font-semibold text-warm-muted mb-1.5">
-                Equipment Rentals
-              </span>
-              <div className="space-y-1 text-xs text-ink">
-                {rental.paddleQty > 0 && (
-                  <div className="flex justify-between">
-                    <span>
-                      {rental.paddleQty} × Paddle Rental (
-                      {rental.paddleHours ?? slots.length}h)
-                    </span>
-                    <span className="font-semibold text-warm-muted">Included</span>
-                  </div>
-                )}
-                {rental.ballFee != null && (
-                  <div className="flex justify-between">
-                    <span>Ball Rental (Flat fee)</span>
-                    <span className="font-semibold text-warm-muted">Included</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Total */}
-          <div className="flex items-baseline justify-between border-t border-line-warm/60 pt-3.5">
-            <span className="text-base font-bold text-ink">Total Paid</span>
-            <span className="text-2xl font-black text-flame">{peso(Number(total))}</span>
-          </div>
-        </div>
-      </div>
+      {/* ── Booking Invoice ── */}
+      <BookingInvoice
+        token={token}
+        total={total}
+        courtNames={courtNames}
+        slotStarts={sortedStarts}
+        player={{ fullName, email: maskEmail(email), phone: maskPhone(phone) }}
+        equipment={equipment}
+        bookingUrl={url}
+        rates={rates}
+      />
 
       {/* ── QR Check-in Pass ── */}
       <div className="rounded-3xl border border-line-warm/70 bg-white p-6 shadow-sm sm:p-8">
@@ -262,7 +207,7 @@ export default function TrackView({
         <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-start">
           {/* QR Code */}
           <div className="flex-shrink-0 rounded-2xl border-2 border-line-warm/80 bg-white p-4 shadow-xs">
-            <QRCodeSVG ref={qrRef} value={url} size={180} level="M" />
+            <QRCodeCanvas ref={qrRef} value={url} size={360} level="M" style={{ width: 180, height: 180 }} />
           </div>
 
           {/* Tracking code + actions */}
