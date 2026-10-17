@@ -507,10 +507,17 @@ function p(text: string): string {
   </p>`;
 }
 
-function linkFallback(url: string): string {
-  return `<p style="margin:8px 0 0;font-size:12px;color:${BRAND.muted};word-break:break-all;">
-    <a href="${escapeHtml(url)}" style="color:${BRAND.flame};text-decoration:none;">${escapeHtml(url)}</a>
-  </p>`;
+function qrCard(qrDataUrl: string, alt: string): string {
+  return `
+    <table role="presentation" cellpadding="0" cellspacing="0" style="margin-bottom:16px;">
+      <tr>
+        <td style="background:${BRAND.white};border:2px solid ${BRAND.line};
+                   border-radius:12px;padding:16px;display:inline-block;">
+          <img src="${qrDataUrl}" width="180" height="180"
+               alt="${escapeHtml(alt)}" style="display:block;border:0;" />
+        </td>
+      </tr>
+    </table>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -550,6 +557,8 @@ export async function renderOutboxEmail(
   switch (template) {
     // -----------------------------------------------------------------------
     case OUTBOX_TEMPLATE_CUSTOMER_SUBMITTED: {
+      const qrDataUrl = url ? await qrDataUri(url) : null;
+
       const textLines = [
         `Hi ${fullName},`,
         "",
@@ -584,7 +593,14 @@ export async function renderOutboxEmail(
 
         ${lines.length || total ? `${sectionLabel("Invoice")}${invoiceBlock(lines, total)}` : ""}
 
-        ${url ? `${sectionLabel("Track your booking")}${ctaButton("View Booking Status", url)}${linkFallback(url)}` : ""}
+        ${
+          url
+            ? `${sectionLabel("Track your booking")}
+               ${p("Scan this QR code to check your booking status at any time.")}
+               ${qrDataUrl ? qrCard(qrDataUrl, "Booking tracking QR code") : ""}
+               ${ctaButton("View Booking Status", url)}`
+            : ""
+        }
 
         <div style="margin-top:24px;padding:14px 16px;background-color:${BRAND.cream};
                     border-left:3px solid ${BRAND.flame};border-radius:0 6px 6px 0;">
@@ -654,9 +670,8 @@ export async function renderOutboxEmail(
         ${lines.length || total ? `${sectionLabel("Invoice")}${invoiceBlock(lines, total)}` : ""}
 
         ${ctaButton("Open Admin Panel", adminLink)}
-        ${linkFallback(adminLink)}
 
-        ${url ? `${sectionLabel("Customer tracking link")}${linkFallback(url)}` : ""}`;
+        ${url ? `${sectionLabel("Customer tracking")}${ctaButton("Open Customer Tracking", url)}` : ""}`;
 
       return {
         subject: `CK Grounds — new booking from ${fullName || "customer"}`,
@@ -690,22 +705,8 @@ export async function renderOutboxEmail(
       const qrSection = url
         ? `${sectionLabel("QR check-in pass")}
            ${p("Show this at the venue to check in.")}
-           ${
-             qrDataUrl
-               ? `<table role="presentation" cellpadding="0" cellspacing="0"
-                       style="margin-bottom:16px;">
-                   <tr>
-                     <td style="background:${BRAND.white};border:2px solid ${BRAND.line};
-                                border-radius:12px;padding:16px;display:inline-block;">
-                       <img src="${qrDataUrl}" width="180" height="180"
-                            alt="QR check-in pass" style="display:block;border:0;" />
-                     </td>
-                   </tr>
-                 </table>`
-               : ""
-           }
-           ${ctaButton("Open QR Pass", url)}
-           ${linkFallback(url)}`
+           ${qrDataUrl ? qrCard(qrDataUrl, "QR check-in pass") : ""}
+           ${ctaButton("Open QR Pass", url)}`
         : "";
 
       const htmlBody = `
@@ -736,6 +737,7 @@ export async function renderOutboxEmail(
     // -----------------------------------------------------------------------
     case OUTBOX_TEMPLATE_CUSTOMER_REJECTED: {
       const reason = str(payload.rejectReason, "No reason provided.");
+      const qrDataUrl = url ? await qrDataUri(url) : null;
 
       const textLines = [
         `Hi ${fullName},`,
@@ -776,7 +778,14 @@ export async function renderOutboxEmail(
           </p>
         </div>
 
-        ${url ? `${sectionLabel("Booking reference")}${ctaButton("View Booking", url)}${linkFallback(url)}` : ""}
+        ${
+          url
+            ? `${sectionLabel("Booking reference")}
+               ${p("Scan this QR code to view this booking's status.")}
+               ${qrDataUrl ? qrCard(qrDataUrl, "Booking reference QR code") : ""}
+               ${ctaButton("View Booking", url)}`
+            : ""
+        }
 
         ${p("If you believe this is a mistake or would like to re-book, reply to this email.")}`;
 

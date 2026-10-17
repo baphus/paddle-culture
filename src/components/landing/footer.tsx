@@ -2,8 +2,10 @@ import Image from "next/image";
 import { Clock, Mail, MapPin, Phone } from "lucide-react";
 import { FALLBACK_RATES, type DisplayRates } from "@/lib/pricing-display";
 import { VENUE_PHONE_DISPLAY, VENUE_PHONE_LINK } from "@/lib/booking/constants";
+import DeveloperPromo from "@/components/landing/developer-promo";
 
 const FB_LINK = "https://www.facebook.com/profile.php?id=61595287250420";
+const SEPHUS_PORTFOLIO_URL = "https://www.sephus.tech";
 
 export default function Footer({ rates = FALLBACK_RATES }: { rates?: DisplayRates }) {
   void rates;
@@ -119,7 +121,17 @@ export default function Footer({ rates = FALLBACK_RATES }: { rates?: DisplayRate
         </div>
 
         <div className="mt-10 flex flex-col gap-2 border-t border-line pt-5 text-xs text-ink/60 sm:flex-row sm:items-center sm:justify-between">
-          <p>© 2025 CK Grounds. All rights reserved.</p>
+          <p>
+            © 2025 CK Grounds. All rights reserved. · Website & booking system built by{" "}
+            <a
+              href={SEPHUS_PORTFOLIO_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-bold text-ink/80 hover:text-flame hover:underline"
+            >
+              Sephus
+            </a>
+          </p>
           <nav className="flex flex-wrap items-center gap-x-4 gap-y-1" aria-label="Legal">
             {[
               { href: "/#faq", label: "Court Rules" },
@@ -134,6 +146,7 @@ export default function Footer({ rates = FALLBACK_RATES }: { rates?: DisplayRate
           </nav>
         </div>
       </div>
+      <DeveloperPromo />
     </footer>
   );
 }

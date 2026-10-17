@@ -554,10 +554,10 @@ export default function Step1DateTime({
 
   type DayKind = "past" | "today" | "open" | "selected" | "beyond";
   function dayKind(dateStr: string): DayKind {
-    if (dateStr < tomorrowStr) return "past";
     if (dateStr > maxStr) return "beyond";
     if (dateStr === selectedDate) return "selected";
-    if (dateStr === tomorrowStr) return "today"; // highlight tomorrow as "soonest"
+    if (dateStr === todayStr) return "today"; // today: highlighted but not bookable
+    if (dateStr < tomorrowStr) return "past";
     return "open";
   }
 
@@ -1029,22 +1029,32 @@ export default function Step1DateTime({
                       const kind = dayKind(dateStr);
                       const dayNum = Number(dateStr.slice(8, 10));
 
-                      if (kind === "past" || kind === "beyond") {
+                      if (kind === "past" || kind === "beyond" || kind === "today") {
+                        const isToday = kind === "today";
                         return (
                           <div
                             key={cell.key}
                             role="gridcell"
                             aria-disabled="true"
-                            aria-label={`${formatManilaLong(dateStr)} — unavailable`}
-                            className="flex h-11 cursor-not-allowed flex-col justify-between rounded-lg border border-line-warm/20 bg-surface-dim/20 p-1 text-xs text-warm-muted/50 sm:h-16 sm:rounded-xl sm:p-1.5"
+                            aria-label={`${formatManilaLong(dateStr)} — ${isToday ? "today, not bookable" : "unavailable"}`}
+                            className={cn(
+                              "flex h-11 cursor-not-allowed flex-col justify-between rounded-lg border p-1 text-xs sm:h-16 sm:rounded-xl sm:p-1.5",
+                              isToday
+                                ? "border-flame/40 bg-flame-light/30 text-flame"
+                                : "border-line-warm/20 bg-surface-dim/20 text-warm-muted/50",
+                            )}
                           >
-                            <span className="font-medium">{dayNum}</span>
+                            <span className={cn(isToday ? "font-extrabold" : "font-medium")}>{dayNum}</span>
+                            {isToday && (
+                              <span className="block text-[9px] font-bold uppercase tracking-wide leading-tight">
+                                Today
+                              </span>
+                            )}
                           </div>
                         );
                       }
 
                       const isSel = kind === "selected";
-                      const isToday = kind === "today";
 
                       return (
                         <div key={cell.key} role="gridcell" aria-selected={isSel}>
@@ -1052,20 +1062,18 @@ export default function Step1DateTime({
                             type="button"
                             onClick={() => pickDate(dateStr)}
                             aria-pressed={isSel}
-                            aria-label={`${formatManilaLong(dateStr)}${isToday ? " — today" : ""}`}
+                            aria-label={formatManilaLong(dateStr)}
                             className={cn(
                               "flex h-11 w-full flex-col justify-between rounded-lg border p-1 text-left transition-all sm:h-16 sm:rounded-xl sm:p-1.5",
                               isSel
                                 ? "border-2 border-flame bg-pine text-white shadow-md"
-                                : isToday
-                                  ? "border-flame/40 bg-flame-light/30 text-ink hover:bg-flame-light/50"
-                                  : "border-line-warm/70 bg-white text-ink hover:bg-oat",
+                                : "border-line-warm/70 bg-white text-ink hover:bg-oat",
                             )}
                           >
                             <span
                               className={cn(
                                 "text-sm font-bold sm:text-base",
-                                isSel ? "text-white font-extrabold" : isToday ? "text-flame font-extrabold" : "text-ink",
+                                isSel ? "text-white font-extrabold" : "text-ink",
                               )}
                             >
                               {dayNum}
@@ -1073,7 +1081,7 @@ export default function Step1DateTime({
                             <span
                               className={cn(
                                 "block text-[9px] font-bold uppercase tracking-wide leading-tight",
-                                isSel ? "text-flame" : isToday ? "text-flame" : "text-warm-muted/70 font-semibold",
+                                isSel ? "text-flame" : "text-warm-muted/70 font-semibold",
                               )}
                             >
                               {isSel ? "Selected" : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][weekdayManila(dateStr)]}
