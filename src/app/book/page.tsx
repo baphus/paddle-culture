@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export const metadata = {
   title: "Book a Court — CK Grounds",
   description:
-    "Pick a date and any hours, hold your slots, and submit with payment proof. Day ₱150/hr · Night ₱200/hr. No account needed.",
+    "Pick a date and any hours, hold your slots, and submit with payment proof. Morning ₱150/hr · Night ₱200/hr. No account needed.",
 };
 
 // Same fail-soft SSR pattern as the landing page: courts → FALLBACK_COURTS,
@@ -57,7 +57,7 @@ export default function BookPage() {
               Book a Court
             </h1>
             <p className="text-sm leading-6 text-ink sm:text-base sm:leading-[26px]">
-              Reserve your court online with instant 10-minute hold protection. Day ₱150/hr · Night ₱200/hr. No account needed.
+              Reserve your court online with instant 10-minute hold protection. Morning ₱150/hr · Night ₱200/hr. No account needed.
             </p>
           </div>
           <Suspense fallback={<Skeleton className="h-[520px] rounded-xl bg-oat/60" />}>

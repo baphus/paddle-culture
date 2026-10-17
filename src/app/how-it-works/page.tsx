@@ -194,7 +194,7 @@ export default async function HowItWorksPage() {
                 Ready to hit the court?
               </h2>
               <p className="max-w-md text-sm leading-6 text-white/80">
-                Live availability, honest hourly rates, and a QR that walks you straight in. Day{" "}
+                Live availability, honest hourly rates, and a QR that walks you straight in. Morning{" "}
                 {peso(rates.morning)}/hr · Night {peso(rates.evening)}/hr.
               </p>
               <a

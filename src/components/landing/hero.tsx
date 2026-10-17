@@ -111,7 +111,7 @@ export default function Hero({
           </p>
 
           <p className="mt-4 text-sm font-bold text-white">
-            Day {peso(rates.morning)}/hr
+            Morning {peso(rates.morning)}/hr
 
             <span
               className="mx-2 font-normal text-white/40"

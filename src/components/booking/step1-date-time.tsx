@@ -537,7 +537,7 @@ export default function Step1DateTime({
               <div className="p-5">
                 <DialogTitle className="text-lg font-extrabold text-ink">{previewCourt.name}</DialogTitle>
                 <p className="mt-1 text-sm font-semibold text-warm-muted">
-                  {peso(rates.morning)}/hr day · {peso(rates.evening)}/hr evening
+                  {peso(rates.morning)}/hr morning · {peso(rates.evening)}/hr evening
                 </p>
               </div>
             </DialogContent>

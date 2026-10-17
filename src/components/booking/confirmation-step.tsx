@@ -106,7 +106,7 @@ export default function ConfirmationStep({
     const lines: { label: string; amount: number }[] = [];
     if (dayCount > 0)
       lines.push({
-        label: `Daytime court (${dayCount} hr${dayCount === 1 ? "" : "s"} × ${n > 1 ? `${n} courts` : "1 court"})`,
+        label: `Morning court (${dayCount} hr${dayCount === 1 ? "" : "s"} × ${n > 1 ? `${n} courts` : "1 court"})`,
         amount: dayCount * rates.morning * n,
       });
     if (nightCount > 0)

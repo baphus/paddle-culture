@@ -151,7 +151,7 @@ function computeBreakdown(
       ? "No hours selected"
       : [
           dayCount > 0 && nightCount > 0
-            ? `${dayCount}h Day + ${nightCount}h Night`
+            ? `${dayCount}h Morning + ${nightCount}h Night`
             : dayCount > 0
               ? `${dayCount} hr${dayCount === 1 ? "" : "s"} @ ${peso(rates.morning)}/hr`
               : `${nightCount} hr${nightCount === 1 ? "" : "s"} @ ${peso(rates.evening)}/hr`,
