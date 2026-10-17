@@ -107,7 +107,7 @@ export default function AdminSidebar({ email, name }: Props) {
                   <SidebarMenuItem key={href}>
                     <SidebarMenuButton
                       size="lg"
-                      className="gap-3 px-3 data-active:bg-black! data-active:text-white! [&&_svg]:size-5! group-data-[collapsible=icon]:[&&_svg]:size-4!"
+                      className="gap-3 px-3 data-active:bg-primary! data-active:text-primary-foreground! [&&_svg]:size-5! group-data-[collapsible=icon]:[&&_svg]:size-4!"
                       render={<Link href={href} />}
                       onClick={() => setPendingHref(href)}
                       isActive={active}
@@ -134,7 +134,7 @@ export default function AdminSidebar({ email, name }: Props) {
                   <SidebarMenuItem key={href}>
                     <SidebarMenuButton
                       size="lg"
-                      className="gap-3 px-3 data-active:bg-black! data-active:text-white! [&&_svg]:size-5! group-data-[collapsible=icon]:[&&_svg]:size-4!"
+                      className="gap-3 px-3 data-active:bg-primary! data-active:text-primary-foreground! [&&_svg]:size-5! group-data-[collapsible=icon]:[&&_svg]:size-4!"
                       render={<Link href={href} />}
                       onClick={() => setPendingHref(href)}
                       isActive={active}
@@ -154,7 +154,7 @@ export default function AdminSidebar({ email, name }: Props) {
 
       <SidebarFooter>
         <div className="flex items-center gap-2 px-2 py-1.5 group-data-[collapsible=icon]:hidden">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-sidebar-primary text-xs font-medium text-sidebar-primary-foreground">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-medium text-primary-foreground">
             {(name ?? email).charAt(0).toUpperCase()}
           </span>
           <div className="grid min-w-0 flex-1 text-left text-sm leading-tight">

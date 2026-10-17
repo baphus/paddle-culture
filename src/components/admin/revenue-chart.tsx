@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useTheme } from "next-themes";
 import {
   Area,
   AreaChart,
@@ -16,11 +17,12 @@ import {
 import { BarChart3 } from "lucide-react";
 import type { RevenueDay, RevenueMonth } from "@/lib/admin/bookings";
 
-// ─── stock chart tokens (globals.css --chart-*) ──────────────────────────────
+// ─── series colours ──────────────────────────────────────────────────────────
+// These stay CSS variables on purpose: recharts writes them into `stroke` /
+// `fill` attributes, and a var() there resolves against the element's own
+// computed style, so the shell's per-theme --chart-* swap applies for free.
 const REVENUE_COLOR = "var(--chart-2)";
 const BOOKINGS_COLOR = "var(--chart-3)";
-const GRID_COLOR = "var(--border)";
-const AXIS_COLOR = "var(--muted-foreground)";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -63,6 +65,13 @@ function ChartTooltip({
   label?: string;
   mode: "full" | "mini";
 }) {
+  // Recharts clones this element with its own props, so read the theme here
+  // rather than threading colours through `content`.
+  const { resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const isDark = mounted && resolvedTheme === "dark";
+
   if (!active || !payload?.length) return null;
   const rev = payload.find((p) => p.name === "revenue");
   const bk = payload.find((p) => p.name === "bookings");
@@ -70,7 +79,14 @@ function ChartTooltip({
   const dataLabel = payload[0]?.dateKey ? formatDateLabel(payload[0].dateKey, mode) :
                     payload[0]?.label ?? label ?? "";
   return (
-    <div className="rounded-lg border border-border bg-popover px-3 py-2.5 text-xs text-popover-foreground shadow-md">
+    <div
+      className="rounded-lg border px-3 py-2.5 text-xs shadow-md"
+      style={{
+        background: isDark ? "oklch(0.205 0 0)" : "oklch(1 0 0)",
+        color: isDark ? "oklch(0.985 0 0)" : "oklch(0.145 0 0)",
+        borderColor: isDark ? "oklch(1 0 0 / 12%)" : "oklch(0.922 0 0)",
+      }}
+    >
       <p className="mb-1 font-medium">{dataLabel}</p>
       {rev && (
         <p className="font-semibold text-chart-2">
@@ -166,6 +182,18 @@ export default function RevenueChart({ days, months, mode = "full" }: Props) {
   const data = toggle === "daily" ? dailyData : toggle === "weekly" ? weeklyData : monthlyData;
   const hasData = data.length > 0;
   const chartHeight = isMini ? 130 : 280;
+  // Axis text is the one place recharts can't use a CSS token directly: SVG
+  // `fill` is inherited by the generated <text>, so the labels need the
+  // resolved colour. useTheme gives us a re-render on the toggle, which is
+  // also what makes the resolve-again-after-mount path safe.
+  const { resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const isDark = mounted && resolvedTheme === "dark";
+  const axisFill = isDark ? "oklch(0.708 0 0)" : "oklch(0.556 0 0)";
+  const gridStroke = isDark ? "oklch(1 0 0 / 12%)" : "oklch(0.922 0 0)";
+  // Active dot ring: punch it out of the surface behind it, not the page.
+  const activeDotStroke = isDark ? "oklch(0.205 0 0)" : "oklch(1 0 0)";
 
   return (
     <div className="space-y-0">
@@ -214,8 +242,9 @@ export default function RevenueChart({ days, months, mode = "full" }: Props) {
         >
           <ResponsiveContainer width="100%" height="100%">
             {isMini ? (
-              // Mini: clean area, no axes, no grid
-              <AreaChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
+              // Mini: clean area, no axes, no grid. Margins are 0 so the plot
+              // spans the full card width even when the sidebar leaves it narrow.
+              <AreaChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
                 <defs>
                   <linearGradient id="miniGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor={REVENUE_COLOR} stopOpacity={0.18} />
@@ -224,7 +253,7 @@ export default function RevenueChart({ days, months, mode = "full" }: Props) {
                 </defs>
                 <Tooltip
                   content={<ChartTooltip mode="mini" />}
-                  cursor={{ stroke: GRID_COLOR, strokeWidth: 1 }}
+                  cursor={{ stroke: gridStroke, strokeWidth: 1 }}
                 />
                 <Area
                   type="monotone"
@@ -234,12 +263,12 @@ export default function RevenueChart({ days, months, mode = "full" }: Props) {
                   strokeWidth={2}
                   fill="url(#miniGrad)"
                   dot={false}
-                  activeDot={{ r: 4, fill: REVENUE_COLOR, stroke: "var(--background)", strokeWidth: 2 }}
+                  activeDot={{ r: 4, fill: REVENUE_COLOR, stroke: activeDotStroke, strokeWidth: 2 }}
                 />
               </AreaChart>
             ) : (
               // Full: composed chart — area for revenue + bar overlay + line for bookings
-              <ComposedChart data={data} margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
+              <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
                 <defs>
                   <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor={REVENUE_COLOR} stopOpacity={0.15} />
@@ -248,37 +277,38 @@ export default function RevenueChart({ days, months, mode = "full" }: Props) {
                 </defs>
                 <CartesianGrid
                   strokeDasharray="4 4"
-                  stroke={GRID_COLOR}
+                  stroke={gridStroke}
                   vertical={false}
                 />
                 <XAxis
                   dataKey="label"
-                  tick={{ fontSize: 11, fill: AXIS_COLOR }}
+                  tick={{ fontSize: 11, fill: axisFill }}
                   axisLine={false}
                   tickLine={false}
                   interval="preserveStartEnd"
+                  minTickGap={16}
                 />
                 <YAxis
                   yAxisId="revenue"
                   orientation="left"
-                  tick={{ fontSize: 11, fill: AXIS_COLOR }}
+                  tick={{ fontSize: 11, fill: axisFill }}
                   axisLine={false}
                   tickLine={false}
                   tickFormatter={pesosShort}
-                  width={60}
+                  width={52}
                 />
                 <YAxis
                   yAxisId="bookings"
                   orientation="right"
-                  tick={{ fontSize: 11, fill: AXIS_COLOR }}
+                  tick={{ fontSize: 11, fill: axisFill }}
                   axisLine={false}
                   tickLine={false}
                   allowDecimals={false}
-                  width={32}
+                  width={28}
                 />
                 <Tooltip
                   content={<ChartTooltip mode="full" />}
-                  cursor={{ fill: "var(--accent)" }}
+                  cursor={{ fill: "var(--accent)", fillOpacity: 0.6 }}
                 />
                 {/* Revenue bars */}
                 <Bar
@@ -300,7 +330,7 @@ export default function RevenueChart({ days, months, mode = "full" }: Props) {
                   strokeWidth={2}
                   fill="url(#revGrad)"
                   dot={false}
-                  activeDot={{ r: 5, fill: REVENUE_COLOR, stroke: "var(--background)", strokeWidth: 2 }}
+                  activeDot={{ r: 5, fill: REVENUE_COLOR, stroke: activeDotStroke, strokeWidth: 2 }}
                 />
                 {/* Bookings count line */}
                 <Line
@@ -312,7 +342,7 @@ export default function RevenueChart({ days, months, mode = "full" }: Props) {
                   strokeWidth={1.5}
                   strokeDasharray="4 3"
                   dot={false}
-                  activeDot={{ r: 4, fill: BOOKINGS_COLOR, stroke: "var(--background)", strokeWidth: 2 }}
+                  activeDot={{ r: 4, fill: BOOKINGS_COLOR, stroke: activeDotStroke, strokeWidth: 2 }}
                 />
               </ComposedChart>
             )}

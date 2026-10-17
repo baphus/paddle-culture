@@ -83,7 +83,10 @@ function ColumnVisibilityMenu<TData>({ table }: { table: TanstackTable<TData> })
           className="isolate z-50 outline-none"
           sideOffset={4}
         >
-          <MenuPrimitive.Popup className="z-50 max-h-(--available-height) min-w-36 overflow-x-hidden overflow-y-auto rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-none">
+          <MenuPrimitive.Popup
+            data-slot="menu-popup"
+            className="z-50 max-h-(--available-height) min-w-36 overflow-x-hidden overflow-y-auto rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-none"
+          >
             <div className="px-1.5 py-1 text-xs font-medium text-muted-foreground">
               Toggle columns
             </div>

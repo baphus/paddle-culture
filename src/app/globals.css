@@ -3,6 +3,87 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* The public site keeps its cream/ink palette: only the admin shell follows
+   the shadcn tokens, so a dark admin never leaks onto the landing pages.
+   Setting the tokens (not just `color`) on the shell is what lets form
+   controls resolve them inside portals — checkboxes, radios and native
+   selects do not inherit `color` from their ancestors. */
+/* Chart series colours live here rather than in :root so the admin shell can
+   swap them per theme (--chart-* is remapped to --admin-chart-* below). The
+   palette carries the brand's flame/pine hues instead of shadcn's greyscale —
+   greyscale series are nearly invisible against a dark admin surface. */
+@layer base {
+  :root {
+    --chart-1: oklch(0.62 0.17 45); /* flame */
+    --chart-2: oklch(0.64 0.16 46); /* revenue: flame */
+    --chart-3: oklch(0.52 0.07 155); /* bookings: pine */
+    --chart-4: oklch(0.68 0.12 85); /* amber */
+    --chart-5: oklch(0.58 0.1 250); /* columbia blue */
+  }
+
+  .dark {
+    --chart-1: oklch(0.75 0.16 48);
+    --chart-2: oklch(0.75 0.16 48);
+    --chart-3: oklch(0.78 0.13 150);
+    --chart-4: oklch(0.82 0.14 88);
+    --chart-5: oklch(0.76 0.11 248);
+  }
+}
+
+@layer base {
+  [data-admin-shell] {
+    --background: var(--admin-background);
+    --foreground: var(--admin-foreground);
+    --card: var(--admin-card);
+    --card-foreground: var(--admin-card-foreground);
+    --popover: var(--admin-popover);
+    --popover-foreground: var(--admin-popover-foreground);
+    --primary: var(--admin-primary);
+    --primary-foreground: var(--admin-primary-foreground);
+    --secondary: var(--admin-secondary);
+    --secondary-foreground: var(--admin-secondary-foreground);
+    --muted: var(--admin-muted);
+    --muted-foreground: var(--admin-muted-foreground);
+    --accent: var(--admin-accent);
+    --accent-foreground: var(--admin-accent-foreground);
+    --destructive: var(--admin-destructive);
+    --border: var(--admin-border);
+    --input: var(--admin-input);
+    --ring: var(--admin-ring);
+    --chart-1: var(--admin-chart-1);
+    --chart-2: var(--admin-chart-2);
+    --chart-3: var(--admin-chart-3);
+    --chart-4: var(--admin-chart-4);
+    --chart-5: var(--admin-chart-5);
+
+    background-color: var(--background);
+    color: var(--foreground);
+  }
+
+  /* Portalled surfaces (menus, dialogs, popovers, tooltips) mount on <body>,
+     outside the shell, so they read the tokens straight off a .dark ancestor.
+     Each is listed by its own data-slot because shadcn names them per
+     component (dropdown-menu-content, sheet-content, …), not generically. */
+  .dark [data-slot="menu-popup"],
+  .dark [data-slot="dropdown-menu-content"],
+  .dark [data-slot="dropdown-menu-sub-content"],
+  .dark [data-slot="dialog-content"],
+  .dark [data-slot="sheet-content"],
+  .dark [data-slot="popover-content"],
+  .dark [data-slot="select-content"],
+  .dark [data-slot="tooltip-content"] {
+    color: var(--foreground);
+  }
+}
+
+html {
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
 @theme {
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 
@@ -119,6 +200,30 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  --admin-background: oklch(1 0 0);
+  --admin-foreground: oklch(0.145 0 0);
+  --admin-card: oklch(1 0 0);
+  --admin-card-foreground: oklch(0.145 0 0);
+  --admin-popover: oklch(1 0 0);
+  --admin-popover-foreground: oklch(0.145 0 0);
+  --admin-primary: oklch(0.205 0 0);
+  --admin-primary-foreground: oklch(0.985 0 0);
+  --admin-secondary: oklch(0.97 0 0);
+  --admin-secondary-foreground: oklch(0.205 0 0);
+  --admin-muted: oklch(0.97 0 0);
+  --admin-muted-foreground: oklch(0.556 0 0);
+  --admin-accent: oklch(0.97 0 0);
+  --admin-accent-foreground: oklch(0.205 0 0);
+  --admin-destructive: oklch(0.577 0.245 27.325);
+  --admin-border: oklch(0.922 0 0);
+  --admin-input: oklch(0.922 0 0);
+  --admin-ring: oklch(0.708 0 0);
+  --admin-chart-1: oklch(0.62 0.17 45);
+  --admin-chart-2: oklch(0.64 0.16 46);
+  --admin-chart-3: oklch(0.52 0.07 155);
+  --admin-chart-4: oklch(0.68 0.12 85);
+  --admin-chart-5: oklch(0.58 0.1 250);
 }
 
 .dark {
@@ -153,6 +258,30 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+
+  --admin-background: oklch(0.145 0 0);
+  --admin-foreground: oklch(0.985 0 0);
+  --admin-card: oklch(0.205 0 0);
+  --admin-card-foreground: oklch(0.985 0 0);
+  --admin-popover: oklch(0.205 0 0);
+  --admin-popover-foreground: oklch(0.985 0 0);
+  --admin-primary: oklch(0.922 0 0);
+  --admin-primary-foreground: oklch(0.205 0 0);
+  --admin-secondary: oklch(0.269 0 0);
+  --admin-secondary-foreground: oklch(0.985 0 0);
+  --admin-muted: oklch(0.269 0 0);
+  --admin-muted-foreground: oklch(0.708 0 0);
+  --admin-accent: oklch(0.269 0 0);
+  --admin-accent-foreground: oklch(0.985 0 0);
+  --admin-destructive: oklch(0.704 0.191 22.216);
+  --admin-border: oklch(1 0 0 / 10%);
+  --admin-input: oklch(1 0 0 / 15%);
+  --admin-ring: oklch(0.556 0 0);
+  --admin-chart-1: oklch(0.75 0.16 48);
+  --admin-chart-2: oklch(0.75 0.16 48);
+  --admin-chart-3: oklch(0.78 0.13 150);
+  --admin-chart-4: oklch(0.82 0.14 88);
+  --admin-chart-5: oklch(0.76 0.11 248);
 }
 
 @layer base {
@@ -164,6 +293,20 @@
   }
   body {
     @apply bg-cream text-ink antialiased;
+  }
+  /* Native controls don't inherit `color`; give them the ambient token so a
+     checkbox or select on a dark surface isn't drawn near-black. */
+  [data-admin-shell] button,
+  [data-admin-shell] input,
+  [data-admin-shell] select,
+  [data-admin-shell] textarea,
+  [data-admin-shell] label,
+  .dark button,
+  .dark input,
+  .dark select,
+  .dark textarea,
+  .dark label {
+    color: inherit;
   }
   ::selection {
     background: #ea662c;

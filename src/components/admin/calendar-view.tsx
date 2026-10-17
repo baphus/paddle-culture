@@ -1,15 +1,14 @@
 "use client";
 
-import { useState, useCallback, useEffect, useMemo } from "react";
-import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, Check, Copy, X } from "lucide-react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { ChevronLeft, ChevronRight, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { BookingStatusBadge } from "@/components/admin/status-badge";
-import { Card, CardContent } from "@/components/ui/card";
+import {
+  BookingDetailDialog,
+  type BookingDecision,
+} from "@/components/admin/booking-detail-dialog";
 import { LoadingAnimation } from "@/components/ui/loading-animation";
 import {
   Sheet,
@@ -18,13 +17,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import type { CalendarEvent } from "@/lib/admin/calendar";
 import { formatConsecutiveSlots } from "@/lib/admin/calendar";
 import type { BookingDetail } from "@/lib/admin/bookings";
@@ -35,15 +27,16 @@ import type { ClosureRow } from "@/lib/admin/config";
 type ViewMode = "daily" | "weekly" | "monthly" | "schedule";
 
 interface Props {
-  events: CalendarEvent[];
-  year: number;
-  month: number; // 1-based
+  /** Initial payload for the anchor month, loaded server-side by page.tsx. */
+  initialEvents: CalendarEvent[];
+  initialClosures: ClosureRow[];
+  /** Anchor month loaded server-side (1-based month). */
+  loadedYear: number;
+  loadedMonth: number;
   today: string; // "YYYY-MM-DD"
   view?: ViewMode; // optional for mini mode
   anchorDate?: string; // optional for mini mode
-  weekStart?: string; // optional for mini mode
   mode?: "full" | "mini";
-  closures?: ClosureRow[];
 }
 
 // ─── constants ────────────────────────────────────────────────────────────────
@@ -99,6 +92,24 @@ function nextMonthDate(year: number, month: number): string {
   return `${y}-${String(m).padStart(2, "0")}-01`;
 }
 
+/** Monday-start week for the given date (client-safe, UTC-noon anchor). */
+function weekStartOf(dateStr: string): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dow = new Date(Date.UTC(y as number, (m as number) - 1, d as number, 12)).getUTCDay();
+  const daysToMon = dow === 0 ? -6 : 1 - dow;
+  return addDays(dateStr, daysToMon);
+}
+
+/** Manila "today" as YYYY-MM-DD for client-side init when no param is present. */
+function manilaTodayStr(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
 function dayLabel(dateStr: string): string {
   const [y, m, d] = dateStr.split("-").map(Number);
   const dt = new Date(Date.UTC(y as number, (m as number) - 1, d as number, 12));
@@ -124,6 +135,10 @@ function weekRangeLabel(weekStart: string): string {
     year: "numeric",
     timeZone: "UTC",
   });
+  // Same month → "Oct 12 – 18, 2026" so the label fits one line on mobile.
+  if (sy === ey && sm === em) {
+    return `${sLabel} – ${ed}, ${ey}`;
+  }
   return `${sLabel} – ${eLabel}`;
 }
 
@@ -156,25 +171,164 @@ function buildMonthGrid(year: number, month: number): Array<{ date: string; inMo
 
 // ─── main component ───────────────────────────────────────────────────────────
 
+interface MonthData {
+  events: CalendarEvent[];
+  closures: ClosureRow[];
+}
+
+const monthKey = (year: number, month: number) => `${year}-${month}`;
+
 export default function CalendarView({
-  events,
-  year,
-  month,
+  initialEvents,
+  initialClosures,
+  loadedYear,
+  loadedMonth,
   today,
   view = "weekly",
-  anchorDate = today,
-  weekStart = today,
+  anchorDate,
   mode = "full",
-  closures = [],
 }: Props) {
-  const router = useRouter();
   const isMini = mode === "mini";
+
+  // ── client-side navigation state (initialised from server-loaded anchor) ──
+  const initialAnchor = anchorDate ?? today;
+  const [viewMode, setViewMode] = useState<ViewMode>(view);
+  const [year, setYear] = useState<number>(loadedYear);
+  const [month, setMonth] = useState<number>(loadedMonth);
+  const [anchor, setAnchor] = useState<string>(initialAnchor);
+  const weekStart = useMemo(() => weekStartOf(anchor), [anchor]);
+
+  // ── month data + on-demand cache (seed with server payload) ──────────────
+  const cacheRef = useRef<Map<string, MonthData>>(new Map());
+  const seeded = useRef(false);
+  if (!seeded.current) {
+    cacheRef.current.set(monthKey(loadedYear, loadedMonth), {
+      events: initialEvents,
+      closures: initialClosures,
+    });
+    seeded.current = true;
+  }
+  const [data, setData] = useState<MonthData>({
+    events: initialEvents,
+    closures: initialClosures,
+  });
+  const [loading, setLoading] = useState(false);
+
+  // Fetch (or reuse) a month's data; returns the payload.
+  const ensureMonth = useCallback(
+    async (y: number, m: number): Promise<MonthData | null> => {
+      const key = monthKey(y, m);
+      const cached = cacheRef.current.get(key);
+      if (cached) return cached;
+      setLoading(true);
+      try {
+        const res = await fetch(`/api/admin/calendar/events?year=${y}&month=${m}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const payload = (await res.json()) as MonthData;
+        const store: MonthData = {
+          events: payload.events ?? [],
+          closures: payload.closures ?? [],
+        };
+        cacheRef.current.set(key, store);
+        return store;
+      } catch {
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
+
+  // When the visible month changes, ensure its data is loaded.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const next = await ensureMonth(year, month);
+      if (cancelled) return;
+      if (next) setData(next);
+      else toast.error("Failed to load calendar events.");
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [year, month, ensureMonth]);
+
+  // ── URL sync (shareable, no navigation) ──────────────────────────────────
+  const syncUrl = useCallback(
+    (v: ViewMode, opts: { y: number; m: number; date: string }) => {
+      const sp = new URLSearchParams();
+      sp.set("view", v);
+      if (v === "monthly") {
+        sp.set("year", String(opts.y));
+        sp.set("month", String(opts.m));
+      } else {
+        sp.set("date", opts.date);
+      }
+      const qs = sp.toString();
+      window.history.replaceState(null, "", `/admin/calendar?${qs}`);
+    },
+    [],
+  );
+
+  const applyState = useCallback(
+    (next: { view?: ViewMode; year?: number; month?: number; anchor?: string }) => {
+      const v = next.view ?? viewMode;
+      const y = next.year ?? year;
+      const m = next.month ?? month;
+      const a = next.anchor ?? anchor;
+      setViewMode(v);
+      setYear(y);
+      setMonth(m);
+      setAnchor(a);
+      syncUrl(v, { y, m, date: a });
+    },
+    [viewMode, year, month, anchor, syncUrl],
+  );
+
+  // Switch view without moving the current period.
+  function navView(v: ViewMode) {
+    applyState({ view: v });
+  }
+
+  // Step the current period by one unit (month / week / day).
+  function step(dir: -1 | 1) {
+    if (viewMode === "monthly") {
+      const d = dir === 1 ? nextMonthDate(year, month) : prevMonthDate(year, month);
+      const [y2, m2] = d.split("-").map(Number);
+      applyState({ year: y2, month: m2 });
+    } else if (viewMode === "weekly" || viewMode === "schedule") {
+      applyState({ anchor: addDays(weekStart, dir * 7) });
+    } else {
+      applyState({ anchor: addDays(anchor, dir) });
+    }
+  }
+
+  // Jump to a specific day (opens daily view).
+  function goToDay(date: string) {
+    applyState({ view: "daily", anchor: date });
+  }
+
+  function jumpToToday() {
+    const t = manilaTodayStr();
+    if (viewMode === "monthly") {
+      const [ty, tm] = t.split("-").map(Number);
+      applyState({ year: ty, month: tm, anchor: t });
+    } else {
+      applyState({ anchor: t });
+    }
+  }
+
+  const events = data.events;
+  const closures = data.closures;
 
   // Day-panel state (first slider)
   const [dayPanelDate, setDayPanelDate] = useState<string | null>(null);
-  // Booking-detail state (second slider)
+  // Booking-detail modal — shares the exact component the bookings table uses
+  const [detailOpen, setDetailOpen] = useState(false);
   const [detailBooking, setDetailBooking] = useState<BookingDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [decision, setDecision] = useState<BookingDecision>(null);
 
   // Index events by date
   const byDate = useMemo(() => {
@@ -187,34 +341,41 @@ export default function CalendarView({
     return map;
   }, [events]);
 
-  function navigate(params: Record<string, string>) {
-    const sp = new URLSearchParams(params);
-    router.push(`/admin/calendar?${sp.toString()}`);
-  }
-
-  function navView(v: ViewMode) {
-    const base: Record<string, string> = { view: v };
-    if (v === "monthly") {
-      base.y = String(year);
-      base.m = String(month);
-    } else {
-      base.date = anchorDate;
-    }
-    navigate(base);
-  }
+  // After a decision, drop the current month from cache and refetch it.
+  const refetchCurrentMonth = useCallback(async () => {
+    cacheRef.current.delete(monthKey(year, month));
+    const next = await ensureMonth(year, month);
+    if (next) setData(next);
+    else toast.error("Failed to refresh calendar.");
+  }, [year, month, ensureMonth]);
 
   async function openBookingDetail(id: string) {
+    setDetailOpen(true);
     setDetailLoading(true);
     setDetailBooking(null);
+    setDecision(null);
     try {
       const res = await fetch(`/api/admin/bookings/${id}`);
       const data = (await res.json()) as BookingDetail & { error?: unknown };
       if (res.ok) setDetailBooking(data);
-      else toast.error("Failed to load booking.");
+      else {
+        setDetailOpen(false);
+        toast.error("Failed to load booking.");
+      }
     } catch {
+      setDetailOpen(false);
       toast.error("Failed to load booking.");
     } finally {
       setDetailLoading(false);
+    }
+  }
+
+  function handleDetailOpenChange(open: boolean) {
+    setDetailOpen(open);
+    if (!open) {
+      setDetailBooking(null);
+      setDetailLoading(false);
+      setDecision(null);
     }
   }
 
@@ -233,7 +394,7 @@ export default function CalendarView({
               onClick={() => {
                 const d = prevMonthDate(year, month);
                 const [y2, m2] = d.split("-").map(Number);
-                navigate({ view: "monthly", y: String(y2), m: String(m2) });
+                applyState({ year: y2, month: m2 });
               }}
               aria-label="Previous month"
               className="grid size-6 place-items-center rounded-lg border border-border bg-background text-foreground hover:bg-muted"
@@ -245,7 +406,7 @@ export default function CalendarView({
               onClick={() => {
                 const d = nextMonthDate(year, month);
                 const [y2, m2] = d.split("-").map(Number);
-                navigate({ view: "monthly", y: String(y2), m: String(m2) });
+                applyState({ year: y2, month: m2 });
               }}
               aria-label="Next month"
               className="grid size-6 place-items-center rounded-lg border border-border bg-background text-foreground hover:bg-muted"
@@ -271,7 +432,7 @@ export default function CalendarView({
               <button
                 key={cell.date}
                 type="button"
-                onClick={() => dayEvents.length > 0 && navigate({ view: "daily", date: cell.date })}
+                onClick={() => dayEvents.length > 0 && goToDay(cell.date)}
                 className={cn(
                   "relative flex flex-col items-center py-1 text-[11px] font-semibold transition-colors",
                   cell.inMonth ? "text-foreground" : "text-foreground/25",
@@ -302,85 +463,51 @@ export default function CalendarView({
   return (
     <>
       {/* ── Top bar ──────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
+      <div className="flex flex-col gap-3 border-b border-border px-4 py-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-2 sm:py-3">
         {/* Period label + nav */}
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           {/* Prev */}
           <button
             type="button"
             aria-label="Previous"
-            onClick={() => {
-              if (view === "monthly") {
-                const d = prevMonthDate(year, month);
-                const [y2, m2] = d.split("-").map(Number);
-                navigate({ view: "monthly", y: String(y2), m: String(m2) });
-              } else if (view === "schedule") {
-                navigate({ view: "schedule", date: addDays(weekStart, -7) });
-              } else if (view === "weekly") {
-                navigate({ view: "weekly", date: addDays(weekStart, -7) });
-              } else {
-                navigate({ view: "daily", date: addDays(anchorDate, -1) });
-              }
-            }}
-            className="grid size-8 place-items-center rounded-lg border border-border bg-background text-foreground hover:bg-muted"
+            onClick={() => step(-1)}
+            className="grid size-8 shrink-0 place-items-center rounded-lg border border-border bg-background text-foreground hover:bg-muted"
           >
             <ChevronLeft className="size-4" aria-hidden />
           </button>
 
           {/* Label */}
-          <h2 className="text-base font-extrabold tracking-tight text-foreground">
-            {view === "monthly"
+          <h2 className="min-w-0 flex-1 text-base font-extrabold tracking-tight text-foreground sm:flex-none sm:whitespace-nowrap">
+            {viewMode === "monthly"
               ? `${MONTH_NAMES[month - 1]} ${year}`
-              : view === "schedule" || view === "weekly"
+              : viewMode === "schedule" || viewMode === "weekly"
                 ? weekRangeLabel(weekStart)
-                : dayLabel(anchorDate)}
+                : dayLabel(anchor)}
           </h2>
 
           {/* Next */}
           <button
             type="button"
             aria-label="Next"
-            onClick={() => {
-              if (view === "monthly") {
-                const d = nextMonthDate(year, month);
-                const [y2, m2] = d.split("-").map(Number);
-                navigate({ view: "monthly", y: String(y2), m: String(m2) });
-              } else if (view === "schedule") {
-                navigate({ view: "schedule", date: addDays(weekStart, 7) });
-              } else if (view === "weekly") {
-                navigate({ view: "weekly", date: addDays(weekStart, 7) });
-              } else {
-                navigate({ view: "daily", date: addDays(anchorDate, 1) });
-              }
-            }}
-            className="grid size-8 place-items-center rounded-lg border border-border bg-background text-foreground hover:bg-muted"
+            onClick={() => step(1)}
+            className="grid size-8 shrink-0 place-items-center rounded-lg border border-border bg-background text-foreground hover:bg-muted"
           >
             <ChevronRight className="size-4" aria-hidden />
           </button>
 
           {/* Booking count badge */}
-          <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+          <span className="shrink-0 whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
             {events.length} booking{events.length !== 1 ? "s" : ""}
+            {loading && <span className="ml-1 opacity-60">…</span>}
           </span>
         </div>
 
         {/* Right side: Today + view toggles */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between gap-2 sm:justify-end">
           <button
             type="button"
-            onClick={() => {
-              if (view === "monthly") {
-                const now = new Date();
-                navigate({ view: "monthly", y: String(now.getUTCFullYear()), m: String(now.getUTCMonth() + 1) });
-              } else if (view === "schedule") {
-                navigate({ view: "schedule", date: today });
-              } else if (view === "weekly") {
-                navigate({ view: "weekly", date: today });
-              } else {
-                navigate({ view: "daily", date: today });
-              }
-            }}
-            className="rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-muted"
+            onClick={jumpToToday}
+            className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground hover:bg-muted sm:py-1"
           >
             Today
           </button>
@@ -393,8 +520,8 @@ export default function CalendarView({
                 type="button"
                 onClick={() => navView(v)}
                 className={cn(
-                  "rounded-md px-2.5 py-1 text-xs font-semibold capitalize transition-colors",
-                  view === v
+                  "rounded-md px-2.5 py-1.5 text-xs font-semibold capitalize transition-colors sm:py-1",
+                  viewMode === v
                     ? "bg-background text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground",
                 )}
@@ -407,7 +534,7 @@ export default function CalendarView({
       </div>
 
       {/* ── View body ────────────────────────────────────────────────────── */}
-      {view === "monthly" && (
+      {viewMode === "monthly" && (
         <MonthlyView
           year={year}
           month={month}
@@ -416,25 +543,25 @@ export default function CalendarView({
           onDayClick={(date) => setDayPanelDate(date)}
         />
       )}
-      {view === "weekly" && (
+      {viewMode === "weekly" && (
         <WeeklyView
           weekStart={weekStart}
           today={today}
           byDate={byDate}
           onDayClick={(date) => setDayPanelDate(date)}
-          onNavDay={(date) => navigate({ view: "daily", date })}
+          onNavDay={goToDay}
         />
       )}
-      {view === "daily" && (
+      {viewMode === "daily" && (
         <DailyView
-          date={anchorDate}
+          date={anchor}
           today={today}
           byDate={byDate}
           onOpenBooking={openBookingDetail}
           detailLoading={detailLoading}
         />
       )}
-      {view === "schedule" && (
+      {viewMode === "schedule" && (
         <ScheduleView
           events={events}
           closures={closures ?? []}
@@ -476,26 +603,15 @@ export default function CalendarView({
         </SheetContent>
       </Sheet>
 
-      {/* ── Booking detail (modal) ──────────────────────────────────────── */}
-      <Dialog
-        open={detailBooking !== null || detailLoading}
-        onOpenChange={(o) => { if (!o) { setDetailBooking(null); setDetailLoading(false); } }}
-      >
-        <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden rounded-xl p-0 sm:max-w-md">
-          {detailLoading && (
-            <div className="flex flex-1 items-center justify-center py-20">
-              <LoadingAnimation label="Loading booking" />
-            </div>
-          )}
-          {detailBooking && (
-            <BookingDetail
-              booking={detailBooking}
-              onClose={() => setDetailBooking(null)}
-              onUpdate={() => router.refresh()}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
+      {/* ── Booking detail (same modal as the bookings table View action) ── */}
+      <BookingDetailDialog
+        booking={detailBooking}
+        open={detailOpen}
+        onOpenChange={handleDetailOpenChange}
+        decision={decision}
+        onDecisionChange={setDecision}
+        onDecided={() => { void refetchCurrentMonth(); }}
+      />
     </>
   );
 }
@@ -615,7 +731,7 @@ function WeeklyView({
               {/* Header row */}
               <div
                 className={cn(
-                  "border-b border-border px-2 py-2 text-center",
+                  "border-b border-border px-2 py-3 text-center",
                   isToday && "bg-primary/5",
                 )}
               >
@@ -626,7 +742,7 @@ function WeeklyView({
                   type="button"
                   onClick={() => onNavDay(date)}
                   className={cn(
-                    "mx-auto mt-0.5 flex size-7 items-center justify-center rounded-full text-sm font-extrabold leading-none transition-colors",
+                    "mx-auto mt-1.5 flex size-8 items-center justify-center rounded-full text-sm font-extrabold leading-none transition-colors",
                     isToday
                       ? "bg-primary text-primary-foreground"
                       : "text-foreground hover:bg-muted",
@@ -637,9 +753,9 @@ function WeeklyView({
               </div>
 
               {/* Events */}
-              <div className="flex flex-1 flex-col gap-1 p-1.5">
+              <div className="flex flex-1 flex-col gap-1.5 p-2">
                 {dayEvents.length === 0 && (
-                  <p className="mt-3 text-center text-[10px] text-foreground/25">—</p>
+                  <p className="mt-4 text-center text-[11px] text-foreground/25">—</p>
                 )}
                 {dayEvents.map((ev) => {
                   const c = eventColors(ev.status);
@@ -649,14 +765,18 @@ function WeeklyView({
                       type="button"
                       onClick={() => onDayClick(date)}
                       className={cn(
-                        "w-full truncate rounded border px-1.5 py-1 text-left transition-opacity hover:opacity-80",
+                        "group w-full truncate rounded-lg border px-2.5 py-2 text-left transition-opacity hover:opacity-80",
                         c.pill,
                       )}
                     >
                       <p className="truncate text-[11px] font-bold leading-tight">{ev.fullName}</p>
-                      <p className="mt-0.5 truncate text-[10px] font-medium leading-tight opacity-80">
+                      <p className="mt-1 truncate text-[10px] font-medium leading-tight opacity-80">
                         {formatConsecutiveSlots(ev.slotStarts)}
                       </p>
+                      <span className="mt-1.5 inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide opacity-60 group-hover:opacity-100">
+                        <Eye className="size-2.5" aria-hidden />
+                        View
+                      </span>
                     </button>
                   );
                 })}
@@ -664,7 +784,7 @@ function WeeklyView({
                   <button
                     type="button"
                     onClick={() => onDayClick(date)}
-                    className="mt-auto w-full truncate rounded-lg py-1 text-center text-[10px] font-semibold text-muted-foreground hover:bg-muted/60"
+                    className="mt-auto w-full truncate rounded-lg py-1.5 text-center text-[10px] font-semibold text-muted-foreground hover:bg-muted/60"
                   >
                     View all →
                   </button>
@@ -675,59 +795,110 @@ function WeeklyView({
         })}
       </div>
 
-      {/* Mobile: stacked per-day */}
-      <div className="flex flex-col gap-3 sm:hidden">
-        {days.map((date) => {
-          const dayEvents = byDate.get(date) ?? [];
-          const isToday = date === today;
-          const [, , dd] = date.split("-").map(Number);
-          const dowLabel = DAY_NAMES_SHORT[new Date(date + "T12:00:00Z").getUTCDay()]!;
-          return (
-            <div key={date} className="rounded-lg border border-border">
+      {/* Mobile: horizontal day scroller + day agenda */}
+      <div className="sm:hidden">
+        {/* Day strip */}
+        <div className="flex gap-2.5 overflow-x-auto px-4 py-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {days.map((date) => {
+            const dayEvents = byDate.get(date) ?? [];
+            const isToday = date === today;
+            const [, , dd] = date.split("-").map(Number);
+            const dowLabel = DAY_NAMES_SHORT[new Date(date + "T12:00:00Z").getUTCDay()]!;
+            return (
               <button
+                key={date}
                 type="button"
                 onClick={() => onNavDay(date)}
                 className={cn(
-                  "w-full px-3 py-2 text-left",
-                  isToday && "bg-primary/5",
+                  "flex w-[52px] shrink-0 flex-col items-center gap-1.5 rounded-2xl border py-2.5 transition-colors",
+                  isToday
+                    ? "border-primary/40 bg-primary/10"
+                    : "border-border bg-background hover:bg-muted/60",
                 )}
               >
                 <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                   {dowLabel}
                 </span>
-                <span className="ml-1.5 text-sm font-extrabold text-foreground">
+                <span className={cn(
+                  "flex size-8 items-center justify-center rounded-full text-sm font-extrabold leading-none",
+                  isToday ? "bg-primary text-primary-foreground" : "text-foreground",
+                )}>
                   {dd}
                 </span>
-                {dayEvents.length > 0 && (
-                  <span className="ml-1.5 text-[10px] font-semibold text-muted-foreground">
-                    · {dayEvents.length} booking{dayEvents.length !== 1 ? "s" : ""}
-                  </span>
-                )}
+                <span className="flex h-2 items-center gap-1">
+                  {dayEvents.slice(0, 3).map((ev) => (
+                    <span
+                      key={ev.id}
+                      className={cn("size-1.5 rounded-full", eventColors(ev.status).dot)}
+                      aria-hidden
+                    />
+                  ))}
+                </span>
               </button>
-              {dayEvents.map((ev) => {
-                const c = eventColors(ev.status);
-                return (
-                  <button
-                    key={ev.id}
-                    type="button"
-                    onClick={() => onDayClick(date)}
-                    className={cn(
-                      "block w-full border-t border-border px-3 py-1.5 text-left transition-opacity hover:bg-muted/50 hover:opacity-90",
-                    )}
-                  >
-                    <p className="truncate text-xs font-bold leading-tight">{ev.fullName}</p>
-                    <p className="truncate text-[10px] font-medium opacity-80">
-                      {formatConsecutiveSlots(ev.slotStarts)}
-                    </p>
-                  </button>
-                );
-              })}
-              {dayEvents.length === 0 && (
-                <div className="px-3 py-2 text-center text-[10px] text-foreground/25">—</div>
-              )}
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
+
+        {/* Day agenda for the week */}
+        <div className="space-y-5 border-t border-border px-4 pb-6 pt-5">
+          {days.map((date) => {
+            const dayEvents = byDate.get(date) ?? [];
+            if (dayEvents.length === 0) return null;
+            const isToday = date === today;
+            const [, , dd] = date.split("-").map(Number);
+            const dowLabel = DAY_NAMES_SHORT[new Date(date + "T12:00:00Z").getUTCDay()]!;
+            return (
+              <div key={date}>
+                <div className="mb-2.5 flex items-baseline gap-2">
+                  <span className={cn(
+                    "text-[11px] font-bold uppercase tracking-wider",
+                    isToday ? "text-primary" : "text-muted-foreground",
+                  )}>
+                    {dowLabel}
+                  </span>
+                  <span className="text-sm font-extrabold text-foreground">{dd}</span>
+                  <span className="text-[11px] font-medium text-muted-foreground">
+                    {dayEvents.length} booking{dayEvents.length !== 1 ? "s" : ""}
+                  </span>
+                </div>
+                <div className="space-y-2.5">
+                  {dayEvents.map((ev) => {
+                    const c = eventColors(ev.status);
+                    return (
+                      <button
+                        key={ev.id}
+                        type="button"
+                        onClick={() => onDayClick(date)}
+                        className={cn(
+                          "group flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-opacity hover:opacity-85",
+                          c.pill,
+                        )}
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-bold leading-snug">
+                            {ev.fullName}
+                          </span>
+                          <span className="mt-1 block truncate text-xs font-medium leading-snug opacity-75">
+                            {formatConsecutiveSlots(ev.slotStarts)}
+                          </span>
+                        </span>
+                        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-foreground/10 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide text-foreground/70 transition-colors group-hover:bg-foreground/20">
+                          <Eye className="size-3.5" aria-hidden />
+                          View
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+          {days.every((date) => (byDate.get(date) ?? []).length === 0) && (
+            <p className="py-14 text-center text-sm text-muted-foreground">
+              No bookings this week.
+            </p>
+          )}
+        </div>
       </div>
     </>
   );
@@ -767,7 +938,7 @@ function DailyView({
                 disabled={detailLoading}
                 onClick={() => onOpenBooking(ev.id)}
                 className={cn(
-                  "w-full rounded-xl border p-3 text-left transition-opacity hover:opacity-80 disabled:opacity-50",
+                  "group w-full rounded-xl border p-3 text-left transition-opacity hover:opacity-80 disabled:opacity-50",
                   c.pill,
                 )}
               >
@@ -784,6 +955,10 @@ function DailyView({
                   <div className="flex shrink-0 flex-col items-end gap-1">
                     <BookingStatusBadge status={ev.status} />
                     <span className="text-xs font-bold text-foreground">{pesos(ev.total)}</span>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-foreground/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-foreground/70 transition-colors group-hover:bg-foreground/20">
+                      <Eye className="size-3" aria-hidden />
+                      View
+                    </span>
                   </div>
                 </div>
               </button>
@@ -881,7 +1056,7 @@ function ScheduleView({
                     disabled={detailLoading}
                     onClick={() => onOpenBooking(ev.id)}
                     className={cn(
-                      "w-full rounded-xl border bg-background p-3 text-left transition-opacity hover:bg-muted/50 disabled:opacity-50",
+                      "group w-full rounded-xl border bg-background p-3 text-left transition-opacity hover:bg-muted/50 disabled:opacity-50",
                       "border-border",
                     )}
                   >
@@ -897,6 +1072,10 @@ function ScheduleView({
                       <div className="flex shrink-0 flex-col items-end gap-1">
                         <BookingStatusBadge status={ev.status} />
                         <span className="text-xs font-bold text-foreground">{pesos(ev.total)}</span>
+                        <span className="inline-flex items-center gap-1 rounded-full bg-foreground/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-foreground/70 transition-colors group-hover:bg-foreground/20">
+                          <Eye className="size-3" aria-hidden />
+                          View
+                        </span>
                       </div>
                     </div>
                   </button>
@@ -986,7 +1165,7 @@ function DayPanel({
               disabled={loadingId !== null}
               onClick={() => handleOpen(ev.id)}
               className={cn(
-                "w-full rounded-xl border p-3 text-left transition-all hover:shadow-sm disabled:opacity-60",
+                "group w-full rounded-xl border p-3 text-left transition-all hover:shadow-sm disabled:opacity-60",
                 c.pill,
               )}
             >
@@ -1001,7 +1180,14 @@ function DayPanel({
                 <div className="flex shrink-0 flex-col items-end gap-1.5">
                   <BookingStatusBadge status={ev.status} />
                   <span className="text-xs font-bold text-foreground">{pesos(ev.total)}</span>
-                  {isLoading && <LoadingAnimation size="compact" label="Loading" />}
+                  {isLoading ? (
+                    <LoadingAnimation size="compact" label="Loading" />
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-foreground/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-foreground/70 transition-colors group-hover:bg-foreground/20">
+                      <Eye className="size-3" aria-hidden />
+                      View
+                    </span>
+                  )}
                 </div>
               </div>
             </button>
@@ -1012,250 +1198,5 @@ function DayPanel({
   );
 }
 
-// ─── Booking detail (modal body) ──────────────────────────────────────────────
-
-function BookingDetail({
-  booking,
-  onClose,
-  onUpdate,
-}: {
-  booking: BookingDetail;
-  onClose: () => void;
-  onUpdate: () => void;
-}) {
-  const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
-  const [proofUrl, setProofUrl] = useState<string | null>(null);
-  const [proofFailed, setProofFailed] = useState(false);
-  const [proofLoaded, setProofLoaded] = useState(false);
-  const pending = booking.status === "Pending";
-
-  // Load proof on mount
-  const loadProof = useCallback(async () => {
-    if (proofLoaded || proofFailed || !booking.proofPath) {
-      setProofLoaded(true);
-      return;
-    }
-    try {
-      const res = await fetch(
-        `/api/admin/proofs/read?path=${encodeURIComponent(booking.proofPath)}`,
-      );
-      const data = (await res.json()) as { signedUrl?: string };
-      if (res.ok && data.signedUrl) setProofUrl(data.signedUrl);
-      else setProofFailed(true);
-    } catch {
-      setProofFailed(true);
-    }
-    setProofLoaded(true);
-  }, [booking.proofPath, proofLoaded, proofFailed]);
-
-  // Load proof when component mounts
-  useEffect(() => { void loadProof(); }, [loadProof]);
-
-  async function decide(kind: "approve" | "reject") {
-    if (kind === "reject" && !reason.trim()) {
-      toast.error("A rejection reason is required.");
-      return;
-    }
-    setBusy(kind);
-    try {
-      const res = await fetch(`/api/admin/bookings/${booking.id}/${kind}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(kind === "reject" ? { reason: reason.trim() } : {}),
-      });
-      const data = (await res.json()) as {
-        error?: { message?: string };
-        deduped?: boolean;
-        status?: string;
-      };
-      if (!res.ok) {
-        toast.error(data.error?.message ?? `${kind} failed.`);
-        return;
-      }
-      toast.success(
-        data.deduped
-          ? `Already ${data.status ?? booking.status} — no duplicate email sent.`
-          : kind === "approve"
-            ? "Booking approved."
-            : "Booking rejected.",
-      );
-      onClose();
-      onUpdate();
-    } catch {
-      toast.error("Request failed.");
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  function copyTrackingLink() {
-    const url = `${window.location.origin}/track/${booking.trackingToken}`;
-    navigator.clipboard.writeText(url).then(
-      () => toast.success("Tracking link copied."),
-      () => toast.error("Copy failed."),
-    );
-  }
-
-  return (
-    <>
-      <DialogHeader className="gap-1 border-b px-5 py-4 pr-10">
-        <div className="flex items-center justify-between gap-3">
-          <DialogTitle className="text-base font-semibold">
-            {booking.fullName}
-          </DialogTitle>
-          <BookingStatusBadge
-            status={booking.status}
-            className="shrink-0 text-[11px]"
-          />
-        </div>
-        <DialogDescription className="mt-0.5 text-xs">
-          {booking.email} · {booking.phone}
-        </DialogDescription>
-      </DialogHeader>
-
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-5">
-        {/* Booking details */}
-        <Card>
-          <CardContent className="space-y-2">
-          <DetailRow label="Courts" value={booking.courts || "—"} />
-          <DetailRow label="Date" value={booking.date} />
-          <DetailRow
-            label="Slots"
-            value={formatConsecutiveSlots(booking.slots.map((s) => s.slotStart))}
-          />
-          <DetailRow
-            label="Paddles"
-            value={
-              booking.paddleQty > 0
-                ? `${booking.paddleQty}${booking.paddleHours ? ` × ${booking.paddleHours}h` : ""}`
-                : "None"
-            }
-          />
-          <DetailRow label="Ball" value={booking.hasBall ? "Yes" : "No"} />
-          <DetailRow label="Total" value={pesos(booking.total)} bold />
-          {booking.rejectReason && (
-            <DetailRow label="Reject reason" value={booking.rejectReason} />
-          )}
-          </CardContent>
-        </Card>
-
-        {/* Payment proof */}
-        <div>
-          <p className="mb-2 text-xs font-bold text-foreground/60 uppercase tracking-wider">
-            Payment proof
-          </p>
-          <Card className="gap-0 overflow-hidden py-0">
-            {proofUrl ? (
-              <a href={proofUrl} target="_blank" rel="noreferrer" className="block">
-                <img src={proofUrl} alt="Payment proof" className="w-full object-contain" />
-              </a>
-            ) : proofFailed || !booking.proofPath ? (
-              <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-                Proof unavailable.
-              </p>
-            ) : (
-              <div className="flex min-h-24 items-center justify-center">
-                <LoadingAnimation label="Loading payment proof" />
-              </div>
-            )}
-          </Card>
-        </div>
-
-        {/* Copy tracking link */}
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={copyTrackingLink}
-          >
-            <Copy className="mr-1.5 size-3.5" /> Copy tracking link
-          </Button>
-        </div>
-
-        {/* Decision actions */}
-        {pending && (
-          <Card>
-            <CardContent className="space-y-3">
-            <p className="text-xs font-bold text-foreground">Decision</p>
-
-            <Button
-              size="sm"
-              disabled={busy !== null}
-              onClick={() => decide("approve")}
-              className="w-full"
-            >
-              {busy === "approve" ? (
-                <span className="flex items-center gap-1.5">
-                  <LoadingAnimation size="compact" label="Approving" />
-                  Approving…
-                </span>
-              ) : (
-                <span className="flex items-center gap-1.5">
-                  <Check className="size-3.5" /> Approve
-                </span>
-              )}
-            </Button>
-
-            <div className="space-y-1.5">
-              <Label
-                htmlFor={`cal-reason-${booking.id}`}
-                className="text-xs text-muted-foreground"
-              >
-                Rejection reason (required)
-              </Label>
-              <Input
-                id={`cal-reason-${booking.id}`}
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                placeholder="Reason for rejection…"
-                className="h-9"
-              />
-            </div>
-
-            <Button
-              size="sm"
-              variant="destructive"
-              disabled={busy !== null}
-              onClick={() => decide("reject")}
-              className="w-full"
-            >
-              {busy === "reject" ? (
-                <span className="flex items-center gap-1.5">
-                  <LoadingAnimation size="compact" label="Rejecting" />
-                  Rejecting…
-                </span>
-              ) : (
-                <span className="flex items-center gap-1.5">
-                  <X className="size-3.5" /> Reject
-                </span>
-              )}
-            </Button>
-            </CardContent>
-          </Card>
-        )}
-      </div>
-    </>
-  );
-}
-
 // ─── shared sub-components ────────────────────────────────────────────────────
 
-function DetailRow({
-  label,
-  value,
-  bold,
-}: {
-  label: string;
-  value: string;
-  bold?: boolean;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-4 text-sm">
-      <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className={`text-right ${bold ? "font-bold text-foreground" : "text-foreground/80"}`}>
-        {value}
-      </span>
-    </div>
-  );
-}

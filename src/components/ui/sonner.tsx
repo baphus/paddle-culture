@@ -55,7 +55,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
           title: "font-semibold",
           description: "text-xs opacity-80",
           actionButton: "bg-flame text-white hover:bg-flame-hover text-xs font-medium px-3 py-1 rounded",
-          cancelButton: "bg-line text-ink text-xs font-medium px-3 py-1 rounded",
+          cancelButton: "bg-muted text-foreground text-xs font-medium px-3 py-1 rounded",
         },
       }}
       {...props}

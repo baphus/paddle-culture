@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
+import { ThemeProvider } from "next-themes";
 import { cn } from "@/lib/utils";
 
 const jakarta = Plus_Jakarta_Sans({
@@ -13,8 +14,7 @@ const jakarta = Plus_Jakarta_Sans({
 export const metadata: Metadata = {
   metadataBase: new URL("https://ckgrounds.vercel.app"),
   title: "CK Grounds — Pickleball Courts in Tabuelan, Cebu",
-  description:
-    "Book a pickleball court at CK Grounds in Tabuelan, Cebu in under a minute. Live availability 6 AM–3 AM, transparent ₱150 morning / ₱200 night rates, no account needed. Track any booking with your reference code.",
+  description: "Book a pickleball court at CK Grounds in Tabuelan, Cebu in under a minute. Live availability 6 AM–3 AM, transparent ₱150 morning / ₱200 night rates, no account needed. Track any booking with your reference code.",
   icons: { icon: "/logo.jpg" },
 };
 
@@ -24,10 +24,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={cn("scroll-smooth", jakarta.variable)}>
-      <body className="bg-cream font-sans text-ink">
-        {children}
-        <Toaster richColors position="top-center" mobileOffset={{ top: "max(16px, env(safe-area-inset-top))" }} />
+    <html
+      lang="en"
+      className={cn("scroll-smooth", jakarta.variable)}
+      suppressHydrationWarning
+    >
+      <body className="bg-cream font-sans text-ink" suppressHydrationWarning>
+        <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
+          {children}
+          <Toaster richColors position="top-center" mobileOffset={{ top: "max(16px, env(safe-area-inset-top))" }} />
+        </ThemeProvider>
       </body>
     </html>
   );

@@ -1,12 +1,9 @@
 import { Suspense } from "react";
-import { getDb, type Db } from "@/db/client";
+import { getDb } from "@/db/client";
 import {
-  addDaysStr,
   getCalendarBookings,
-  getCalendarBookingsRange,
   manilaDateToday,
   manilaYearMonth,
-  weekStartManila,
 } from "@/lib/admin/calendar";
 import { listClosures } from "@/lib/admin/config";
 import type { ClosureRow } from "@/lib/admin/config";
@@ -17,25 +14,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 export const dynamic = "force-dynamic";
 
 type CalEvents = Awaited<ReturnType<typeof getCalendarBookings>>;
-
-// DB not configured or query failure → empty calendar, same as the old try/catch.
-function loadEvents(fetch: (db: Db) => Promise<CalEvents>): Promise<CalEvents> {
-  try {
-    return fetch(getDb()).catch(() => [] as CalEvents);
-  } catch {
-    return Promise.resolve([] as CalEvents);
-  }
-}
-
-function loadClosures(db: Db, start: string, end: string): Promise<ClosureRow[]> {
-  try {
-    return listClosures(db).then((rows) =>
-      rows.filter((r) => r.startAt < end && r.endAt > start),
-    );
-  } catch {
-    return Promise.resolve([]);
-  }
-}
 
 function first(v: string | string[] | undefined): string {
   return Array.isArray(v) ? (v[0] ?? "") : (v ?? "");
@@ -54,41 +32,22 @@ export default async function CalendarPage({
   const { year: nowYear, month: nowMonth } = manilaYearMonth();
   const today = manilaDateToday();
 
-  const view = (first(sp.view) || "monthly") as "daily" | "weekly" | "monthly" | "schedule";
-
-  // ── monthly ──────────────────────────────────────────────────────────────
-  const rawY = Number.parseInt(first(sp.y), 10);
-  const rawM = Number.parseInt(first(sp.m), 10);
-  const year = Number.isFinite(rawY) ? clamp(rawY, 2020, 2099) : nowYear;
-  const month = Number.isFinite(rawM) ? clamp(rawM, 1, 12) : nowMonth;
-
-  // ── weekly / daily ────────────────────────────────────────────────────────
-  // anchor: ?date=YYYY-MM-DD — defaults to today
+  // View is a client concern; the server only needs the *anchor month* to seed.
+  // - monthly view: ?year=&month=
+  // - weekly/daily/schedule: ?date=YYYY-MM-DD (derive its year/month)
   const rawDate = first(sp.date);
   const anchorDate =
     rawDate && /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : today;
+  const [anchorYear, anchorMonth] = anchorDate.split("-").map(Number);
 
-  // Weekly: Mon–Sun week containing anchorDate
-  const weekStart = weekStartManila(anchorDate);
-  const weekEnd = addDaysStr(weekStart, 7);
+  const rawY = Number.parseInt(first(sp.year), 10);
+  const rawM = Number.parseInt(first(sp.month), 10);
+  // Fall back to the anchor date's month when year/month aren't supplied.
+  const year = Number.isFinite(rawY) ? clamp(rawY, 2020, 2099) : (anchorYear ?? nowYear);
+  const month = Number.isFinite(rawM) ? clamp(rawM, 1, 12) : (anchorMonth ?? nowMonth);
 
-  // Daily: just anchorDate → anchorDate+1
-  const dayEnd = addDaysStr(anchorDate, 1);
-
-  // Started before the shell renders; the calendar streams in once it resolves.
-  const eventsPromise = loadEvents((db) =>
-    view === "monthly"
-      ? getCalendarBookings(db, year, month)
-      : getCalendarBookingsRange(
-          db,
-          view === "weekly" || view === "schedule" ? weekStart : anchorDate,
-          view === "weekly" || view === "schedule" ? weekEnd : dayEnd,
-        ),
-  );
-
-  // Closures: fetch only when needed (schedule view uses them; others don't)
-  const closuresPromise =
-    view === "schedule" ? loadClosures(getDb(), weekStart, weekEnd) : undefined;
+  // Load exactly one month server-side, then hand it to the client as the seed.
+  const payloadPromise = loadMonth(year, month);
 
   return (
     <div className="space-y-6">
@@ -99,14 +58,11 @@ export default async function CalendarPage({
       <Card className="gap-0 overflow-hidden py-0">
         <Suspense fallback={<Skeleton className="h-[520px]" />}>
           <CalendarBody
-            events={eventsPromise}
+            payload={payloadPromise}
             year={year}
             month={month}
             today={today}
-            view={view}
             anchorDate={anchorDate}
-            weekStart={weekStart}
-            closures={closuresPromise}
           />
         </Suspense>
       </Card>
@@ -114,37 +70,47 @@ export default async function CalendarPage({
   );
 }
 
+interface MonthPayload {
+  events: CalEvents;
+  closures: ClosureRow[];
+}
+
+// DB not configured or query failure → empty month (same graceful fallback as before).
+async function loadMonth(year: number, month: number): Promise<MonthPayload> {
+  try {
+    const db = getDb();
+    const [events, closures] = await Promise.all([
+      getCalendarBookings(db, year, month).catch(() => [] as CalEvents),
+      listClosures(db).catch(() => [] as ClosureRow[]),
+    ]);
+    return { events, closures };
+  } catch {
+    return { events: [], closures: [] };
+  }
+}
+
 async function CalendarBody({
-  events: eventsPromise,
+  payload,
   year,
   month,
   today,
-  view,
   anchorDate,
-  weekStart,
-  closures,
 }: {
-  events: Promise<CalEvents>;
+  payload: Promise<MonthPayload>;
   year: number;
   month: number;
   today: string;
-  view: "daily" | "weekly" | "monthly" | "schedule";
   anchorDate: string;
-  weekStart: string;
-  closures?: Promise<ClosureRow[]>;
 }) {
-  const events = await eventsPromise;
-  const closureRows = closures ? await closures : [];
+  const { events, closures } = await payload;
   return (
     <CalendarView
-      events={events}
-      year={year}
-      month={month}
+      initialEvents={events}
+      initialClosures={closures}
+      loadedYear={year}
+      loadedMonth={month}
       today={today}
-      view={view}
       anchorDate={anchorDate}
-      weekStart={weekStart}
-      closures={closureRows}
     />
   );
 }
