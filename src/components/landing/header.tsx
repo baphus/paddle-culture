@@ -21,7 +21,7 @@ export default function Header() {
   };
 
   return (
-    <header className="fixed inset-x-0 top-0 z-50 border-b border-line/70 bg-cream/95 backdrop-blur-md">
+    <header className="fixed inset-x-0 top-0 z-50 border-b border-line/70 bg-cream/95">
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:rounded-lg focus:bg-pine focus:px-4 focus:py-2 focus:text-white"

@@ -430,7 +430,7 @@ export function BookingSummaryMobile({ data, advance }: { data: SummaryData; adv
       {/* Backdrop */}
       {open && (
         <div
-          className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm lg:hidden"
+          className="fixed inset-0 z-40 bg-black/40 lg:hidden"
           aria-hidden
           onClick={() => setOpen(false)}
         />

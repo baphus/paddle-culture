@@ -14,12 +14,30 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Calendar } from "@/components/ui/calendar";
+import LandingImage from "@/components/landing/landing-image";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import type { ClosureRow, CourtRow, HoursRow } from "@/lib/admin/config";
 import { DAY_NAMES } from "@/lib/admin/config";
+import {
+  fmtDay,
+  groupRuns,
+  manilaDay,
+  relativeDay,
+  toDateStr,
+  wholeDayRange,
+} from "@/lib/admin/hours-format";
 
 // ── helpers ───────────────────────────────────────────────────────────────
 
@@ -81,18 +99,67 @@ function isPast(endAt: string): boolean {
   return new Date(endAt).getTime() < Date.now();
 }
 
-const selectClass =
-  "h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+const tileClass =
+  "flex flex-col items-center gap-1.5 rounded-lg border p-1.5 text-center transition-colors hover:bg-accent/60";
+
+/** Pick a court by its photo; value "" means all courts. */
+function CourtPicker({
+  courts,
+  value,
+  onChange,
+}: {
+  courts: CourtRow[];
+  value: string;
+  onChange: (courtId: string) => void;
+}) {
+  const tile = (selected: boolean) =>
+    cn(tileClass, selected && "border-ring bg-accent");
+  return (
+    <div role="radiogroup" aria-label="Court" className="grid grid-cols-3 gap-2">
+      <button
+        type="button"
+        role="radio"
+        aria-checked={value === ""}
+        onClick={() => onChange("")}
+        className={tile(value === "")}
+      >
+        <span className="flex aspect-[4/3] w-full items-center justify-center rounded-md bg-muted text-muted-foreground">
+          <Globe className="size-5" />
+        </span>
+        <span className="w-full truncate text-[11px] font-medium">All courts</span>
+      </button>
+      {courts.map((c, i) => (
+        <button
+          key={c.id}
+          type="button"
+          role="radio"
+          aria-checked={value === c.id}
+          onClick={() => onChange(c.id)}
+          className={tile(value === c.id)}
+        >
+          {/* Same photo-per-index convention as the booking page. */}
+          <LandingImage
+            src={`/images/court-${(i % 2) + 1}.jpg`}
+            alt=""
+            className="aspect-[4/3] w-full rounded-md"
+          />
+          <span className="w-full truncate text-[11px] font-medium">{c.name}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 // ── Hours section ─────────────────────────────────────────────────────────
 
-/** One day-of-week column in the grid: shows all rows for that day */
+/** One day-of-week column: shows all rows for that day, plus an inline add form */
 function DayCell({
   dayIndex,
   dayLabel,
   rows,
   courts,
   busy,
+  onAdd,
   onDelete,
 }: {
   dayIndex: number;
@@ -100,10 +167,40 @@ function DayCell({
   rows: HoursRow[];
   courts: CourtRow[];
   busy: string | null;
+  onAdd: (
+    dayOfWeek: number,
+    courtId: string,
+    openTime: string,
+    closeTime: string,
+  ) => Promise<boolean>;
   onDelete: (id: string) => void;
 }) {
+  const [formOpen, setFormOpen] = useState(false);
+  const [court, setCourt] = useState("");
+  const [open, setOpen] = useState("06:00");
+  const [close, setClose] = useState("03:00");
+  const [saving, setSaving] = useState(false);
   const isToday = new Date().getDay() === dayIndex;
-  void courts; // available for future display
+
+  const sorted = useMemo(
+    () => [...rows].sort((a, b) => a.openTime.localeCompare(b.openTime)),
+    [rows],
+  );
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (open === close) {
+      toast.error("Open and close times must differ.");
+      return;
+    }
+    setSaving(true);
+    const ok = await onAdd(dayIndex, court, open, close);
+    setSaving(false);
+    if (ok) {
+      setFormOpen(false);
+      setCourt("");
+    }
+  }
 
   return (
     <div
@@ -125,13 +222,13 @@ function DayCell({
       </div>
 
       {/* Hour rows */}
-      {rows.length === 0 ? (
+      {sorted.length === 0 ? (
         <p className="text-[11px] text-muted-foreground italic">Open all day</p>
       ) : (
-        rows.map((h) => (
+        sorted.map((h) => (
           <div
             key={h.id}
-            className="group flex items-start justify-between gap-1 rounded-md bg-muted px-2 py-1.5"
+            className="flex items-start justify-between gap-1 rounded-md bg-muted px-2 py-1.5"
           >
             <div className="min-w-0">
               <p className="text-[11px] font-medium leading-tight truncate">
@@ -148,13 +245,88 @@ function DayCell({
               disabled={busy !== null}
               onClick={() => onDelete(h.id)}
               title="Remove this hours row"
-              className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+              className="shrink-0 text-muted-foreground hover:text-destructive"
             >
               {busy === h.id ? <span className="text-[10px]">…</span> : <Trash2 />}
             </Button>
           </div>
         ))
       )}
+
+      {/* Add hours — modal, day comes from this cell */}
+      <Dialog
+        open={formOpen}
+        onOpenChange={(v) => {
+          setFormOpen(v);
+          if (!v) setCourt("");
+        }}
+      >
+        <DialogTrigger
+          render={
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              className="justify-start text-muted-foreground"
+            >
+              <PlusCircle />
+              Add hours
+            </Button>
+          }
+        />
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add hours — {dayLabel}</DialogTitle>
+            <DialogDescription>
+              Applies to {dayLabel} only. Leave the court as "All courts" to set a
+              default for every court.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={(e) => void submit(e)} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Court</Label>
+              <CourtPicker courts={courts} value={court} onChange={setCourt} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor={`h-open-${dayIndex}`}>Opens</Label>
+                <Input
+                  id={`h-open-${dayIndex}`}
+                  type="time"
+                  required
+                  value={open}
+                  onChange={(e) => setOpen(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor={`h-close-${dayIndex}`}>Closes</Label>
+                <Input
+                  id={`h-close-${dayIndex}`}
+                  type="time"
+                  required
+                  value={close}
+                  onChange={(e) => setClose(e.target.value)}
+                />
+              </div>
+            </div>
+            <p className="rounded-lg border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+              Closing earlier than opening means it runs past midnight.
+            </p>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setFormOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={saving}>
+                {saving ? "Adding…" : "Add hours"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -168,13 +340,6 @@ function HoursSection({
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
-
-  // Add form state
-  const [hCourt, setHCourt] = useState("");
-  const [hDay, setHDay] = useState("1");
-  const [hOpen, setHOpen] = useState("06:00");
-  const [hClose, setHClose] = useState("03:00");
 
   // Group hours by day of week
   const byDay = useMemo(
@@ -186,27 +351,38 @@ function HoursSection({
     [initialHours],
   );
 
-  async function addRow(e: React.FormEvent) {
-    e.preventDefault();
+  async function addRow(
+    dayOfWeek: number,
+    courtId: string,
+    openTime: string,
+    closeTime: string,
+  ): Promise<boolean> {
     setBusy("add");
     try {
       const res = await fetch("/api/admin/hours", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          courtId: hCourt === "" ? null : hCourt,
-          dayOfWeek: Number(hDay),
-          openTime: hOpen,
-          closeTime: hClose,
+          courtId: courtId === "" ? null : courtId,
+          dayOfWeek,
+          openTime,
+          closeTime,
         }),
       });
       const data = (await res.json().catch(() => null)) as unknown;
-      if (!res.ok) { toast.error(readError(data, "Request failed.")); return; }
-      toast.success("Hours row added.");
-      setShowForm(false);
+      if (!res.ok) {
+        toast.error(readError(data, "Request failed."));
+        return false;
+      }
+      toast.success("Hours added.");
       router.refresh();
-    } catch { toast.error("Request failed."); }
-    finally { setBusy(null); }
+      return true;
+    } catch {
+      toast.error("Request failed.");
+      return false;
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function deleteRow(id: string) {
@@ -214,79 +390,35 @@ function HoursSection({
     try {
       const res = await fetch(`/api/admin/hours/${id}`, { method: "DELETE" });
       const data = (await res.json().catch(() => null)) as unknown;
-      if (!res.ok) { toast.error(readError(data, "Request failed.")); return; }
+      if (!res.ok) {
+        toast.error(readError(data, "Request failed."));
+        return;
+      }
       toast.success("Hours row deleted.");
       router.refresh();
-    } catch { toast.error("Request failed."); }
-    finally { setBusy(null); }
+    } catch {
+      toast.error("Request failed.");
+    } finally {
+      setBusy(null);
+    }
   }
 
   return (
     <section className="space-y-4">
       {/* Section header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Clock className="size-4 text-muted-foreground" />
-          <h2 className="text-sm font-semibold">Operating Hours</h2>
-        </div>
-        <Button type="button" size="sm" onClick={() => setShowForm((v) => !v)}>
-          <PlusCircle />
-          Add row
-        </Button>
+      <div className="flex items-center gap-2">
+        <Clock className="size-4 text-muted-foreground" />
+        <h2 className="text-sm font-semibold">Operating Hours</h2>
       </div>
 
       {/* Info callout */}
       <div className="flex items-start gap-2 rounded-lg border bg-muted/50 px-3 py-2.5 text-xs text-muted-foreground">
         <Globe className="mt-0.5 size-3.5 shrink-0" />
         <p>
-          A court with <strong>no rows on a day</strong> is treated as open all day.
-          Court-specific rows take priority over "All courts" global rows.
+          Add hours inside a day to limit it. A court with <strong>no rows on a day</strong> is
+          treated as open all day; court-specific rows take priority over "All courts" rows.
         </p>
       </div>
-
-      {/* Add form (collapsed by default) */}
-      {showForm && (
-        <Card>
-          <CardHeader>
-            <CardTitle>New hours row</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={(e) => void addRow(e)}>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="space-y-2">
-                  <Label htmlFor="h-court">Court</Label>
-                  <select id="h-court" value={hCourt} onChange={(e) => setHCourt(e.target.value)} className={selectClass}>
-                    <option value="">All courts (global)</option>
-                    {courts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="h-day">Day</Label>
-                  <select id="h-day" value={hDay} onChange={(e) => setHDay(e.target.value)} className={selectClass}>
-                    {DAY_NAMES.map((d, i) => <option key={d} value={i}>{d}</option>)}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="h-open">Open (24h)</Label>
-                  <Input id="h-open" value={hOpen} onChange={(e) => setHOpen(e.target.value)} placeholder="06:00" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="h-close">Close (24h)</Label>
-                  <Input id="h-close" value={hClose} onChange={(e) => setHClose(e.target.value)} placeholder="03:00" />
-                </div>
-              </div>
-              <div className="mt-3 flex gap-2">
-                <Button type="submit" disabled={busy !== null}>
-                  {busy === "add" ? "Adding…" : "Add"}
-                </Button>
-                <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
-                  Cancel
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      )}
 
       {/* 7-day grid */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
@@ -298,6 +430,7 @@ function HoursSection({
             rows={byDay[i] ?? []}
             courts={courts}
             busy={busy}
+            onAdd={addRow}
             onDelete={deleteRow}
           />
         ))}
@@ -311,15 +444,18 @@ function HoursSection({
 function ClosureCard({
   closure,
   busy,
+  grouped = false,
   onDelete,
 }: {
   closure: ClosureRow;
   busy: string | null;
+  grouped?: boolean;
   onDelete: (id: string) => void;
 }) {
   const past = isPast(closure.endAt);
   const { date, time } = formatClosureRange(closure.startAt, closure.endAt);
   const isGlobal = closure.scope === "global";
+  const sameDay = manilaDay(closure.startAt) === manilaDay(closure.endAt);
 
   return (
     <div
@@ -342,8 +478,10 @@ function ClosureCard({
           <Badge variant="secondary">{isGlobal ? "Global" : "Court"}</Badge>
           {past && <Badge variant="outline">Past</Badge>}
         </div>
-        <p className="mt-0.5 text-xs font-medium">{date}</p>
-        <p className="text-xs text-muted-foreground">{time}</p>
+        {(!grouped || !sameDay) && (
+          <p className="mt-0.5 text-xs font-medium">{date}</p>
+        )}
+        <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">{time}</p>
         {closure.reason && (
           <p className="mt-1 text-xs text-muted-foreground italic">"{closure.reason}"</p>
         )}
@@ -377,11 +515,12 @@ function ClosuresSection({
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
+  const [open, setOpen] = useState(false);
   const [showPast, setShowPast] = useState(false);
 
   // Closure form state
-  const [cScope, setCScope] = useState<"global" | "court">("global");
+  const [cMode, setCMode] = useState<"days" | "hours">("days");
+  const [cDays, setCDays] = useState<Date[]>([]);
   const [cCourt, setCCourt] = useState("");
   const [cStart, setCStart] = useState("");
   const [cEnd, setCEnd] = useState("");
@@ -390,29 +529,103 @@ function ClosuresSection({
   const upcoming = initialClosures.filter((c) => !isPast(c.endAt));
   const past = initialClosures.filter((c) => isPast(c.endAt));
 
+  // Rows arrive ordered by start_at, so consecutive same-day closures group.
+  const groups: { day: string; items: ClosureRow[] }[] = [];
+  for (const c of upcoming) {
+    const day = manilaDay(c.startAt);
+    const last = groups[groups.length - 1];
+    if (last && last.day === day) last.items.push(c);
+    else groups.push({ day, items: [c] });
+  }
+
+  const who = cCourt
+    ? (courts.find((c) => c.id === cCourt)?.name ?? "A court")
+    : "All courts";
+
+  const preview = (() => {
+    if (cMode === "days") {
+      if (cDays.length === 0) return "Pick one or more dates to see the summary.";
+      const runs = groupRuns(cDays.map(toDateStr));
+      const label = runs
+        .map((r) => (r.from === r.to ? fmtDay(r.from) : `${fmtDay(r.from)} – ${fmtDay(r.to)}`))
+        .join(", ");
+      const single = runs.length === 1 && runs[0].from === runs[0].to;
+      return `${who} closed ${single ? "all day on" : "for whole days on"} ${label}.`;
+    }
+    if (!cStart || !cEnd) return "Pick a start and end time to see the summary.";
+    if (new Date(`${cEnd}:00+08:00`) <= new Date(`${cStart}:00+08:00`)) {
+      return "The end time must be after the start time.";
+    }
+    return `${who} closed ${fmtDay(cStart.slice(0, 10))}, ${fmt12(
+      cStart.slice(11, 16),
+    )} → ${fmt12(cEnd.slice(11, 16))}.`;
+  })();
+
+  function reset() {
+    setCMode("days");
+    setCDays([]);
+    setCCourt("");
+    setCStart("");
+    setCEnd("");
+    setCReason("");
+  }
+
   async function addClosure(e: React.FormEvent) {
     e.preventDefault();
-    if (!cStart || !cEnd) { toast.error("Pick a start and end datetime."); return; }
+    let payloads: { startAt: string; endAt: string }[];
+    if (cMode === "days") {
+      if (cDays.length === 0) {
+        toast.error("Pick at least one date.");
+        return;
+      }
+      // Separate runs become separate closures — the API takes one window.
+      payloads = groupRuns(cDays.map(toDateStr)).map((r) => wholeDayRange(r.from, r.to));
+    } else {
+      if (!cStart || !cEnd) {
+        toast.error("Pick a start and end time.");
+        return;
+      }
+      const startAt = new Date(`${cStart}:00+08:00`).toISOString();
+      const endAt = new Date(`${cEnd}:00+08:00`).toISOString();
+      if (new Date(endAt) <= new Date(startAt)) {
+        toast.error("The end time must be after the start time.");
+        return;
+      }
+      payloads = [{ startAt, endAt }];
+    }
+
     setBusy("add");
     try {
-      const res = await fetch("/api/admin/closures", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          scope: cScope,
-          courtId: cScope === "global" ? null : cCourt || null,
-          startAt: new Date(cStart).toISOString(),
-          endAt: new Date(cEnd).toISOString(),
-          reason: cReason.trim() || null,
-        }),
-      });
-      const data = (await res.json().catch(() => null)) as unknown;
-      if (!res.ok) { toast.error(readError(data, "Request failed.")); return; }
-      toast.success("Closure added.");
-      setCStart(""); setCEnd(""); setCReason(""); setShowForm(false);
+      let added = 0;
+      for (const p of payloads) {
+        const res = await fetch("/api/admin/closures", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            scope: cCourt ? "court" : "global",
+            courtId: cCourt || null,
+            startAt: p.startAt,
+            endAt: p.endAt,
+            reason: cReason.trim() || null,
+          }),
+        });
+        if (!res.ok) {
+          const data = (await res.json().catch(() => null)) as unknown;
+          toast.error(readError(data, "Request failed."));
+          if (added > 0) router.refresh();
+          return;
+        }
+        added++;
+      }
+      toast.success(added === 1 ? "Closure added." : `${added} closures added.`);
+      setOpen(false);
+      reset();
       router.refresh();
-    } catch { toast.error("Request failed."); }
-    finally { setBusy(null); }
+    } catch {
+      toast.error("Request failed.");
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function deleteClosure(id: string) {
@@ -420,11 +633,17 @@ function ClosuresSection({
     try {
       const res = await fetch(`/api/admin/closures/${id}`, { method: "DELETE" });
       const data = (await res.json().catch(() => null)) as unknown;
-      if (!res.ok) { toast.error(readError(data, "Request failed.")); return; }
+      if (!res.ok) {
+        toast.error(readError(data, "Request failed."));
+        return;
+      }
       toast.success("Closure lifted.");
       router.refresh();
-    } catch { toast.error("Request failed."); }
-    finally { setBusy(null); }
+    } catch {
+      toast.error("Request failed.");
+    } finally {
+      setBusy(null);
+    }
   }
 
   return (
@@ -438,10 +657,122 @@ function ClosuresSection({
             <Badge variant="secondary">{upcoming.length} upcoming</Badge>
           )}
         </div>
-        <Button type="button" size="sm" onClick={() => setShowForm((v) => !v)}>
-          <PlusCircle />
-          Add closure
-        </Button>
+
+        <Dialog
+          open={open}
+          onOpenChange={(v) => {
+            setOpen(v);
+            if (!v) reset();
+          }}
+        >
+          <DialogTrigger
+            render={
+              <Button type="button" size="sm">
+                <PlusCircle />
+                Add closure
+              </Button>
+            }
+          />
+          <DialogContent className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>New closure</DialogTitle>
+              <DialogDescription>
+                Closures override operating hours. "All courts" blocks every court; a
+                single court blocks only that court.
+              </DialogDescription>
+            </DialogHeader>
+
+            <form onSubmit={(e) => void addClosure(e)} className="space-y-4">
+              {/* Closure type */}
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant={cMode === "days" ? "default" : "outline"}
+                  onClick={() => setCMode("days")}
+                >
+                  Whole day(s)
+                </Button>
+                <Button
+                  type="button"
+                  variant={cMode === "hours" ? "default" : "outline"}
+                  onClick={() => setCMode("hours")}
+                >
+                  Specific hours
+                </Button>
+              </div>
+
+              {/* Courts */}
+              <div className="space-y-2">
+                <Label>Courts</Label>
+                <CourtPicker courts={courts} value={cCourt} onChange={setCCourt} />
+              </div>
+
+              {/* When */}
+              {cMode === "days" ? (
+                <div className="space-y-2">
+                  <Label>Closed days</Label>
+                  <Calendar
+                    mode="multiple"
+                    selected={cDays}
+                    onSelect={(days) => setCDays(days ?? [])}
+                    className="mx-auto rounded-lg border"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Pick any number of days. Separate groups of days become separate
+                    closures.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="c-start">From</Label>
+                    <Input
+                      id="c-start"
+                      type="datetime-local"
+                      value={cStart}
+                      onChange={(e) => setCStart(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="c-end">To</Label>
+                    <Input
+                      id="c-end"
+                      type="datetime-local"
+                      value={cEnd}
+                      onChange={(e) => setCEnd(e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Reason */}
+              <div className="space-y-2">
+                <Label htmlFor="c-reason">Reason (optional)</Label>
+                <Input
+                  id="c-reason"
+                  value={cReason}
+                  onChange={(e) => setCReason(e.target.value)}
+                  maxLength={500}
+                  placeholder="e.g. Maintenance"
+                />
+              </div>
+
+              {/* Live preview */}
+              <p className="rounded-lg border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                {preview}
+              </p>
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={busy !== null}>
+                  {busy === "add" ? "Adding…" : "Add closure"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {/* Info callout */}
@@ -453,69 +784,39 @@ function ClosuresSection({
         </p>
       </div>
 
-      {/* Add form */}
-      {showForm && (
-        <Card>
-          <CardHeader>
-            <CardTitle>New closure</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={(e) => void addClosure(e)}>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                <div className="space-y-2">
-                  <Label htmlFor="c-scope">Scope</Label>
-                  <select id="c-scope" value={cScope} onChange={(e) => setCScope(e.target.value as "global" | "court")} className={selectClass}>
-                    <option value="global">All courts</option>
-                    <option value="court">One court</option>
-                  </select>
-                </div>
-                {cScope === "court" && (
-                  <div className="space-y-2">
-                    <Label htmlFor="c-court">Court</Label>
-                    <select id="c-court" value={cCourt} onChange={(e) => setCCourt(e.target.value)} className={selectClass}>
-                      <option value="">— pick one —</option>
-                      {courts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
-                  </div>
-                )}
-                <div className="space-y-2">
-                  <Label htmlFor="c-start">Start</Label>
-                  <Input id="c-start" type="datetime-local" value={cStart} onChange={(e) => setCStart(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="c-end">End</Label>
-                  <Input id="c-end" type="datetime-local" value={cEnd} onChange={(e) => setCEnd(e.target.value)} />
-                </div>
-                <div className="space-y-2 sm:col-span-2 lg:col-span-1">
-                  <Label htmlFor="c-reason">Reason (optional)</Label>
-                  <Input id="c-reason" value={cReason} onChange={(e) => setCReason(e.target.value)} maxLength={500} placeholder="e.g. Maintenance" />
-                </div>
-              </div>
-              <div className="mt-3 flex gap-2">
-                <Button type="submit" disabled={busy !== null}>
-                  {busy === "add" ? "Adding…" : "Add closure"}
-                </Button>
-                <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
-                  Cancel
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Upcoming closures */}
+      {/* Closure list */}
       {upcoming.length === 0 && past.length === 0 ? (
         <div className="flex h-24 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
           No closures scheduled — courts follow regular hours.
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-4">
           {upcoming.length === 0 ? (
             <p className="text-xs text-muted-foreground">No upcoming closures.</p>
           ) : (
-            upcoming.map((c) => (
-              <ClosureCard key={c.id} closure={c} busy={busy} onDelete={deleteClosure} />
+            groups.map((g) => (
+              <div key={g.day} className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-xs font-semibold">{fmtDay(g.day)}</h3>
+                  <Badge variant="secondary" className="text-[10px]">
+                    {relativeDay(g.day)}
+                  </Badge>
+                  {g.items.length > 1 && (
+                    <span className="text-[11px] text-muted-foreground">
+                      {g.items.length} closures
+                    </span>
+                  )}
+                </div>
+                {g.items.map((c) => (
+                  <ClosureCard
+                    key={c.id}
+                    closure={c}
+                    busy={busy}
+                    grouped
+                    onDelete={deleteClosure}
+                  />
+                ))}
+              </div>
             ))
           )}
 
@@ -530,7 +831,8 @@ function ClosuresSection({
                 className="text-muted-foreground"
               >
                 {showPast ? <ChevronUp /> : <ChevronDown />}
-                {showPast ? "Hide" : "Show"} {past.length} past closure{past.length !== 1 ? "s" : ""}
+                {showPast ? "Hide" : "Show"} {past.length} past closure
+                {past.length !== 1 ? "s" : ""}
               </Button>
               {showPast && (
                 <div className="mt-2 space-y-2">

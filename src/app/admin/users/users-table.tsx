@@ -12,9 +12,11 @@ import type { AdminUserRecord } from "@/lib/admin/users";
 export default function UsersTable({
   users,
   actorId,
+  actions,
 }: {
   users: AdminUserRecord[];
   actorId: string;
+  actions?: React.ReactNode;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -47,13 +49,6 @@ export default function UsersTable({
   const columns = useMemo<ColumnDef<AdminUserRecord>[]>(
     () => [
       {
-        accessorKey: "name",
-        header: "Name",
-        cell: ({ row }) => (
-          <span className="font-medium">{row.original.name ?? "—"}</span>
-        ),
-      },
-      {
         accessorKey: "email",
         header: "Email",
         cell: ({ row }) => (
@@ -66,8 +61,31 @@ export default function UsersTable({
         cell: ({ row }) => <UserStatusBadge status={row.original.status} />,
       },
       {
+        accessorKey: "createdAt",
+        header: "Date added",
+        cell: ({ row }) => {
+          const value = row.original.createdAt;
+          if (!value) {
+            return <span className="text-muted-foreground">—</span>;
+          }
+          const date = new Date(value);
+          if (Number.isNaN(date.getTime())) {
+            return <span className="text-muted-foreground">{value}</span>;
+          }
+          return (
+            <span className="text-muted-foreground">
+              {date.toLocaleDateString("en-US", {
+                year: "numeric",
+                month: "short",
+                day: "numeric",
+              })}
+            </span>
+          );
+        },
+      },
+      {
         id: "actions",
-        header: "",
+        header: "Actions",
         enableSorting: false,
         enableHiding: false,
         cell: ({ row }) => {
@@ -109,6 +127,7 @@ export default function UsersTable({
       data={users}
       searchKey="email"
       placeholder="Filter users…"
+      actions={actions}
     />
   );
 }

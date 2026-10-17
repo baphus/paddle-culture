@@ -770,7 +770,7 @@ export default function Step1DateTime({
         </div>
 
         {/* Bottom bar: selection summary + CTA — desktop only; on mobile the summary sheet owns the bottom */}
-        <div className="sticky bottom-0 z-20 hidden border-t border-line-warm/60 bg-white/95 backdrop-blur-sm px-4 py-3 lg:flex items-center justify-between gap-3">
+        <div className="sticky bottom-0 z-20 hidden border-t border-line-warm/60 bg-white/95 px-4 py-3 lg:flex items-center justify-between gap-3">
           <div className="text-sm">
             {selected.length === 0 ? (
               <span className="text-warm-muted">Tap a cell to select a slot</span>

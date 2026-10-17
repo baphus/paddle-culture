@@ -37,6 +37,7 @@ export async function listAdminUsers(): Promise<AdminUserRecord[]> {
     email: user.email ?? "",
     name: nameOf(user),
     status: isDeactivated(user) ? "deactivated" : "active",
+    createdAt: user.created_at ?? "",
   }));
 }
 
