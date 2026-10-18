@@ -84,6 +84,32 @@ export function selectionDateStr(instant: Date): string {
 }
 
 /**
+ * Play Date for a set of slot-start instants: the Manila *selection* date of
+ * the earliest slot (YYYY-MM-DD), or null when there are no slots.
+ *
+ * Never `iso.slice(0, 10)`: a slot's ISO string is UTC, so a 06:00 Manila
+ * start serializes as `...T22:00:00Z` on the *previous* UTC day and the slice
+ * renders the Play Date one day early. This is the production tracking-page
+ * report ("booked Oct 19, tracking says Oct 18").
+ *
+ * Sorting by epoch (not string) keeps the comparison meaningful for mixed
+ * offsets, and going through `selectionDateStr` makes an overnight tail
+ * (00:00–02:00 wall clock) resolve to the day the customer actually picked.
+ */
+export function slotSelectionDateStr(
+  slotStarts: readonly (string | Date)[],
+): string | null {
+  let earliest: number | null = null;
+  for (const s of slotStarts) {
+    const ms = (s instanceof Date ? s : new Date(s)).getTime();
+    if (Number.isNaN(ms)) continue;
+    if (earliest === null || ms < earliest) earliest = ms;
+  }
+  if (earliest === null) return null;
+  return selectionDateStr(new Date(earliest));
+}
+
+/**
  * True when an instant sits exactly on the hourly slot grid of its Manila
  * selection date (whole hour, one of the 21 slots starting 06:00).
  * Overnight slots 00:00–02:00 belong to the previous selection date's grid,

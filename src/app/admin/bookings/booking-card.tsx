@@ -44,6 +44,7 @@ export default function BookingCard({ booking }: { booking: BookingDetail }) {
           <div>{booking.phone}</div>
         </div>
         <div className="space-y-1">
+          <Field label="Tracking no." value={booking.trackingCode || "—"} />
           <Field label="Courts" value={booking.courts || "—"} />
           <Field label="Date" value={formatBookingDate(booking.date)} />
           <Field

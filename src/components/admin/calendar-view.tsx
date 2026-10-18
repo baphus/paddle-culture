@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/sheet";
 import type { CalendarEvent } from "@/lib/admin/calendar";
 import { formatConsecutiveSlots } from "@/lib/admin/calendar";
+import { manilaDateStr } from "@/lib/booking/slots";
 import type { BookingDetail } from "@/lib/admin/bookings";
 import type { ClosureRow } from "@/lib/admin/config";
 
@@ -1021,8 +1022,13 @@ function ScheduleView({
     date,
     bookings: events.filter((e) => e.date === date),
     closures: closures.filter((c) => {
+      // Manila day, not the UTC day: a closure starting 00:00 Manila is
+      // ...T16:00:00Z on the *previous* UTC date, so slicing the ISO string
+      // filed it under the wrong column — the same defect as the Play Date
+      // report. manilaDateStr() is the canonical helper (client-safe).
       const start = new Date(c.startAt);
-      return start.toISOString().slice(0, 10) === date;
+      if (Number.isNaN(start.getTime())) return false;
+      return manilaDateStr(start) === date;
     }),
   })).filter((g) => g.bookings.length > 0 || g.closures.length > 0);
 

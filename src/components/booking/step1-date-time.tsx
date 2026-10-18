@@ -22,7 +22,7 @@ import {
   formatManilaLong,
   formatSlotRange,
   manilaTodayStr,
-  manilaTomorrowStr,
+  manilaEarliestBookableStr,
   maxBookableDateStr,
   monthLabelManila,
   weekdayManila,
@@ -185,7 +185,10 @@ export default function Step1DateTime({
   onLiveUpdate,
 }: Step1DateTimeProps) {
   const todayStr = useMemo(() => manilaTodayStr(), []);
-  const tomorrowStr = useMemo(() => manilaTomorrowStr(), []);
+  // Floor of the calendar. Same-day booking is allowed, so this is *today* —
+  // past hours are filtered per slot by the availability payload, never by
+  // disabling the whole day.
+  const earliestStr = useMemo(() => manilaEarliestBookableStr(), []);
   const maxStr = useMemo(() => maxBookableDateStr(), []);
 
   // Courts/rates come from the parent (booking-flow already fetches /api/courts + /api/pricing)
@@ -341,7 +344,7 @@ export default function Step1DateTime({
   useEffect(() => {
     if (!selectedMonth || !currentCached) return;
     const ids = [...courtIds].sort();
-    const minMonth = tomorrowStr.slice(0, 7);
+    const minMonth = earliestStr.slice(0, 7);
     const maxMonth = maxStr.slice(0, 7);
     for (const adj of [shiftMonth(selectedMonth, 1), shiftMonth(selectedMonth, -1)]) {
       if (adj < minMonth || adj > maxMonth) continue;
@@ -573,7 +576,7 @@ export default function Step1DateTime({
   const daysInMonth = daysInManilaMonth(view.y, view.m);
   const viewKey = `${view.y}-${pad2(view.m + 1)}`;
   const maxKey = maxStr.slice(0, 7);
-  const prevDisabled = viewKey <= tomorrowStr.slice(0, 7);
+  const prevDisabled = viewKey <= earliestStr.slice(0, 7);
   const nextDisabled = viewKey >= maxKey;
 
   function shiftView(dir: 1 | -1) {
@@ -605,7 +608,7 @@ export default function Step1DateTime({
   }
 
   function pickDate(dateStr: string, stayOnTimeGrid = false) {
-    if (dateStr < tomorrowStr || dateStr > maxStr) return;
+    if (dateStr < earliestStr || dateStr > maxStr) return;
     if (dateStr === selectedDate) {
       if (!stayOnTimeGrid) { setCourtIds(courts.map((c) => c.id)); setPanel(1); }
       return;
@@ -709,7 +712,7 @@ export default function Step1DateTime({
   function shiftDate(dir: 1 | -1) {
     if (!selectedDate) return;
     const next = addDaysManilaStr(selectedDate, dir);
-    if (next < tomorrowStr || next > maxStr) return;
+    if (next < earliestStr || next > maxStr) return;
     pickDate(next, true);
   }
 
@@ -728,18 +731,21 @@ export default function Step1DateTime({
 
   // No "selected" kind: the calendar no longer marks the chosen day, so
   // yesterday's pick can't read as a live selection while you browse.
-  type DayKind = "past" | "today" | "open" | "beyond";
+  // Today is NOT a special kind any more — same-day booking is allowed, so it
+  // goes through the same open path as any other future day. Hours that have
+  // already started render as unavailable in the time grid instead.
+  type DayKind = "past" | "open" | "beyond";
   function dayKind(dateStr: string): DayKind {
     if (dateStr > maxStr) return "beyond";
-    if (dateStr === todayStr) return "today"; // today: highlighted but not bookable
-    if (dateStr < tomorrowStr) return "past";
+    if (dateStr < earliestStr) return "past";
     return "open";
   }
 
   const dateLabel = (() => {
     if (!selectedDate) return "Pick a date";
     const long = formatManilaLong(selectedDate);
-    if (selectedDate === tomorrowStr) return `Tomorrow · ${long}`;
+    if (selectedDate === todayStr) return `Today · ${long}`;
+    if (selectedDate === addDaysManilaStr(todayStr, 1)) return `Tomorrow · ${long}`;
     return long;
   })();
 
@@ -831,7 +837,7 @@ export default function Step1DateTime({
               <button
                 type="button"
                 onClick={() => shiftDate(-1)}
-                disabled={!selectedDate || selectedDate <= tomorrowStr}
+                disabled={!selectedDate || selectedDate <= earliestStr}
                 aria-label="Previous day"
                 className="grid size-9 place-items-center rounded-lg border border-line-warm/60 text-warm-muted transition-colors hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -1237,42 +1243,39 @@ export default function Step1DateTime({
                       const kind = dayKind(dateStr);
                       const dayNum = Number(dateStr.slice(8, 10));
 
-                      if (kind === "past" || kind === "beyond" || kind === "today") {
-                        const isToday = kind === "today";
+                      if (kind === "past" || kind === "beyond") {
                         return (
                           <div
                             key={cell.key}
                             role="gridcell"
                             aria-disabled="true"
-                            aria-label={`${formatManilaLong(dateStr)} — ${isToday ? "today, not bookable" : "unavailable"}`}
-                            className={cn(
-                              "flex h-11 cursor-not-allowed flex-col justify-between rounded-lg border p-1 text-xs sm:h-16 sm:rounded-xl sm:p-1.5",
-                              isToday
-                                ? "border-flame/40 bg-flame-light/30 text-flame"
-                                : "border-line-warm/20 bg-surface-dim/20 text-warm-muted/50",
-                            )}
+                            aria-label={`${formatManilaLong(dateStr)} — unavailable`}
+                            className="flex h-11 cursor-not-allowed flex-col justify-between rounded-lg border border-line-warm/20 bg-surface-dim/20 p-1 text-xs text-warm-muted/50 sm:h-16 sm:rounded-xl sm:p-1.5"
                           >
-                            <span className={cn(isToday ? "font-extrabold" : "font-medium")}>{dayNum}</span>
-                            {isToday && (
-                              <span className="block text-[9px] font-bold uppercase tracking-wide leading-tight">
-                                Today
-                              </span>
-                            )}
+                            <span className="font-medium">{dayNum}</span>
                           </div>
                         );
                       }
 
+                      const isToday = dateStr === todayStr;
                       return (
                         <div key={cell.key} role="gridcell">
                           <button
                             type="button"
                             onClick={() => pickDate(dateStr)}
-                            aria-label={formatManilaLong(dateStr)}
-                            className="flex h-11 w-full flex-col justify-between rounded-lg border border-line-warm/70 bg-white p-1 text-left text-ink transition-all hover:bg-oat sm:h-16 sm:rounded-xl sm:p-1.5"
+                            aria-label={isToday ? `${formatManilaLong(dateStr)} — today` : formatManilaLong(dateStr)}
+                            className={cn(
+                              "flex h-11 w-full flex-col justify-between rounded-lg border bg-white p-1 text-left text-ink transition-all hover:bg-oat sm:h-16 sm:rounded-xl sm:p-1.5",
+                              isToday ? "border-flame/50 bg-flame-light/20" : "border-line-warm/70",
+                            )}
                           >
-                            <span className="text-sm font-bold sm:text-base">{dayNum}</span>
-                            <span className="block text-[9px] font-bold uppercase tracking-wide leading-tight text-warm-muted/70 font-semibold">
-                              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][weekdayManila(dateStr)]}
+                            <span className={cn("text-sm font-bold sm:text-base", isToday && "font-extrabold text-flame")}>
+                              {dayNum}
+                            </span>
+                            <span className="block text-[9px] font-bold uppercase tracking-wide leading-tight text-warm-muted/70">
+                              {isToday
+                                ? "Today"
+                                : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][weekdayManila(dateStr)]}
                             </span>
                           </button>
                         </div>

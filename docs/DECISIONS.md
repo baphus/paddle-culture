@@ -48,6 +48,20 @@ Booking handler never calls `sendMail()` inline — it inserts outbox rows atomi
 
 - Amendment 2026-10-04 (per owner: mail must arrive immediately, local + prod): submit/approve/reject routes now `await drainOutboxBestEffort()` right after commit — sends due rows at once instead of waiting up to 5 min for the cron. Still outbox-based (rows commit atomically first; the drain never throws, so a mail outage can't fail a booking), and the cron + `POST /api/admin/outbox/process` remain as backstops (claiming is atomic, no double-sends). Local SMTP via `SMTP_HOST`/`SMTP_PORT`/`SMTP_SECURE`/`MAIL_FROM` (Mailpit `127.0.0.1:1025`, no auth); unset `SMTP_HOST` keeps the Gmail path. Manual drain: `npx tsx scripts/drain-outbox.ts`.
 
+## ADR-05b — Calendar links in customer email (added 2026-10-06)
+
+**Decision:** the `booking_customer_approved` and `booking_customer_submitted` emails carry an **"Add to Google Calendar" link**, **one per court session**, reusing `src/lib/booking/calendar.ts`.
+
+**Why:**
+- **Customers were re-typing their slots into their phones.** The web receipt (`booking-invoice.tsx`) already had the button; the email — the artifact customers keep — did not.
+- **Approved + pending review, not just approved.** The pending email is the one that arrives while the booking is still fresh in the customer's head. It carries the caveat *"Your slot is not confirmed until we verify your payment proof"* so the calendar entry is never mistaken for a confirmation, and the filled "View Booking Status" CTA still outranks it visually.
+- **One event per session.** A booking can be two courts, or two different days. `googleCalendarUrl` merges a whole booking into one span (first start → 1h after the last end), which for a two-day booking puts a week-long event on the customer's calendar. The emails therefore use the additive `googleCalendarUrlForRange({startIso, endIso})`. `googleCalendarUrl` is unchanged so the web receipt keeps its existing single-span behaviour (guarded by `test/calendar-url.test.ts`).
+- **Not the rejected email.** `booking_customer_rejected` schedules nothing — the slots are released, so a calendar entry would be actively wrong.
+
+**Rejected: `.ics` attachment (`text/calendar; METHOD:PUBLISH`).** It would also serve Apple Calendar and Outlook, but costs one more attachment per email against the Gmail daily ceiling (ADR-05), several clients only surface the first `VEVENT` (wrong for multi-session bookings), and Gmail renders it as a system card the sender cannot style or label. Link-only keeps the change inside the templates with no worker, DB or RPC change — the approve/submit payloads already carry `trackingToken`, `email` and `slots[{courtName, slotStart}]`. Revisit if customers on iOS/Outlook ask for it.
+
+**Consequence:** `CourtSession` in `templates.ts` now also carries `startIso`/`endIso` alongside its display strings, so the calendar link never re-parses formatted dates. No `supabase/*.sql` or `src/lib/mail/worker.ts` change.
+
 ## ADR-06 — Storage (private bucket, signed URLs)
 
 Bucket `proofs` **private** (renamed from `payment-proofs`, schema table stays `payment_proofs`). Customer upload via server-minted signed upload URL (scoped, short TTL); admin view/zoom/download via signed read URLs. No public-write, no replace/delete endpoints. Allowlist FROZEN per owner 2026-10-03: jpg/png/webp, ≤5MB, 1 file per website booking, immutable. Static assets (logo, court photos, GCash/BDO/BPI QRs, website QR) in public bucket or site repo.

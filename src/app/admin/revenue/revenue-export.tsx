@@ -56,6 +56,9 @@ export function RevenueExportDropdown({
         Export
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
+        {/* Both exports always cover the WHOLE filtered range, never just the
+            page currently visible in the daily table. Paging is a display
+            concern; a CSV must not depend on which page you were on. */}
         <DropdownMenuItem
           onClick={() =>
             download(`revenue-daily-${range}.csv`, [
@@ -69,7 +72,7 @@ export function RevenueExportDropdown({
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={() =>
-            download("revenue-monthly.csv", [
+            download(`revenue-monthly-${range}.csv`, [
               ["Month", "Bookings", "Revenue (PHP)"],
               ...months.map((m) => [m.month, m.bookings, pesos(m.revenueCents)]),
             ])

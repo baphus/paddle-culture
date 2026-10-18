@@ -13,7 +13,7 @@ export default function HowItWorks({ rates = FALLBACK_RATES }: { rates?: Display
       n: "01",
       icon: CalendarCheck,
       title: "Select Court & Time",
-      blurb: "Pick 1 or both courts for tomorrow onwards. 10-min hold starts instantly.",
+      blurb: "Pick 1 or both courts from today onwards — same day is fine. 10-min hold starts instantly.",
     },
     {
       n: "02",

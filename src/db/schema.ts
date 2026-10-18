@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  date,
   index,
   integer,
   jsonb,
@@ -143,6 +144,14 @@ export const bookings = pgTable(
     email: text("email").notNull(),
     phone: text("phone").notNull(),
     total: numeric("total", { precision: 12, scale: 2 }).notNull(),
+    /**
+     * Manila *selection* date the customer booked (YYYY-MM-DD) — the day whose
+     * 06:00→03:00+1d slot grid the booking came from. Written by
+     * rpc_submit_booking / rpc_admin_create_booking, never derived in JS from a
+     * slot instant (that is what turned `...T22:00:00Z` into the previous day
+     * and showed customers the wrong Play Date). Read it, don't recompute it.
+     */
+    playDate: date("play_date").notNull(),
     rejectReason: text("reject_reason"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

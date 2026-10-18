@@ -3,7 +3,7 @@ import { addDays } from "date-fns";
 import type { Db } from "@/db/client";
 import { MANILA_TZ, VENUE_PHONE_DISPLAY } from "@/lib/booking/constants";
 import { LaneError } from "@/lib/booking/errors";
-import { manilaDateStr, manilaWallClock } from "@/lib/booking/slots";
+import { manilaDateStr, manilaWallClock, slotSelectionDateStr } from "@/lib/booking/slots";
 import {
   generateTrackingCode,
   generateTrackingToken,
@@ -35,6 +35,7 @@ export interface BookingDetail {
   rejectReason: string | null;
   createdAt: string;
   trackingToken: string;
+  trackingCode: string;
   courts: string;
   date: string;
   slotLabels: string[];
@@ -188,7 +189,7 @@ export async function listBookings(
   let dataQuery = db
     .from("bookings")
     .select(
-      "id,tracking_token,tracking_code,status,full_name,email,phone,total,reject_reason,created_at,booking_slots!inner(slot_start)",
+      "id,tracking_token,tracking_code,status,full_name,email,phone,total,reject_reason,created_at,play_date,booking_slots!inner(slot_start)",
     )
     .order("created_at", { ascending: false });
 
@@ -276,7 +277,7 @@ export async function listBookings(
   type BookingRow = {
     id: string; tracking_token: string; tracking_code: string; status: string;
     full_name: string; email: string; phone: string; total: string;
-    reject_reason: string | null; created_at: string;
+    reject_reason: string | null; created_at: string; play_date: string | null;
   };
 
   const rows: BookingDetail[] = (bookingRows as BookingRow[]).map((b) => {
@@ -295,8 +296,9 @@ export async function listBookings(
       rejectReason: b.reject_reason,
       createdAt: b.created_at,
       trackingToken: b.tracking_token,
+      trackingCode: b.tracking_code,
       courts: courtNames,
-      date: rawSlots.length > 0 ? manilaDateStr(new Date(rawSlots[0]!.slot_start)) : "—",
+      date: b.play_date ?? slotSelectionDateStr(rawSlots.map((s) => s.slot_start)) ?? "—",
       slotLabels: formatSlotRanges(rawSlots.map((s) => s.slot_start)),
       slots: rawSlots.map((s) => ({
         courtId: s.court_id,
@@ -473,7 +475,7 @@ export async function getBookingById(
 ): Promise<BookingDetail | null> {
   const { data: booking, error: bookingError } = await db
     .from("bookings")
-    .select("id,tracking_token,tracking_code,status,full_name,email,phone,total,reject_reason,created_at")
+    .select("id,tracking_token,tracking_code,status,full_name,email,phone,total,reject_reason,created_at,play_date")
     .eq("id", id)
     .single();
   if (bookingError || !booking) return null;
@@ -481,7 +483,7 @@ export async function getBookingById(
   const b = booking as {
     id: string; tracking_token: string; tracking_code: string; status: string;
     full_name: string; email: string; phone: string; total: string;
-    reject_reason: string | null; created_at: string;
+    reject_reason: string | null; created_at: string; play_date: string | null;
   };
 
   const [slotsResult, rentalsResult, proofsResult] = await Promise.all([
@@ -524,8 +526,9 @@ export async function getBookingById(
     rejectReason: b.reject_reason,
     createdAt: b.created_at,
     trackingToken: b.tracking_token,
+    trackingCode: b.tracking_code,
     courts: courtNames,
-    date: rawSlots.length > 0 ? manilaDateStr(new Date(rawSlots[0]!.slot_start)) : "—",
+    date: b.play_date ?? slotSelectionDateStr(rawSlots.map((s) => s.slot_start)) ?? "—",
     slotLabels: formatSlotRanges(rawSlots.map((s) => s.slot_start)),
     slots: rawSlots.map((s) => ({
       courtId: s.court_id,

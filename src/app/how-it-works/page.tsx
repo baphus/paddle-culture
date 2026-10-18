@@ -41,7 +41,7 @@ export default async function HowItWorksPage() {
     },
     {
       q: "Can I book for today?",
-      a: "No — online booking starts from tomorrow. Today is walk-in only, so drop by and we'll set you up if a court is free. You can book any date from tomorrow up to 12 months ahead.",
+      a: "Yes — same-day booking is open. Choose today in the calendar and pick any hour that hasn't started yet; hours already under way show as unavailable. You can book any date from today up to 12 months ahead.",
     },
     {
       q: "Can I cancel or get a refund?",
@@ -86,7 +86,7 @@ export default async function HowItWorksPage() {
               <h2 className="mt-5 text-xl font-bold text-pine">Select Court & Time</h2>
               <p className="mt-2 flex-1 text-sm leading-relaxed text-warm-muted">
                 Pick a date, a court, and any hours on the live grid. Book any day
-                from tomorrow up to 12 months ahead.
+                from today up to 12 months ahead — same-day slots included.
               </p>
               <p className="mt-5 flex items-center justify-between border-t border-line pt-4 text-[12px] font-bold text-flame">
                 <span>{peso(rates.morning)}/hr · 6AM–6PM</span>

@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Loader2, RefreshCw } from "lucide-react";
 import { DataTable } from "@/components/ui/data-table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,6 +42,13 @@ export default function BookingsTable({
 }) {
   const router = useRouter();
   const [q, setQ] = useState(filters.q);
+  // Re-runs the server render with the same URL, so filters, page and search
+  // all survive while isPending keeps the button spinning.
+  const [isRefreshing, startRefresh] = useTransition();
+
+  function refresh() {
+    startRefresh(() => router.refresh());
+  }
 
   // Server-side URL state; page resets to 1 whenever a filter changes.
   function href(next: Partial<BookingsFilters> & { page?: number }): string {
@@ -139,13 +147,29 @@ export default function BookingsTable({
       pageSize={BOOKINGS_PAGE_SIZE}
       actions={filterActions}
       toolbarActions={
-        <Button
-          className="h-9"
-          nativeButton={false}
-          render={<Link href={newBookingHref} />}
-        >
-          New booking
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="icon-lg"
+            onClick={refresh}
+            disabled={isRefreshing}
+            title="Refresh"
+          >
+            {isRefreshing ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <RefreshCw className="size-4" />
+            )}
+            <span className="sr-only">Refresh</span>
+          </Button>
+          <Button
+            className="h-9"
+            nativeButton={false}
+            render={<Link href={newBookingHref} />}
+          >
+            New booking
+          </Button>
+        </div>
       }
       gridCard={(b) => <BookingCard booking={b} />}
     />

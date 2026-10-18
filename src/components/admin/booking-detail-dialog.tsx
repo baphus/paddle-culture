@@ -355,6 +355,7 @@ export function BookingDetailDialog({
 function BookingSummary({ booking }: { booking: BookingDetail }) {
   return (
     <div className="space-y-2 rounded-xl border p-4">
+      <DetailRow label="Tracking no." value={booking.trackingCode || "—"} />
       <DetailRow label="Name" value={booking.fullName} />
       <DetailRow label="Courts" value={booking.courts || "—"} />
       <DetailRow label="Date" value={formatBookingDate(booking.date)} />

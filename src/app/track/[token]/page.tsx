@@ -45,7 +45,7 @@ export default async function TrackPage({
 
   const { data: bookingData, error: bookingError } = await db
     .from("bookings")
-    .select("id,status,full_name,email,phone,total,reject_reason,tracking_code")
+    .select("id,status,full_name,email,phone,total,reject_reason,tracking_code,play_date")
     .eq("tracking_token", token)
     .single();
 
@@ -60,6 +60,8 @@ export default async function TrackPage({
     total: string;
     reject_reason: string | null;
     tracking_code: string;
+    /** Manila selection date, written at creation by rpc_submit_booking. */
+    play_date: string | null;
   };
 
   const [{ data: slotData }, { data: rentalData }] = await Promise.all([
@@ -118,6 +120,7 @@ export default async function TrackPage({
             rejectReason={booking.reject_reason}
             trackingCode={booking.tracking_code}
             slots={serializedSlots}
+            playDate={booking.play_date}
             rental={serializedRental}
             rates={rates}
           />

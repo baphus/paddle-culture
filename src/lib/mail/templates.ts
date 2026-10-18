@@ -1,10 +1,12 @@
 import QRCode from "qrcode";
+import { googleCalendarUrlForRange } from "../booking/calendar";
 import {
   OUTBOX_TEMPLATE_CUSTOMER_SUBMITTED,
   OUTBOX_TEMPLATE_OWNER_ALERT,
   VENUE_PHONE_DISPLAY,
   VENUE_PHONE_LINK,
 } from "../booking/constants";
+import { VENUE_ADDRESS } from "../venue";
 
 // Transactional templates (ADR-05). Submit writes the first two; the
 // approve/reject decision lane writes the latter two with the payload
@@ -79,6 +81,23 @@ interface CourtSession {
   date: string;       // e.g. "Tuesday, October 6, 2026"
   timeRange: string;  // e.g. "7:00 AM – 9:00 AM" or just "9:00 AM – 10:00 AM"
   hours: number;
+  /** Machine-readable bounds for the calendar link (display strings stay formatted). */
+  startIso: string;
+  endIso: string;
+}
+
+/** Short label for a calendar button: "Tue, Oct 6" in Manila time. */
+const shortDateFmt = new Intl.DateTimeFormat("en-PH", {
+  timeZone: "Asia/Manila",
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+});
+
+function shortDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return shortDateFmt.format(d);
 }
 
 function collapseSlots(p: Payload): CourtSession[] {
@@ -102,7 +121,14 @@ function collapseSlots(p: Payload): CourtSession[] {
     const startIso = str(current.slotStart);
     const startMs = new Date(startIso).getTime();
     if (Number.isNaN(startMs)) {
-      sessions.push({ court: courtName, date: startIso, timeRange: startIso, hours: 1 });
+      sessions.push({
+        court: courtName,
+        date: startIso,
+        timeRange: startIso,
+        hours: 1,
+        startIso,
+        endIso: "",
+      });
       i++;
       continue;
     }
@@ -126,6 +152,8 @@ function collapseSlots(p: Payload): CourtSession[] {
       date: formatDate(startIso),
       timeRange: `${formatTime(startIso)} – ${formatTime(endIso)}`,
       hours,
+      startIso,
+      endIso,
     });
     i = j;
   }
@@ -515,6 +543,107 @@ function ctaButton(label: string, url: string): string {
     </table>`;
 }
 
+// Outline button — deliberately quieter than ctaButton() so "Add to calendar"
+// never competes with the primary action (QR pass / booking status).
+function outlineButton(label: string, url: string): string {
+  return `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+           style="margin:0 0 8px;">
+      <tr>
+        <td align="center" style="border:1px solid ${BRAND.line};border-radius:8px;
+                                  background-color:${BRAND.white};padding:11px 16px;">
+          <a href="${escapeHtml(url)}"
+             style="display:inline-block;font-size:14px;font-weight:600;
+                    color:${BRAND.ink};text-decoration:none;">
+            ${escapeHtml(label)}
+          </a>
+        </td>
+      </tr>
+    </table>`;
+}
+
+/**
+ * One "Add to Google Calendar" button per court session.
+ *
+ * A booking can span several courts or days; merging them into a single event
+ * would put the wrong times on the customer's calendar, so each session gets
+ * its own accurate link (see googleCalendarUrlForRange).
+ */
+function calendarBlock(
+  sessions: CourtSession[],
+  trackingToken: string,
+  note = "",
+): string {
+  const ref = trackingToken ? `#${trackingToken.slice(0, 8).toUpperCase()}` : "";
+  const trackingUrl = trackingToken ? bookingUrl(trackingToken) : null;
+  const many = sessions.length > 1;
+
+  const buttons = sessions
+    .map((s) => {
+      const href = googleCalendarUrlForRange({
+        title: `CK Grounds — ${s.court}`,
+        startIso: s.startIso,
+        endIso: s.endIso,
+        location: VENUE_ADDRESS,
+        details: [
+          ref ? `Booking ref: ${ref}` : "",
+          `${s.court} — ${s.date}, ${s.timeRange}`,
+          trackingUrl ? `View your booking: ${trackingUrl}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      });
+      if (!href) return "";
+      const label = many
+        ? `Add to Google Calendar — ${s.court}, ${shortDate(s.startIso)}`
+        : "Add to Google Calendar";
+      return outlineButton(label, href);
+    })
+    .join("");
+
+  if (!buttons) return "";
+  const noteHtml = note
+    ? `<p style="margin:0 0 8px;font-size:12px;line-height:1.5;color:${BRAND.muted};">
+         ${escapeHtml(note)}
+       </p>`
+    : "";
+  return `${sectionLabel("Add to your calendar")}${noteHtml}${buttons}`;
+}
+
+// Plain-text counterpart: raw calendar URLs are very long, so they go on their
+// own indented line under a short label instead of inline in a sentence.
+function textCalendar(
+  sessions: CourtSession[],
+  trackingToken: string,
+  note = "",
+): string[] {
+  const ref = trackingToken ? `#${trackingToken.slice(0, 8).toUpperCase()}` : "";
+  const trackingUrl = trackingToken ? bookingUrl(trackingToken) : null;
+
+  const rows: string[] = [];
+  for (const s of sessions) {
+    const href = googleCalendarUrlForRange({
+      title: `CK Grounds — ${s.court}`,
+      startIso: s.startIso,
+      endIso: s.endIso,
+      location: VENUE_ADDRESS,
+      details: [
+        ref ? `Booking ref: ${ref}` : "",
+        `${s.court} — ${s.date}, ${s.timeRange}`,
+        trackingUrl ? `View your booking: ${trackingUrl}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    });
+    if (!href) continue;
+    rows.push(`  ${s.court} — ${shortDate(s.startIso)}, ${s.timeRange}`, `  ${href}`, "");
+  }
+
+  if (!rows.length) return [];
+  const head = note ? ["", "ADD TO GOOGLE CALENDAR", `  ${note}`] : ["", "ADD TO GOOGLE CALENDAR"];
+  return [...head, ...rows.slice(0, -1)];
+}
+
 function statusBadge(text: string, bg: string, fg: string): string {
   return `<span style="display:inline-block;padding:4px 12px;border-radius:20px;
                         font-size:12px;font-weight:700;letter-spacing:0.5px;
@@ -619,6 +748,11 @@ export async function renderOutboxEmail(
         "",
         "INVOICE",
         ...textInvoice(lines, total),
+        ...textCalendar(
+          sessions,
+          trackingToken,
+          "Your slot is not confirmed until we verify your payment proof.",
+        ),
         ...(url ? ["", "Track your booking:", url] : []),
         "",
         "Keep your payment proof until your booking is confirmed.",
@@ -643,7 +777,12 @@ export async function renderOutboxEmail(
             ? `${sectionLabel("Track your booking")}
                ${p("Scan this QR code to check your booking status at any time.")}
                ${qrCard(qrCid, url, "Booking tracking QR code")}
-               ${ctaButton("View Booking Status", url)}`
+               ${ctaButton("View Booking Status", url)}
+               ${calendarBlock(
+                 sessions,
+                 trackingToken,
+                 "Your slot is not confirmed until we verify your payment proof.",
+               )}`
             : ""
         }
 
@@ -744,6 +883,7 @@ export async function renderOutboxEmail(
         "BOOKING",
         ...textSessions(sessions),
         ...(total ? ["", `Total: ₱${total}`] : []),
+        ...textCalendar(sessions, trackingToken),
         ...(url ? ["", "YOUR QR PASS", url] : []),
         "",
         "See you on the court!",
@@ -754,7 +894,8 @@ export async function renderOutboxEmail(
         ? `${sectionLabel("QR check-in pass")}
            ${p("Show this at the venue to check in.")}
            ${qrCard(qrCid, url, "QR check-in pass")}
-           ${ctaButton("Open QR Pass", url)}`
+           ${ctaButton("Open QR Pass", url)}
+           ${calendarBlock(sessions, trackingToken)}`
         : "";
 
       const htmlBody = `

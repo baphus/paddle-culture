@@ -10,7 +10,7 @@ import {
   User,
 } from "lucide-react";
 import { formatManilaLong, formatSlotRanges, formatCourtSlotGroups, type CourtSlotGroup } from "@/lib/courts";
-import { timeBandFor } from "@/lib/booking/slots";
+import { slotSelectionDateStr, timeBandFor } from "@/lib/booking/slots";
 import { googleCalendarUrl } from "@/lib/booking/calendar";
 import { FALLBACK_RATES, peso, type DisplayRates } from "@/lib/pricing-display";
 import { VENUE_ADDRESS } from "@/lib/venue";
@@ -50,16 +50,19 @@ export default function BookingInvoice({
   rates = FALLBACK_RATES,
 }: BookingInvoiceProps) {
   const sortedSlots = [...slotStarts].sort();
-  const firstSlot = sortedSlots[0];
   const timeRangeLabel = formatSlotRanges(sortedSlots);
   // Non-empty only when the booking changes courts — otherwise `timeRangeLabel` is exact.
   const courtSlotLines = formatCourtSlotGroups(slotGroups ?? []);
 
-  const formattedDate = dateStr
-    ? formatManilaLong(dateStr)
-    : firstSlot
-      ? formatManilaLong(firstSlot.slice(0, 10))
-      : "Upcoming";
+  const formattedDate = (() => {
+    // Always derive the day from the slots in Manila. `dateStr` is the picked
+    // selection date and wins when present; the fallback must not slice the
+    // UTC ISO string (`firstSlot.slice(0, 10)`), which lands on the previous
+    // day for any start before 08:00Z — i.e. before 4:00 PM Manila. The
+    // tracking page hit exactly that: booked Oct 19, shown Oct 18.
+    const day = dateStr || slotSelectionDateStr(sortedSlots);
+    return day ? formatManilaLong(day) : "Upcoming";
+  })();
 
   // Built from the server total's composition (or a rate-based estimate): day vs evening hours.
   let dayCount = 0;

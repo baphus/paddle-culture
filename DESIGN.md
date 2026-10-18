@@ -239,7 +239,7 @@ CK Grounds is a premier community pickleball club and court reservation platform
 
 ## 6. Content & Copy Principles
 - **Concise & Direct:** Avoid lengthy paragraphs; keep descriptions to single, scannable sentences.
-- **Rule Clarity:** Explicitly feature key policies (e.g. "Starts tomorrow", "10-minute hold", "No account needed").
+- **Rule Clarity:** Explicitly feature key policies (e.g. "Same-day booking, future hours only", "10-minute hold", "No account needed").
 - **Consistent Pricing:**
   - Day Court Rate: ₱150/hr (6 AM - 6 PM)
   - Night Court Rate: ₱200/hr (6 PM - 3 AM)

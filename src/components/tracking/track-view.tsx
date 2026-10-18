@@ -19,6 +19,7 @@ import { QRCodeCanvas } from "qrcode.react";
 import { toast } from "sonner";
 import type { DisplayRates } from "@/lib/pricing-display";
 import { maskEmail, maskPhone } from "@/lib/booking/redact";
+import { slotSelectionDateStr } from "@/lib/booking/slots";
 import BookingInvoice from "@/components/booking/booking-invoice";
 
 interface SlotItem {
@@ -42,6 +43,9 @@ export interface TrackViewProps {
   total: string;
   rejectReason?: string | null;
   trackingCode: string;
+  /** Manila selection date from `bookings.play_date`. Null only if the row
+   *  predates the column; the invoice then falls back to the slot instants. */
+  playDate?: string | null;
   slots: SlotItem[];
   rental: RentalItem | null;
   rates?: DisplayRates;
@@ -57,6 +61,7 @@ export default function TrackView({
   total,
   rejectReason,
   trackingCode,
+  playDate,
   slots,
   rental,
   rates,
@@ -104,6 +109,11 @@ export default function TrackView({
   const sortedStarts = slots
     .map((s) => s.slotStart)
     .sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+
+  // Play Date: read the stored column. It is written once, in SQL, at creation
+  // time (bookings.play_date), so no surface can disagree with another. The
+  // helper is only a safety net for rows that predate the column.
+  const playDateStr = playDate || slotSelectionDateStr(sortedStarts);
 
   // Per-court attribution for the invoice — each row carries its own court.
   const slotGroups = courtNames.map((name) => ({
@@ -188,6 +198,7 @@ export default function TrackView({
         courtNames={courtNames}
         slotStarts={sortedStarts}
         slotGroups={slotGroups}
+        dateStr={playDateStr}
         player={{ fullName, email: maskEmail(email), phone: maskPhone(phone) }}
         equipment={equipment}
         bookingUrl={url}

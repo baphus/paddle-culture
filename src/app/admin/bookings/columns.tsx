@@ -14,6 +14,18 @@ function pesos(total: string): string {
 
 export const columns: ColumnDef<BookingDetail>[] = [
   {
+    // Not sortable: the table only sorts the current page, and the code is
+    // the customer-facing lookup key rather than an ordering field.
+    accessorKey: "trackingCode",
+    header: "Tracking no.",
+    enableSorting: false,
+    cell: ({ row }) => (
+      <span className="font-mono text-xs font-medium tracking-wider">
+        {row.original.trackingCode || "—"}
+      </span>
+    ),
+  },
+  {
     accessorKey: "fullName",
     header: "Name",
     cell: ({ row }) => (

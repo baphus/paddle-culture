@@ -17,14 +17,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
   Card,
   CardDescription,
   CardHeader,
@@ -40,7 +32,7 @@ import {
 } from "@/lib/admin/bookings";
 import { RevenueExportDropdown } from "./revenue-export";
 import { RevenueRangeFilter } from "./revenue-range-filter";
-
+import { RevenueTables as RevenueTablesClient } from "./revenue-tables";
 export const dynamic = "force-dynamic";
 
 const PAGE_DESCRIPTION =
@@ -280,115 +272,7 @@ async function RevenueTables({
   ]);
 
   return (
-    <>
-      {/* ── Daily breakdown table ─────────────────────────────────────── */}
-      <Card className="gap-0 overflow-hidden py-0">
-        <CardHeader className="border-b pt-4">
-          <CardTitle className="text-sm">Daily breakdown</CardTitle>
-          <CardDescription>
-            {days.length} day{days.length !== 1 ? "s" : ""}
-          </CardDescription>
-        </CardHeader>
-        {days.length > 0 ? (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="px-4">
-                    Date (Manila)
-                  </TableHead>
-                  <TableHead className="px-4">
-                    Bookings
-                  </TableHead>
-                  <TableHead className="px-4">
-                    Revenue
-                  </TableHead>
-                  <TableHead className="px-4">
-                    % of total
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {[...days]
-                  .sort((a, b) => (a.date < b.date ? 1 : -1))
-                  .map((d) => (
-                    <TableRow
-                      key={d.date}
-                      className="transition-colors"
-                    >
-                      <TableCell className="px-4 py-3 font-medium text-foreground">
-                        {d.date}
-                      </TableCell>
-                      <TableCell className="px-4 py-3 text-sm text-muted-foreground">
-                        {d.bookings}
-                      </TableCell>
-                      <TableCell className="px-4 py-3 text-sm font-semibold">
-                        {formatPesosFromCents(d.revenueCents)}
-                      </TableCell>
-                      <TableCell className="px-4 py-3 text-sm text-muted-foreground">
-                        {totalCents > 0
-                          ? `${((d.revenueCents / totalCents) * 100).toFixed(1)}%`
-                          : "—"}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-              </TableBody>
-            </Table>
-          </div>
-        ) : (
-          <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
-            No approved bookings in this date range.
-          </div>
-        )}
-      </Card>
-
-      {/* ── Monthly breakdown table ───────────────────────────────────── */}
-      {months.length > 0 && (
-        <Card className="gap-0 overflow-hidden py-0">
-          <CardHeader className="border-b pt-6">
-            <CardTitle className="text-sm">All-time monthly breakdown</CardTitle>
-          </CardHeader>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="px-4">
-                    Month
-                  </TableHead>
-                  <TableHead className="px-4">
-                    Bookings
-                  </TableHead>
-                  <TableHead className="px-4">
-                    Revenue
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {months.map((m) => (
-                  <TableRow
-                    key={m.month}
-                    className="transition-colors"
-                  >
-                    <TableCell className="px-4 py-3 font-medium text-foreground">
-                      {new Date(m.month + "-15").toLocaleString("en-PH", {
-                        month: "long",
-                        year: "numeric",
-                      })}
-                    </TableCell>
-                    <TableCell className="px-4 py-3 text-sm text-muted-foreground">
-                      {m.bookings}
-                    </TableCell>
-                    <TableCell className="px-4 py-3 text-sm font-semibold">
-                      {formatPesosFromCents(m.revenueCents)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </Card>
-      )}
-    </>
+    <RevenueTablesClient days={days} months={months} totalCents={totalCents} />
   );
 }
 
