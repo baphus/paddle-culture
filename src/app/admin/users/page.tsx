@@ -10,7 +10,7 @@ const PAGE_DESCRIPTION =
   "Manage admin accounts and invitations.";
 
 export default async function UsersPage() {
-  const session = await requireAdmin();
+  await requireAdmin();
 
   let users: Awaited<ReturnType<typeof listAdminUsers>> = [];
   let failed = false;
@@ -35,11 +35,7 @@ export default async function UsersPage() {
             Could not load admin users. Check your connection and try again.
           </div>
         ) : (
-          <UsersTable
-            users={users}
-            actorId={session.userId}
-            actions={<InviteManager />}
-          />
+          <UsersTable users={users} actions={<InviteManager />} />
         )}
       </section>
     </div>

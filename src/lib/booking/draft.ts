@@ -34,6 +34,12 @@ export interface BookingDraft {
   step: DraftStep;
   hold: HoldState | null;
   selectedDate: string | null;
+  /**
+   * Courts the booking actually touches — what the summary names and what the
+   * restored picks are rebuilt on. NOT a grid column preference: the time grid
+   * always shows every active court, so a reload can't collapse it to the one
+   * court someone happened to pick.
+   */
   courtIds: string[];
   selectedSlots: string[];
   slotGroups: CourtSlotGroup[];

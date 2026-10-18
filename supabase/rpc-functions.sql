@@ -609,8 +609,21 @@ CREATE INDEX IF NOT EXISTS holds_owner_token_idx
 -- global rule per (day_type, time_band, item_type). On PG14 or older, replace
 -- the index with a COALESCE expression index on a sentinel uuid.
 -- ===========================================================================
-ALTER TABLE pricing_rules
-  ADD CONSTRAINT pricing_rules_amount_positive CHECK (amount > 0);
+-- Idempotent: this file is re-run in full against the live database, so a bare
+-- ADD CONSTRAINT would fail with 42710 on every run after the first. Postgres
+-- has no ADD CONSTRAINT IF NOT EXISTS, hence the catalog guard.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'pricing_rules_amount_positive'
+      AND conrelid = 'pricing_rules'::regclass
+  ) THEN
+    ALTER TABLE pricing_rules
+      ADD CONSTRAINT pricing_rules_amount_positive CHECK (amount > 0);
+  END IF;
+END
+$$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS pricing_rules_key_uniq
   ON pricing_rules (court_id, day_type, time_band, item_type) NULLS NOT DISTINCT;

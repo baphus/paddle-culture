@@ -51,6 +51,32 @@ function manilaDayStart(dateStr: string): Date {
 }
 
 /**
+ * Read `bookings.play_date` out of a select result.
+ *
+ * The column is the authoritative Play Date (written by the RPCs), but it is
+ * only selected when the migration that added it has been applied — see
+ * `bookingsNeedsPlayDateFallback`. Selecting a column that does not exist makes
+ * PostgREST fail the whole query, so on a database without it every read would
+ * die with `column bookings.play_date does not exist`. Rows that did not come
+ * back with the column simply have no key here and fall back to the slots.
+ */
+function playDateOrNull(row: object): string | null {
+  const value = (row as { play_date?: string | null }).play_date;
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+/**
+ * True when Postgres reports the `play_date` column is missing (migration
+ * `drizzle/0004_play_date.sql` not applied yet). Any other error is a real one
+ * and must still surface.
+ */
+function bookingsNeedsPlayDateFallback(error: { message?: string; code?: string }): boolean {
+  if (error.code === "42703") return true;
+  const message = error.message ?? "";
+  return /play_date/i.test(message) && /does not exist|unknown column|no such column/i.test(message);
+}
+
+/**
  * UTC ISO string for a PostgREST bound. manilaWallClock returns a TZDate whose
  * overridden `toISOString` prints `...+08:00`; Postgres reads that as 16:00Z
  * the day before, which silently widened every date filter by 8h.
@@ -175,64 +201,77 @@ export async function listBookings(
   // booking_slots!inner must appear in the select when we filter on it;
   // omit it (and the range filters) when there is no date range so we avoid
   // an unnecessary join on every unfiltered count.
-  let countQuery = isDateFiltered
-    ? db
-        .from("bookings")
-        .select("id,booking_slots!inner(slot_start)", { count: "exact" })
-        .range(0, 0)
-        .gte("booking_slots.slot_start", lo)
-        .lt("booking_slots.slot_start", hi)
-    : db
-        .from("bookings")
-        .select("id", { count: "exact" })
-        .range(0, 0);
-  let dataQuery = db
-    .from("bookings")
-    .select(
-      "id,tracking_token,tracking_code,status,full_name,email,phone,total,reject_reason,created_at,play_date,booking_slots!inner(slot_start)",
-    )
-    .order("created_at", { ascending: false });
-
-  if (params.q) {
-    const escaped = `%${escapeIlike(params.q)}%`;
-    countQuery = countQuery.ilike("full_name", escaped);
-    dataQuery = dataQuery.ilike("full_name", escaped);
-  }
-  if ((BOOKING_STATUSES as readonly string[]).includes(params.status)) {
-    countQuery = countQuery.eq("status", params.status);
-    dataQuery = dataQuery.eq("status", params.status);
-  }
-  if (isDateFiltered) {
-    dataQuery = dataQuery
-      .gte("booking_slots.slot_start", lo)
-      .lt("booking_slots.slot_start", hi);
-  }
-
+  const dataColumns =
+    "id,tracking_token,tracking_code,status,full_name,email,phone,total,reject_reason,created_at,booking_slots!inner(slot_start)";
+  /** Page rows as PostgREST returned them; `play_date` is absent on a database
+   * that predates the migration, which is why it stays optional here. */
+  type PageRow = {
+    id: string; tracking_token: string; tracking_code: string; status: string;
+    full_name: string; email: string; phone: string; total: string;
+    reject_reason: string | null; created_at: string; play_date?: string | null;
+  };
   const pageSize = params.limit ?? BOOKINGS_PAGE_SIZE;
   const requestedPage = Math.max(1, params.page);
+  const rangeFor = (p: number): [number, number] => [(p - 1) * pageSize, p * pageSize - 1];
 
-  const [countResult, dataResult] = await Promise.all([
-    countQuery,
-    dataQuery.range((requestedPage - 1) * pageSize, requestedPage * pageSize - 1),
-  ]);
+  /** Apply the q / status / date-range filters to a bookings read. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function withFilters<T extends { ilike: any }>(query: T): T {
+    const escaped = params.q ? `%${escapeIlike(params.q)}%` : null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let q: any = query;
+    if (escaped) q = q.ilike("full_name", escaped);
+    if ((BOOKING_STATUSES as readonly string[]).includes(params.status)) q = q.eq("status", params.status);
+    if (isDateFiltered) {
+      q = q.gte("booking_slots.slot_start", lo).lt("booking_slots.slot_start", hi);
+    }
+    return q as T;
+  }
+
+  /** Read one page, optionally selecting `play_date`. */
+  async function readPage(page: number, withPlayDate: boolean): Promise<PageRow[]> {
+    // The selects are split into two literal calls on purpose: a template-union
+    // select in one expression makes TS explode the PostgREST builder's type.
+    const base = withPlayDate
+      ? db.from("bookings").select(`play_date,${dataColumns}`)
+      : db.from("bookings").select(dataColumns);
+    const ordered = base.order("created_at", { ascending: false });
+    const { data, error } = await withFilters(ordered).range(...rangeFor(page));
+    if (error) throw error;
+    return (data ?? []) as PageRow[];
+  }
+
+  // ── Count ─────────────────────────────────────────────────────────────────
+  const countResult = isDateFiltered
+    ? await withFilters(
+        db.from("bookings").select("id,booking_slots!inner(slot_start)", { count: "exact" }),
+      ).range(0, 0)
+    : await db.from("bookings").select("id", { count: "exact" }).range(0, 0);
   if (countResult.error) throw new Error(countResult.error.message);
   const total = countResult.count ?? 0;
   const totalPages = Math.ceil(total / pageSize);
   if (total === 0) return { rows: [], page: 1, totalPages: 0, total: 0 };
-  if (dataResult.error) throw new Error(dataResult.error.message);
 
-  const page = Math.min(requestedPage, totalPages);
-
-  // Out-of-range request: the parallel read fetched the wrong slice, so re-read the clamped page.
-  let bookingRows = dataResult.data;
-  if (page !== requestedPage) {
-    const offset = (page - 1) * pageSize;
-    const { data, error } = await dataQuery.range(offset, offset + pageSize - 1);
-    if (error) throw new Error(error.message);
-    bookingRows = data;
+  /**
+   * Read a page, retrying without `play_date` on a database that predates the
+   * migration (the unknown column fails the whole query, so the slots supply
+   * the Play Date instead — see playDateOrNull).
+   */
+  async function readPageWithFallback(page: number): Promise<PageRow[]> {
+    try {
+      return await readPage(page, true);
+    } catch (error) {
+      if (!bookingsNeedsPlayDateFallback(error as { code?: string; message?: string })) throw error;
+      return readPage(page, false);
+    }
   }
 
-  const ids = (bookingRows ?? []).map((b: { id: string }) => b.id);
+  let bookingRows = await readPageWithFallback(requestedPage);
+  const page = Math.min(requestedPage, totalPages);
+  // Out-of-range request: the first read fetched the wrong slice, so re-read the clamped page.
+  if (page !== requestedPage) bookingRows = await readPageWithFallback(page);
+
+  const ids = bookingRows.map((b) => b.id);
   if (ids.length === 0) return { rows: [], page, totalPages, total };
 
   // ── Parallel fetch of related data ───────────────────────────────────────
@@ -274,13 +313,7 @@ export async function listBookings(
     ((proofsResult.data ?? []) as ProofRow[]).map((p) => [p.booking_id, p.path]),
   );
 
-  type BookingRow = {
-    id: string; tracking_token: string; tracking_code: string; status: string;
-    full_name: string; email: string; phone: string; total: string;
-    reject_reason: string | null; created_at: string; play_date: string | null;
-  };
-
-  const rows: BookingDetail[] = (bookingRows as BookingRow[]).map((b) => {
+  const rows: BookingDetail[] = bookingRows.map((b) => {
     const rawSlots = (slotsByBooking.get(b.id) ?? [])
       .slice()
       .sort((a, c) => new Date(a.slot_start).getTime() - new Date(c.slot_start).getTime());
@@ -298,7 +331,10 @@ export async function listBookings(
       trackingToken: b.tracking_token,
       trackingCode: b.tracking_code,
       courts: courtNames,
-      date: b.play_date ?? slotSelectionDateStr(rawSlots.map((s) => s.slot_start)) ?? "—",
+      date:
+        playDateOrNull(b) ??
+        slotSelectionDateStr(rawSlots.map((s) => s.slot_start)) ??
+        "—",
       slotLabels: formatSlotRanges(rawSlots.map((s) => s.slot_start)),
       slots: rawSlots.map((s) => ({
         courtId: s.court_id,
@@ -473,18 +509,31 @@ export async function getBookingById(
   db: Db,
   id: string,
 ): Promise<BookingDetail | null> {
-  const { data: booking, error: bookingError } = await db
-    .from("bookings")
-    .select("id,tracking_token,tracking_code,status,full_name,email,phone,total,reject_reason,created_at,play_date")
-    .eq("id", id)
-    .single();
-  if (bookingError || !booking) return null;
-
-  const b = booking as {
+  const detailColumns =
+    "id,tracking_token,tracking_code,status,full_name,email,phone,total,reject_reason,created_at";
+  /** This booking's row; `play_date` is absent on a database without the
+   * migration, which is why it stays optional here. See playDateOrNull. */
+  type DetailRow = {
     id: string; tracking_token: string; tracking_code: string; status: string;
     full_name: string; email: string; phone: string; total: string;
-    reject_reason: string | null; created_at: string; play_date: string | null;
+    reject_reason: string | null; created_at: string; play_date?: string | null;
   };
+  type DetailResult = { data: DetailRow | null; error: { code?: string; message?: string } | null };
+  async function readBooking(withPlayDate: boolean): Promise<DetailResult> {
+    const query = withPlayDate
+      ? db.from("bookings").select(`play_date,${detailColumns}`)
+      : db.from("bookings").select(detailColumns);
+    return (await query.eq("id", id).single()) as DetailResult;
+  }
+  let { data: booking, error: bookingError } = await readBooking(true);
+  // Database without `bookings.play_date` (migration not applied): retry without
+  // it rather than reporting the booking as missing. See playDateOrNull.
+  if (bookingError && bookingsNeedsPlayDateFallback(bookingError)) {
+    ({ data: booking, error: bookingError } = await readBooking(false));
+  }
+  if (bookingError || !booking) return null;
+
+  const b = booking;
 
   const [slotsResult, rentalsResult, proofsResult] = await Promise.all([
     db
@@ -528,7 +577,10 @@ export async function getBookingById(
     trackingToken: b.tracking_token,
     trackingCode: b.tracking_code,
     courts: courtNames,
-    date: b.play_date ?? slotSelectionDateStr(rawSlots.map((s) => s.slot_start)) ?? "—",
+    date:
+      playDateOrNull(b) ??
+      slotSelectionDateStr(rawSlots.map((s) => s.slot_start)) ??
+      "—",
     slotLabels: formatSlotRanges(rawSlots.map((s) => s.slot_start)),
     slots: rawSlots.map((s) => ({
       courtId: s.court_id,

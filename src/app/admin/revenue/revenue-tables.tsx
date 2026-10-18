@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
+import AdminPagination from "@/components/admin/admin-pagination";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -102,11 +102,6 @@ export function RevenueTables({
 
             <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3 text-xs">
               <div className="flex items-center gap-2">
-                <p className="text-muted-foreground">
-                  {days.length.toLocaleString()} result
-                  {days.length === 1 ? "" : "s"}
-                  {totalPages > 1 && ` · showing ${start + 1}–${start + pageRows.length}`}
-                </p>
                 <DropdownMenu>
                   <DropdownMenuTrigger
                     render={<Button variant="outline" size="sm" className="h-7" />}
@@ -132,49 +127,14 @@ export function RevenueTables({
                 </DropdownMenu>
               </div>
 
-              {totalPages > 1 && (
-                <nav aria-label="Daily breakdown pages" className="flex items-center gap-1">
-                  <Button
-                    variant="outline"
-                    className="h-7 min-w-7 px-1.5"
-                    onClick={() => setPage(currentPage - 1)}
-                    disabled={currentPage <= 1}
-                    aria-label="Previous page"
-                  >
-                    <ChevronLeft className="size-3.5" />
-                  </Button>
-                  {buildPageList(currentPage, totalPages).map((entry, i) =>
-                    entry === "gap" ? (
-                      <span
-                        key={`gap-${i}`}
-                        className="flex h-7 w-7 items-center justify-center text-muted-foreground"
-                      >
-                        <MoreHorizontal className="size-3.5" />
-                      </span>
-                    ) : (
-                      <Button
-                        key={entry}
-                        variant={entry === currentPage ? "default" : "outline"}
-                        className="h-7 min-w-7 px-1.5"
-                        onClick={() => setPage(entry)}
-                        aria-current={entry === currentPage ? "page" : undefined}
-                        aria-label={`Page ${entry}`}
-                      >
-                        {entry}
-                      </Button>
-                    ),
-                  )}
-                  <Button
-                    variant="outline"
-                    className="h-7 min-w-7 px-1.5"
-                    onClick={() => setPage(currentPage + 1)}
-                    disabled={currentPage >= totalPages}
-                    aria-label="Next page"
-                  >
-                    <ChevronRight className="size-3.5" />
-                  </Button>
-                </nav>
-              )}
+              <AdminPagination
+                className="ml-auto"
+                page={currentPage}
+                totalPages={totalPages}
+                onPageChange={setPage}
+                total={days.length}
+                rangeLabel={`showing ${start + 1}–${start + pageRows.length}`}
+              />
             </div>
           </>
         ) : (
@@ -223,30 +183,4 @@ export function RevenueTables({
       )}
     </>
   );
-}
-
-// ─── helpers ─────────────────────────────────────────────────────────────────
-
-type PageEntry = number | "gap";
-
-/** Mirrors AdminPagination: first 2, last 2, and ±2 around the current page. */
-function buildPageList(current: number, total: number): PageEntry[] {
-  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
-
-  const always = new Set([1, 2, total - 1, total]);
-  const window = new Set(
-    [current - 2, current - 1, current, current + 1, current + 2].filter(
-      (p) => p >= 1 && p <= total,
-    ),
-  );
-  const visible = Array.from(new Set([...always, ...window])).sort((a, b) => a - b);
-
-  const result: PageEntry[] = [];
-  let prev = 0;
-  for (const p of visible) {
-    if (p - prev > 1) result.push("gap");
-    result.push(p);
-    prev = p;
-  }
-  return result;
 }

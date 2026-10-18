@@ -36,22 +36,24 @@ export default async function TrackPage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
-  let db;
-  try {
-    db = getDb();
-  } catch {
-    notFound();
+  const db = (() => {
+    try {
+      return getDb();
+    } catch {
+      notFound();
+    }
+  })();
+
+  const trackColumns =
+    "id,status,full_name,email,phone,total,reject_reason,tracking_code";
+  async function readBooking(withPlayDate: boolean) {
+    return db
+      .from("bookings")
+      .select(withPlayDate ? `${trackColumns},play_date` : trackColumns)
+      .eq("tracking_token", token)
+      .single();
   }
-
-  const { data: bookingData, error: bookingError } = await db
-    .from("bookings")
-    .select("id,status,full_name,email,phone,total,reject_reason,tracking_code,play_date")
-    .eq("tracking_token", token)
-    .single();
-
-  if (bookingError || !bookingData) notFound();
-
-  const booking = bookingData as {
+  type TrackRow = {
     id: string;
     status: string;
     full_name: string;
@@ -61,8 +63,25 @@ export default async function TrackPage({
     reject_reason: string | null;
     tracking_code: string;
     /** Manila selection date, written at creation by rpc_submit_booking. */
-    play_date: string | null;
+    play_date?: string | null;
   };
+  type ReadResult = { data: TrackRow | null; error: { code?: string; message?: string } | null };
+  let { data: bookingData, error: bookingError } = (await readBooking(true)) as ReadResult;
+  // Database without `bookings.play_date` (migration not applied) — see
+  // lib/admin/bookings.ts playDateOrNull. Retry without it so tracking keeps
+  // working; TrackView derives the Play Date from the slots itself.
+  if (
+    bookingError &&
+    (bookingError.code === "42703" ||
+      (/play_date/i.test(bookingError.message ?? "") &&
+        /does not exist/i.test(bookingError.message ?? "")))
+  ) {
+    ({ data: bookingData, error: bookingError } = (await readBooking(false)) as ReadResult);
+  }
+
+  if (bookingError || !bookingData) notFound();
+
+  const booking = bookingData;
 
   const [{ data: slotData }, { data: rentalData }] = await Promise.all([
     db
@@ -120,7 +139,7 @@ export default async function TrackPage({
             rejectReason={booking.reject_reason}
             trackingCode={booking.tracking_code}
             slots={serializedSlots}
-            playDate={booking.play_date}
+            playDate={booking.play_date ?? null}
             rental={serializedRental}
             rates={rates}
           />

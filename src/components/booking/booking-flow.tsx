@@ -169,13 +169,15 @@ export default function BookingFlow({
   const [selectedDate, setSelectedDate] = useState<string | null>(
     restoredDraft?.selectedDate ?? null,
   );
-  const [courtIds, setCourtIds] = useState<string[]>(() =>
-    restoredDraft?.courtIds?.length
-      ? restoredDraft.courtIds
-      : initialCourts.length > 0
-        ? [initialCourts[0].id]
-        : [],
-  );
+  const [courtIds, setCourtIds] = useState<string[]>(() => {
+    // The draft's courtIds are "courts actually booked" (the summary names
+    // them). Drop any id the catalog no longer lists, so a deactivated or
+    // renamed court can't produce a phantom "Court" entry.
+    const known = new Set(initialCourts.map((c) => c.id));
+    const restored = (restoredDraft?.courtIds ?? []).filter((id) => known.has(id));
+    if (restored.length > 0) return restored;
+    return initialCourts.length > 0 ? [initialCourts[0].id] : [];
+  });
   const [selectedSlots, setSelectedSlots] = useState<string[]>(
     restoredDraft?.selectedSlots ?? [],
   );

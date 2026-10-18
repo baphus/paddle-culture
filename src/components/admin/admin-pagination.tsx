@@ -14,10 +14,18 @@ import { Button } from "@/components/ui/button";
 interface AdminPaginationProps {
   page: number;
   totalPages: number;
-  /** Build a URL for a given page number — receives page, returns href string */
-  hrefFor: (page: number) => string;
+  /**
+   * Build a URL for a given page number — receives page, returns href string.
+   * Omit when using `onPageChange` (client-state pagination, e.g. tables whose
+   * rows are already in memory and shouldn't cost a navigation).
+   */
+  hrefFor?: (page: number) => string;
+  /** Called with the target page when `hrefFor` is omitted. */
+  onPageChange?: (page: number) => void;
   /** Total row count shown as "X results" on the left */
   total?: number;
+  /** Optional detail after the count, e.g. "showing 26–37". */
+  rangeLabel?: string;
   className?: string;
 }
 
@@ -25,12 +33,29 @@ export default function AdminPagination({
   page,
   totalPages,
   hrefFor,
+  onPageChange,
   total,
+  rangeLabel,
   className,
 }: AdminPaginationProps) {
   if (totalPages <= 1) return null;
 
+  const callbackMode = !hrefFor && !!onPageChange;
+
+  if (!hrefFor && !onPageChange) {
+    throw new Error("AdminPagination needs either hrefFor or onPageChange");
+  }
+
   const pages = buildPageList(page, totalPages);
+
+  // In callback mode a page control is a button that reports the target page;
+  // in link mode it stays a <Link>. Active/disabled already render as buttons.
+  const link = (target: number, props: Omit<PaginationLinkProps, "href">) =>
+    callbackMode ? (
+      <PaginationLink {...props} href={undefined} onClick={() => onPageChange!(target)} />
+    ) : (
+      <PaginationLink {...props} href={hrefFor!(target)} />
+    );
 
   return (
     <div
@@ -44,19 +69,22 @@ export default function AdminPagination({
         {total !== undefined
           ? `${total.toLocaleString()} result${total === 1 ? "" : "s"}`
           : `Page ${page} of ${totalPages}`}
+        {rangeLabel ? ` · ${rangeLabel}` : ""}
       </p>
 
       {/* Right: page controls */}
       <nav aria-label="Pagination" className="flex items-center gap-1">
         {/* Prev */}
-        <PaginationLink
-          href={page > 1 ? hrefFor(page - 1) : undefined}
-          disabled={page <= 1}
-          aria-label="Previous page"
-        >
-          <ChevronLeft className="size-3.5" />
-          <span className="hidden sm:inline">Prev</span>
-        </PaginationLink>
+        {link(page - 1, {
+          disabled: page <= 1,
+          "aria-label": "Previous page",
+          children: (
+            <>
+              <ChevronLeft className="size-3.5" />
+              <span className="hidden sm:inline">Prev</span>
+            </>
+          ),
+        })}
 
         {/* Page numbers */}
         {pages.map((entry, i) =>
@@ -68,27 +96,27 @@ export default function AdminPagination({
               <MoreHorizontal className="size-3.5" />
             </span>
           ) : (
-            <PaginationLink
-              key={entry}
-              href={hrefFor(entry)}
-              active={entry === page}
-              aria-label={`Page ${entry}`}
-              aria-current={entry === page ? "page" : undefined}
-            >
-              {entry}
-            </PaginationLink>
+            link(entry, {
+              key: entry,
+              active: entry === page,
+              "aria-label": `Page ${entry}`,
+              "aria-current": entry === page ? "page" : undefined,
+              children: entry,
+            })
           ),
         )}
 
         {/* Next */}
-        <PaginationLink
-          href={page < totalPages ? hrefFor(page + 1) : undefined}
-          disabled={page >= totalPages}
-          aria-label="Next page"
-        >
-          <span className="hidden sm:inline">Next</span>
-          <ChevronRight className="size-3.5" />
-        </PaginationLink>
+        {link(page + 1, {
+          disabled: page >= totalPages,
+          "aria-label": "Next page",
+          children: (
+            <>
+              <span className="hidden sm:inline">Next</span>
+              <ChevronRight className="size-3.5" />
+            </>
+          ),
+        })}
       </nav>
     </div>
   );
@@ -129,7 +157,9 @@ interface PaginationLinkProps {
   href?: string;
   active?: boolean;
   disabled?: boolean;
-  children: React.ReactNode;
+  onClick?: () => void;
+  key?: number;
+  children?: React.ReactNode;
   "aria-label"?: string;
   "aria-current"?: "page" | undefined;
 }
@@ -138,15 +168,24 @@ function PaginationLink({
   href,
   active = false,
   disabled = false,
+  onClick,
   children,
   ...rest
 }: PaginationLinkProps) {
   const variant = active ? "default" : disabled ? "ghost" : "outline";
   const cls = "h-7 min-w-7 px-1.5";
 
+  // No href → local state pagination. Also covers active/disabled, which are
+  // never navigable.
   if (!href || disabled || active) {
     return (
-      <Button variant={variant} className={cls} disabled={disabled} {...rest}>
+      <Button
+        variant={variant}
+        className={cls}
+        disabled={disabled && !active}
+        onClick={onClick}
+        {...rest}
+      >
         {children}
       </Button>
     );

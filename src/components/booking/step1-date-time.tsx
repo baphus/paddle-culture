@@ -130,6 +130,12 @@ export interface Step1DateTimeProps {
   initialRates?: DisplayRates;
   existingHold?: HoldState | null;
   initialSelectedDate?: string | null;
+  /**
+   * Courts the restored `initialSelectedSlots` were picked on. Used ONLY to
+   * rebuild those picks — never to choose which columns the grid shows, which
+   * is always the full catalog. Treating it as a column list is what made a
+   * refresh after picking one court render a single-column grid.
+   */
   initialCourtIds?: string[];
   initialSelectedSlots?: string[];
   initialPaddleQty?: number;
@@ -193,11 +199,12 @@ export default function Step1DateTime({
 
   // Courts/rates come from the parent (booking-flow already fetches /api/courts + /api/pricing)
   const courts = initialCourts;
-  const [courtIds, setCourtIds] = useState<string[]>(() =>
-    initialCourtIds && initialCourtIds.length > 0
-      ? initialCourtIds
-      : initialCourts.map((c) => c.id),
-  );
+  // Every active court is a column, always. The grid used to take its column
+  // list from a restored draft (which holds the courts the customer *picked*),
+  // so a reload after picking one court re-drew the table with just that
+  // column and the others silently vanished. Visibility is not a preference
+  // here — it is the catalog.
+  const courtIds = useMemo(() => courts.map((c) => c.id), [courts]);
   const rates = initialRates;
   const [selectedDate, setSelectedDate] = useState<string | null>(initialSelectedDate ?? null);
   const [view, setView] = useState(() => partsOf(initialSelectedDate ?? todayStr));
@@ -392,11 +399,6 @@ export default function Step1DateTime({
     return m;
   }, [avail]);
 
-  const visibleCourts = useMemo(
-    () => courts.filter((c) => courtIds.includes(c.id)),
-    [courts, courtIds],
-  );
-
   const courtIndexById = useMemo(
     () => new Map(courts.map((c, i) => [c.id, i])),
     [courts],
@@ -419,7 +421,6 @@ export default function Step1DateTime({
   function goPanel(p: Panel) {
     if (p === 1 && !selectedDate) { toast.error("Pick a play date first."); return; }
     if (p === 2 && selected.length === 0) { toast.error("Pick at least 1 time slot first."); return; }
-    if (p === 1) setCourtIds(courts.map((c) => c.id));
     setPanel(p);
   }
 
@@ -599,7 +600,7 @@ export default function Step1DateTime({
     setSelected([]);
     setSelectedDate(dateStr);
     setView(partsOf(dateStr));
-    if (!stayOnTimeGrid) { setCourtIds(courts.map((c) => c.id)); setPanel(1); }
+    if (!stayOnTimeGrid) setPanel(1);
     if (hadPicks) {
       // The new day stays — only the old day's hours are gone.
       onClearSelection?.({ keepDate: true });
@@ -610,7 +611,7 @@ export default function Step1DateTime({
   function pickDate(dateStr: string, stayOnTimeGrid = false) {
     if (dateStr < earliestStr || dateStr > maxStr) return;
     if (dateStr === selectedDate) {
-      if (!stayOnTimeGrid) { setCourtIds(courts.map((c) => c.id)); setPanel(1); }
+      if (!stayOnTimeGrid) setPanel(1);
       return;
     }
     if (hold) {
@@ -951,8 +952,8 @@ export default function Step1DateTime({
                   >
                     TIME
                   </th>
-                  {/* Court column headers */}
-                  {visibleCourts.map((court) => (
+                  {/* Court column headers — every active court, always. */}
+                  {courts.map((court) => (
                       <th
                         key={court.id}
                         scope="col"
@@ -1022,7 +1023,7 @@ export default function Step1DateTime({
                           </span>
                         </td>
                         {/* Court cells */}
-                        {visibleCourts.map((court) => {
+                        {courts.map((court) => {
                           const cs = slotStateForCourt(iso, court.id);
                             const isSel = isCellSelected(iso, court.id);
                             return (
