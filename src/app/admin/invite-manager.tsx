@@ -22,6 +22,42 @@ interface Invite {
   status: "used" | "pending";
 }
 
+const LINK_CACHE_KEY = "adminInviteLinks";
+
+/** Returns a map of tokenHash → inviteLink from localStorage. */
+function loadLinkCache(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    return JSON.parse(localStorage.getItem(LINK_CACHE_KEY) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+
+/** Persist a generated invite link so it survives dialog close/reopen. */
+function saveLinkToCache(tokenHash: string, link: string) {
+  const cache = loadLinkCache();
+  cache[tokenHash] = link;
+  try {
+    localStorage.setItem(LINK_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    /* storage full or unavailable — non-fatal */
+  }
+}
+
+/** Remove an entry (revoked or used) from the link cache. */
+function removeLinkFromCache(tokenHash: string) {
+  const cache = loadLinkCache();
+  if (tokenHash in cache) {
+    delete cache[tokenHash];
+    try {
+      localStorage.setItem(LINK_CACHE_KEY, JSON.stringify(cache));
+    } catch {
+      /* non-fatal */
+    }
+  }
+}
+
 /** "Oct 18, 2026, 12:05 PM" — Manila wall clock. */
 function formatCreatedAt(dateStr: string): string {
   return new TZDate(dateStr, "Asia/Manila").toLocaleString("en-PH", {
@@ -37,13 +73,34 @@ export default function InviteManager() {
   const [open, setOpen] = useState(false);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [link, setLink] = useState<string | null>(null);
+  const [linkCache, setLinkCache] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
 
   async function refresh() {
     const res = await fetch("/api/auth/invites");
     if (!res.ok) return;
     const body = (await res.json()) as { invites?: Invite[] };
-    setInvites(body.invites ?? []);
+    const fetched = body.invites ?? [];
+
+    // Prune cached links for used invites (those links are no longer valid).
+    const cache = loadLinkCache();
+    let pruned = false;
+    for (const inv of fetched) {
+      if (inv.status === "used" && inv.tokenHash in cache) {
+        delete cache[inv.tokenHash];
+        pruned = true;
+      }
+    }
+    if (pruned) {
+      try {
+        localStorage.setItem(LINK_CACHE_KEY, JSON.stringify(cache));
+      } catch {
+        /* non-fatal */
+      }
+    }
+
+    setInvites(fetched);
+    setLinkCache(cache);
   }
 
   useEffect(() => {
@@ -57,13 +114,19 @@ export default function InviteManager() {
       const res = await fetch("/api/auth/invites", { method: "POST" });
       const body = (await res.json()) as {
         inviteLink?: string;
+        tokenHash?: string;
         error?: { message?: string };
       };
       if (!res.ok) {
         toast.error(body.error?.message ?? "Could not generate invite.");
         return;
       }
-      setLink(body.inviteLink ?? null);
+      const generatedLink = body.inviteLink ?? null;
+      setLink(generatedLink);
+      if (generatedLink && body.tokenHash) {
+        saveLinkToCache(body.tokenHash, generatedLink);
+        setLinkCache(loadLinkCache());
+      }
       await refresh();
     } catch {
       toast.error("Could not generate invite.");
@@ -84,6 +147,8 @@ export default function InviteManager() {
         return;
       }
       toast.success("Invite revoked.");
+      removeLinkFromCache(tokenHash);
+      setLinkCache(loadLinkCache());
       await refresh();
     } catch {
       toast.error("Could not revoke invite.");
@@ -169,16 +234,37 @@ export default function InviteManager() {
                       </span>
                     </div>
                     {i.status === "pending" && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => revoke(i.tokenHash)}
-                        className="shrink-0 text-muted-foreground hover:text-destructive"
-                        title="Revoke invite"
-                      >
-                        <Trash2 />
-                      </Button>
+                      <div className="flex shrink-0 items-center gap-1">
+                        {linkCache[i.tokenHash] && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => {
+                              const cachedLink = linkCache[i.tokenHash];
+                              if (!cachedLink) return;
+                              navigator.clipboard.writeText(cachedLink).then(
+                                () => toast.success("Invite link copied."),
+                                () => toast.error("Copy failed."),
+                              );
+                            }}
+                            className="text-muted-foreground hover:text-foreground"
+                            title="Copy invite link"
+                          >
+                            <LinkIcon />
+                          </Button>
+                        )}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => revoke(i.tokenHash)}
+                          className="text-muted-foreground hover:text-destructive"
+                          title="Revoke invite"
+                        >
+                          <Trash2 />
+                        </Button>
+                      </div>
                     )}
                   </div>
                 ))}
