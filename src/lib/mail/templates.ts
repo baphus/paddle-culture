@@ -757,8 +757,7 @@ export async function renderOutboxEmail(
       const textLines = [
         `Hi ${fullName},`,
         "",
-        "We received your booking. Our team will verify your payment proof and",
-        "confirm or reject it shortly.",
+        "We received your booking. Our team will verify your payment proof shortly.",
         "",
         `Name:  ${fullName}`,
         `Email: ${email}`,
@@ -783,7 +782,7 @@ export async function renderOutboxEmail(
       const htmlBody = `
         ${greeting(fullName)}
         <div style="margin-bottom:20px;">${statusBadge("Pending Review", BRAND.oat, BRAND.pine)}</div>
-        ${p("We received your booking. Our team will verify your payment proof and confirm or reject it shortly.")}
+        ${p("We received your booking. Our team will verify your payment proof shortly.")}
 
         ${sectionLabel("Customer")}
         ${customerBlock(fullName, email, phone)}
