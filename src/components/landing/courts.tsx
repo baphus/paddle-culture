@@ -10,13 +10,15 @@ import LandingImage from "./landing-image";
 const COURTS = [
   {
     src: "/images/court-1.jpg",
-    alt: "Court 1 at CK Grounds",
+    alt: "Blue pickleball court under CK Grounds’ covered, illuminated roof",
     name: "Court 1",
+    caption: "A covered, well-lit court for rallies that don’t have to end at sunset.",
   },
   {
     src: "/images/court-2.jpg",
-    alt: "Court 2 at CK Grounds",
+    alt: "Second blue pickleball court at CK Grounds, ready for play under the roof lights",
     name: "Court 2",
+    caption: "Bring your group, settle in, and enjoy a full game on your own court.",
   },
 ];
 
@@ -60,7 +62,7 @@ export default function Courts({ rates = FALLBACK_RATES }: { rates?: DisplayRate
                   </span>
                 </div>
                 <p className="border-t border-line px-5 py-3 text-sm font-semibold text-ink/70">
-                  Covered pickleball court
+                  {c.caption}
                 </p>
                 <div className="p-5">
                   <h3 className="text-lg font-extrabold text-ink">{c.name}</h3>
