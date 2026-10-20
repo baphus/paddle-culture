@@ -18,6 +18,65 @@
 -- ---------------------------------------------------------------------------
 
 -- ===========================================================================
+-- rpc_replace_court_hours
+--    Atomically replaces a court's entire weekly operating-hours schedule.
+--    Days omitted from p_days become closed. Called only by the admin API.
+-- ===========================================================================
+CREATE OR REPLACE FUNCTION rpc_replace_court_hours(
+  p_court_id uuid,
+  p_days int[],
+  p_open_time time,
+  p_close_time time,
+  p_amount numeric,
+  p_actor_email text
+)
+RETURNS int
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_before jsonb;
+  v_count int;
+BEGIN
+  PERFORM 1 FROM courts WHERE id = p_court_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Court not found' USING ERRCODE = 'P0002';
+  END IF;
+  IF p_days IS NULL OR cardinality(p_days) < 1 OR cardinality(p_days) > 7
+     OR EXISTS (SELECT 1 FROM unnest(p_days) AS days(day) WHERE day < 0 OR day > 6)
+     OR (SELECT count(*) FROM unnest(p_days) AS days(day)) <> (SELECT count(DISTINCT day) FROM unnest(p_days) AS days(day))
+     OR p_open_time = p_close_time OR p_amount <= 0 THEN
+    RAISE EXCEPTION 'Invalid court hours setup' USING ERRCODE = '22023';
+  END IF;
+
+  SELECT COALESCE(jsonb_agg(jsonb_build_object(
+    'id', id, 'dayOfWeek', day_of_week, 'openTime', open_time,
+    'closeTime', close_time, 'amount', amount
+  )), '[]'::jsonb)
+  INTO v_before
+  FROM operating_hours WHERE court_id = p_court_id;
+
+  DELETE FROM operating_hours WHERE court_id = p_court_id;
+  INSERT INTO operating_hours (court_id, day_of_week, open_time, close_time, amount)
+  SELECT p_court_id, day, p_open_time, p_close_time, p_amount
+  FROM unnest(p_days) AS days(day);
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+
+  INSERT INTO audit_log (actor, action, entity, entity_id, before, after)
+  VALUES (
+    p_actor_email, 'hours.quick_setup', 'court', p_court_id::text, v_before,
+    jsonb_build_object(
+      'days', to_jsonb(p_days), 'openTime', p_open_time,
+      'closeTime', p_close_time, 'amount', p_amount
+    )
+  );
+  RETURN v_count;
+END;
+$$;
+REVOKE ALL ON FUNCTION rpc_replace_court_hours(uuid, int[], time, time, numeric, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION rpc_replace_court_hours(uuid, int[], time, time, numeric, text) TO service_role;
+
+-- ===========================================================================
 -- 1. rpc_claim_outbox_batch
 --    Claims up to p_limit due outbox rows atomically (FOR UPDATE SKIP LOCKED),
 --    bumps attempts + sets status='sending', returns the claimed rows.

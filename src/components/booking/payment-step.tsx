@@ -205,7 +205,7 @@ export default function PaymentStep({
       const res = await fetch("/api/holds/reclaim", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ownerToken }),
+        body: JSON.stringify({ ownerToken, holdTokens }),
       });
       if (!res.ok) {
         const e = await readErrorMessage(res, "Could not restore your slots.");

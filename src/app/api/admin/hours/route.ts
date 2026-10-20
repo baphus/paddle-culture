@@ -2,7 +2,12 @@ import { NextResponse } from "next/server";
 import { LaneError, err } from "@/lib/booking/errors";
 import { requireAdmin } from "@/lib/admin/session";
 import { getDbOrThrow } from "@/lib/admin/decisions";
-import { createHours, hoursCreateSchema } from "@/lib/admin/config";
+import {
+  createHours,
+  hoursCreateSchema,
+  quickHoursSetupSchema,
+  replaceCourtHours,
+} from "@/lib/admin/config";
 
 export const runtime = "nodejs";
 
@@ -22,5 +27,22 @@ export async function POST(request: Request) {
     if (e instanceof LaneError) return err(e.code, e.message, e.status);
     console.error("admin hours create failed", e);
     return err("INTERNAL", "Hours creation failed.", 500);
+  }
+}
+
+// PUT /api/admin/hours — replace the complete weekly schedule for one court.
+export async function PUT(request: Request) {
+  try {
+    const admin = await requireAdmin();
+    const parsed = quickHoursSetupSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return err("BAD_REQUEST", parsed.error.issues[0]?.message ?? "Bad request.", 400);
+    }
+    const count = await replaceCourtHours(getDbOrThrow(), admin, parsed.data);
+    return NextResponse.json({ count });
+  } catch (e) {
+    if (e instanceof LaneError) return err(e.code, e.message, e.status);
+    console.error("admin quick hours setup failed", e);
+    return err("INTERNAL", "Quick setup failed.", 500);
   }
 }

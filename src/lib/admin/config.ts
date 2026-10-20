@@ -331,6 +331,43 @@ export const hoursCreateSchema = z
     message: "Open and close times must differ (use overnight close<=open for late nights).",
   });
 
+export const quickHoursSetupSchema = z
+  .object({
+    courtId: z.string().uuid("Invalid court."),
+    days: z.array(z.number().int().min(0).max(6)).min(1).max(7),
+    openTime: hhmm,
+    closeTime: hhmm,
+    amount: pricingAmountSchema.shape.amount,
+  })
+  .refine((d) => d.openTime !== d.closeTime, {
+    message: "Open and close times must differ (use overnight close<=open for late nights).",
+  })
+  .refine((d) => new Set(d.days).size === d.days.length, {
+    message: "Days must not be repeated.",
+  });
+
+export async function replaceCourtHours(
+  db: Db,
+  admin: AdminSession,
+  input: z.infer<typeof quickHoursSetupSchema>,
+): Promise<number> {
+  const { data, error } = await db.rpc("rpc_replace_court_hours", {
+    p_court_id: input.courtId,
+    p_days: input.days,
+    p_open_time: `${input.openTime}:00`,
+    p_close_time: `${input.closeTime}:00`,
+    p_amount: input.amount,
+    p_actor_email: admin.email,
+  });
+  if (error) {
+    if (error.code === "23503" || error.code === "P0002") {
+      throw new LaneError("UNKNOWN_COURT", "Court does not exist.", 404);
+    }
+    throw new LaneError("DB_ERROR", error.message, 500);
+  }
+  return Number(data ?? 0);
+}
+
 export const hoursAmountSchema = z.object({
   amount: pricingAmountSchema.shape.amount,
 });

@@ -356,7 +356,10 @@ export default function BookingFlow({
     void fetch("/api/holds/reclaim", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ownerToken: restoredDraft.ownerToken }),
+      body: JSON.stringify({
+        ownerToken: restoredDraft.ownerToken,
+        holdTokens: restoredHold.tokens,
+      }),
     })
       .then(async (res) => {
         if (!res.ok) {
@@ -425,8 +428,8 @@ export default function BookingFlow({
     }
     setHold(null);
     handleClearSelection();
-    setError("Your hold expired. Please select your slots and hold again.");
-    toast.error("Your hold expired. Please select your slots and hold again.", {
+    setError("Your hold expired. Go back to choose your slots and try again.");
+    toast.error("Your hold expired. Go back to choose your slots and try again.", {
       duration: 8000,
     });
     setStep("select");

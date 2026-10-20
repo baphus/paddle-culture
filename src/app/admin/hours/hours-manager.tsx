@@ -649,13 +649,13 @@ function AddHoursModal({
 function QuickSetupModal({
   courtName,
   busy,
-  onAdd,
+  onReplace,
   onClose,
 }: {
   courtName: string;
   busy: string | null;
-  onAdd: (
-    dayOfWeek: number,
+  onReplace: (
+    days: number[],
     openTime: string,
     closeTime: string,
     amount: string,
@@ -686,18 +686,11 @@ function QuickSetupModal({
     if (!canSave || saving) return;
 
     setSaving(true);
-    let added = 0;
-    for (const day of selectedDays) {
-      const ok = await onAdd(day, from, until, amount.trim());
-      if (ok) added += 1;
-    }
+    const replaced = await onReplace(selectedDays, from, until, amount.trim());
     setSaving(false);
 
-    if (added === selectedDays.length) {
-      toast.success(`Quick setup added for ${added} days.`);
-      onClose();
-    } else if (added > 0) {
-      toast.warning(`Added ${added} of ${selectedDays.length} days. Review the remaining days.`);
+    if (replaced) {
+      toast.success("Court hours replaced with this quick setup.");
       onClose();
     }
   }
@@ -734,6 +727,9 @@ function QuickSetupModal({
         </div>
 
         <form onSubmit={(e) => void submit(e)} className="space-y-5 p-5">
+          <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-muted-foreground">
+            Applying this setup replaces <strong>all existing hours and rates</strong> for {courtName}. Only selected days stay open; every unselected day will be closed.
+          </p>
           <div className="space-y-2">
             <Label>Days</Label>
             <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-4">
@@ -798,7 +794,7 @@ function QuickSetupModal({
               Cancel
             </Button>
             <Button type="submit" disabled={!canSave || saving || busy !== null}>
-              {saving ? "Saving..." : "Add standard rates"}
+              {saving ? "Replacing hours..." : "Replace court hours"}
             </Button>
           </div>
         </form>
@@ -1696,11 +1692,25 @@ function CardsView({
         <QuickSetupModal
           courtName={quickSetupCourt.name}
           busy={hoursBusy}
-          onAdd={(dayOfWeek, openTime, closeTime, amount) =>
-            addHoursRow(dayOfWeek, quickSetupCourt.id, openTime, closeTime, amount, {
-              successMessage: "Standard rate added.",
-            })
-          }
+          onReplace={async (days, openTime, closeTime, amount) => {
+            try {
+              const res = await fetch("/api/admin/hours", {
+                method: "PUT",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ courtId: quickSetupCourt.id, days, openTime, closeTime, amount }),
+              });
+              const data = (await res.json().catch(() => null)) as unknown;
+              if (!res.ok) {
+                toast.error(readError(data, "Quick setup failed."));
+                return false;
+              }
+              router.refresh();
+              return true;
+            } catch {
+              toast.error("Request failed.");
+              return false;
+            }
+          }}
           onClose={() => setQuickSetupCourt(null)}
         />
       ) : null}
