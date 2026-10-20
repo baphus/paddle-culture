@@ -610,7 +610,7 @@ export default function PaymentStep({
           ) : (
             <>
               <Lock className="size-4" />
-              <span>Submit &amp; Confirm Booking</span>
+              <span>Submit</span>
               <ArrowRight className="size-4" />
             </>
           )}

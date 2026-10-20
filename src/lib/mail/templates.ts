@@ -75,6 +75,19 @@ function formatDate(iso: string): string {
   return dateFmt.format(d);
 }
 
+function compactTimeRange(startIso: string, endIso: string): string {
+  const start = formatTime(startIso);
+  const end = formatTime(endIso);
+  const startParts = start.trim().split(" ");
+  const endParts = end.trim().split(" ");
+  const startMeridiem = startParts.pop();
+  const endMeridiem = endParts.pop();
+  if (startMeridiem === endMeridiem) {
+    return `${startParts.join(" ")} – ${endParts.join(" ")} ${endMeridiem}`;
+  }
+  return `${start} – ${end}`;
+}
+
 // Collapsed slot: consecutive 1-hour blocks on the same court become a range.
 interface CourtSession {
   court: string;
@@ -150,7 +163,7 @@ function collapseSlots(p: Payload): CourtSession[] {
     sessions.push({
       court: courtName,
       date: formatDate(startIso),
-      timeRange: `${formatTime(startIso)} – ${formatTime(endIso)}`,
+      timeRange: compactTimeRange(startIso, endIso),
       hours,
       startIso,
       endIso,
@@ -169,13 +182,18 @@ interface PriceLine {
   courtId?: unknown;
 }
 
-// Build clean invoice lines from the raw pricing lines written by recalculateTotal.
-// Court lines remain one row per slot so customers can verify every time, court,
-// and amount independently.
+interface InvoiceLine {
+  label: string;
+  detail?: string;
+  amount: string;
+}
+
+// Compact invoice lines from the raw server-calculated pricing lines. Consecutive
+// slots with the same court rate share one range; a rate change starts a new line.
 function linesOf(
   p: Payload,
   sessions: CourtSession[],
-): Array<{ label: string; amount: string }> {
+): InvoiceLine[] {
   const raw = Array.isArray(p.lines) ? (p.lines as PriceLine[]) : [];
 
   // Build a courtId → name lookup from the slots in the payload.
@@ -187,8 +205,8 @@ function linesOf(
     if (id) courtNameById.set(id, name);
   }
 
-  const courtAmountsById = new Map<string, string[]>();
-  const otherLines: Array<{ label: string; amount: string }> = [];
+  const priceByCourtSlot = new Map<string, { amount: string; unitAmount: string }>();
+  const otherLines: InvoiceLine[] = [];
 
   for (const l of raw) {
     const kind = str(l.kind);
@@ -198,13 +216,17 @@ function linesOf(
     const courtId = str(l.courtId ?? "");
 
     if (kind === "court" && courtId) {
-      const amounts = courtAmountsById.get(courtId) ?? [];
-      amounts.push(amount || unitAmount);
-      courtAmountsById.set(courtId, amounts);
+      const marker = rawDetail.lastIndexOf(" @ ");
+      const slotStart = marker >= 0 ? rawDetail.slice(marker + 3) : "";
+      if (slotStart) priceByCourtSlot.set(`${courtId}|${slotStart}`, { amount: amount || unitAmount, unitAmount });
     } else if (kind === "paddle") {
-      otherLines.push({ label: rawDetail, amount });
+      otherLines.push({
+        label: `Paddle rental · ${rawDetail.replace(/ paddle\(s\) x /, " × ").replace(/h$/, " hours")}`,
+        detail: `${unitAmount ? `₱${unitAmount}` : ""} per paddle per hour`,
+        amount,
+      });
     } else if (kind === "ball") {
-      otherLines.push({ label: "Ball fee", amount });
+      otherLines.push({ label: "Ball set · one booking", amount });
     } else {
       otherLines.push({ label: rawDetail, amount });
     }
@@ -212,21 +234,49 @@ function linesOf(
 
   // Approved/rejected payloads don't carry lines — fall back to sessions.
   if (raw.length === 0 && sessions.length > 0) {
-    return sessions.map((s) => ({ label: `${s.court} (${s.hours}h)`, amount: "" }));
+    return sessions.map((s) => ({ label: `${s.court} · ${s.hours} hours`, detail: s.timeRange, amount: "" }));
   }
 
-  const courtLines: Array<{ label: string; amount: string }> = [];
-  const slotAmountIndex = new Map<string, number>();
+  const slotsByCourt = new Map<string, SlotSummary[]>();
   for (const slot of rawSlots) {
-    const courtId = str(slot.courtId);
-    const amounts = courtAmountsById.get(courtId) ?? [];
-    const index = slotAmountIndex.get(courtId) ?? 0;
-    const amount = amounts[index] ?? "";
-    slotAmountIndex.set(courtId, index + 1);
-    courtLines.push({
-      label: `${formatTime(str(slot.slotStart))} – ${formatTime(new Date(new Date(str(slot.slotStart)).getTime() + SLOT_DURATION_MS).toISOString())} (${courtNameById.get(courtId) ?? "Court"})`,
-      amount,
-    });
+    const id = str(slot.courtId);
+    const slots = slotsByCourt.get(id) ?? [];
+    slots.push(slot);
+    slotsByCourt.set(id, slots);
+  }
+
+  const courtLines: InvoiceLine[] = [];
+  for (const [courtId, slots] of slotsByCourt) {
+    const sorted = [...slots].sort((a, b) => new Date(str(a.slotStart)).getTime() - new Date(str(b.slotStart)).getTime());
+    const runs: { unitAmount: string; amount: number; startIso: string; endIso: string; hours: number }[] = [];
+    for (const slot of sorted) {
+      const startIso = str(slot.slotStart);
+      const startMs = new Date(startIso).getTime();
+      const price = priceByCourtSlot.get(`${courtId}|${startIso}`);
+      const unitAmount = price?.unitAmount ?? "";
+      const previous = runs[runs.length - 1];
+      if (previous && previous.unitAmount === unitAmount && new Date(previous.endIso).getTime() === startMs) {
+        previous.endIso = new Date(startMs + SLOT_DURATION_MS).toISOString();
+        previous.hours += 1;
+        previous.amount += Number(price?.amount ?? 0);
+      } else {
+        runs.push({
+          unitAmount,
+          amount: Number(price?.amount ?? 0),
+          startIso,
+          endIso: new Date(startMs + SLOT_DURATION_MS).toISOString(),
+          hours: 1,
+        });
+      }
+    }
+    const courtName = courtNameById.get(courtId) ?? "Court";
+    for (const run of runs) {
+      courtLines.push({
+        label: `${courtName} · ${run.hours} hour${run.hours === 1 ? "" : "s"}`,
+        detail: `${compactTimeRange(run.startIso, run.endIso)}${run.unitAmount ? ` · ₱${run.unitAmount}/hour` : ""}`,
+        amount: run.amount ? run.amount.toFixed(2).replace(/\.00$/, "") : "",
+      });
+    }
   }
 
   return [...courtLines, ...otherLines];
@@ -433,7 +483,7 @@ function sessionsBlock(sessions: CourtSession[]): string {
 // Invoice-style pricing table: line items + total row.
 // Skips the amount column when amount is empty (approved/rejected fallback rows).
 function invoiceBlock(
-  lines: Array<{ label: string; amount: string }>,
+  lines: InvoiceLine[],
   total: string,
 ): string {
   if (!lines.length && !total) return "";
@@ -443,7 +493,8 @@ function invoiceBlock(
       (l) => `
       <tr>
         <td style="padding:8px 0;font-size:14px;color:${BRAND.ink};border-bottom:1px solid ${BRAND.line};">
-          ${escapeHtml(l.label)}
+          <strong style="font-weight:600;">${escapeHtml(l.label)}</strong>
+          ${l.detail ? `<br /><span style="font-size:12px;color:${BRAND.muted};">${escapeHtml(l.detail)}</span>` : ""}
         </td>
         <td style="padding:8px 0;font-size:14px;color:${BRAND.ink};border-bottom:1px solid ${BRAND.line};
                    text-align:right;white-space:nowrap;">
@@ -669,10 +720,13 @@ function textSessions(sessions: CourtSession[]): string[] {
 }
 
 function textInvoice(
-  lines: Array<{ label: string; amount: string }>,
+  lines: InvoiceLine[],
   total: string,
 ): string[] {
-  const out = lines.map((l) => (l.amount ? `  ${l.label}: ₱${l.amount}` : `  ${l.label}`));
+  const out = lines.flatMap((l) => [
+    l.amount ? `  ${l.label}: ₱${l.amount}` : `  ${l.label}`,
+    ...(l.detail ? [`    ${l.detail}`] : []),
+  ]);
   if (total) out.push(`  ─────────────`, `  Total: ₱${total}`);
   return out;
 }

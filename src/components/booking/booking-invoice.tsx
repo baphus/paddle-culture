@@ -1,15 +1,5 @@
-import {
-  Calendar,
-  CalendarPlus,
-  Clock,
-  Dumbbell,
-  Mail,
-  MapPin,
-  Phone,
-  Receipt,
-  User,
-} from "lucide-react";
-import { formatCourtSlotLine, formatManilaLong, formatSlotRanges, formatCourtSlotGroups, type CourtSlotGroup } from "@/lib/courts";
+import { CalendarPlus } from "lucide-react";
+import { formatManilaLong, formatSlotRanges, type CourtSlotGroup } from "@/lib/courts";
 import { slotSelectionDateStr } from "@/lib/booking/slots";
 import { googleCalendarUrl } from "@/lib/booking/calendar";
 import {
@@ -26,23 +16,24 @@ type Player = Pick<DetailsValues, "fullName" | "email" | "phone">;
 type Equipment = Pick<DetailsValues, "paddleQty" | "paddleHours" | "ball">;
 
 export interface BookingInvoiceProps {
-  /** Tracking token — shown (truncated) as the invoice ref and used for the calendar notes. */
   token: string;
   total: string;
   courtNames: string[];
   slotStarts: string[];
-  /** Per-court slot attribution — renders per-court time lines when the booking
-   *  moves between courts. Absent/empty falls back to the collapsed range. */
   slotGroups?: CourtSlotGroup[];
   dateStr?: string | null;
   player: Player;
   equipment: Equipment;
-  /** Absolute /track/<token> URL, added to the calendar event notes. */
   bookingUrl?: string;
   rates?: DisplayRates;
 }
 
-/** Line items + "Add to Google Calendar" — shared by the booking confirmation and the tracking page. */
+interface InvoiceLine {
+  label: string;
+  detail?: string;
+  amount: number;
+}
+
 export default function BookingInvoice({
   token,
   total,
@@ -55,199 +46,132 @@ export default function BookingInvoice({
   bookingUrl,
   rates = FALLBACK_RATES,
 }: BookingInvoiceProps) {
-  const sortedSlots = [...slotStarts].sort();
-  const timeRangeLabel = formatSlotRanges(sortedSlots);
-  // Non-empty only when the booking changes courts — otherwise `timeRangeLabel` is exact.
-  const courtSlotLines = formatCourtSlotGroups(slotGroups ?? []);
-
-  const formattedDate = (() => {
-    // Always derive the day from the slots in Manila. `dateStr` is the picked
-    // selection date and wins when present; the fallback must not slice the
-    // UTC ISO string (`firstSlot.slice(0, 10)`), which lands on the previous
-    // day for any start before 08:00Z — i.e. before 4:00 PM Manila. The
-    // tracking page hit exactly that: booked Oct 19, shown Oct 18.
-    const day = dateStr || slotSelectionDateStr(sortedSlots);
-    return day ? formatManilaLong(day) : "Upcoming";
-  })();
-
-  const n = courtNames.length || 1;
+  const sortedSlots = [...slotStarts].sort(
+    (a, b) => new Date(a).getTime() - new Date(b).getTime(),
+  );
+  const bookingDate = dateStr || slotSelectionDateStr(sortedSlots);
+  const formattedDate = bookingDate ? formatManilaLong(bookingDate) : "Upcoming";
   const paddleHours = equipment.paddleHours ?? sortedSlots.length;
-  const invoiceLines: { label: string; amount: number }[] = [];
-  const pricedGroups = (slotGroups ?? []).filter((group) => group.slotStarts.length > 0);
-  if (pricedGroups.length > 0) {
-    for (const group of pricedGroups) {
-      for (const iso of group.slotStarts) {
-        const rate = courtRateForSlot(rates, group.courtId, new Date(iso));
-        const amount = rate?.amount ?? rates.morning;
-        invoiceLines.push({
-          label: formatCourtSlotLine(group.courtName, iso),
-          amount,
-        });
+  const invoiceLines: InvoiceLine[] = [];
+  const groups = (slotGroups ?? []).filter((group) => group.slotStarts.length > 0);
+
+  if (groups.length > 0) {
+    for (const group of groups) {
+      const slots = [...group.slotStarts].sort(
+        (a, b) => new Date(a).getTime() - new Date(b).getTime(),
+      );
+      const rateRuns: { amount: number; slots: string[] }[] = [];
+      for (const slot of slots) {
+        const amount = courtRateForSlot(rates, group.courtId, new Date(slot))?.amount ?? rates.morning;
+        const previousRun = rateRuns[rateRuns.length - 1];
+        const previousSlot = previousRun?.slots[previousRun.slots.length - 1];
+        if (
+          previousRun?.amount === amount &&
+          previousSlot &&
+          new Date(slot).getTime() - new Date(previousSlot).getTime() === 3_600_000
+        ) {
+          previousRun.slots.push(slot);
+        } else {
+          rateRuns.push({ amount, slots: [slot] });
+        }
       }
+      const amount = rateRuns.reduce((sum, run) => sum + run.amount * run.slots.length, 0);
+      invoiceLines.push({
+        label: `${group.courtName} · ${slots.length} hour${slots.length === 1 ? "" : "s"}`,
+        detail: rateRuns.map((run) => `${formatSlotRanges(run.slots)} · ${peso(run.amount)}/hour`).join("; "),
+        amount,
+      });
     }
   } else if (sortedSlots.length > 0) {
+    const count = Math.max(courtNames.length, 1);
     invoiceLines.push({
-      label: `Court time (${sortedSlots.length} hr${sortedSlots.length === 1 ? "" : "s"})`,
-      amount: sortedSlots.length * rates.morning * n,
+      label: `${courtNames.join(", ") || "Court booking"} · ${sortedSlots.length * count} court-hours`,
+      detail: `${formatSlotRanges(sortedSlots)} · ${peso(rates.morning)}/hour${count > 1 ? " per court" : ""}`,
+      amount: sortedSlots.length * count * rates.morning,
     });
   }
-  if (equipment.paddleQty > 0)
+
+  if (equipment.paddleQty > 0) {
     invoiceLines.push({
-      label: `Paddle rental (${equipment.paddleQty} × ${paddleHours}h @ ${peso(rates.paddle)}/hr)`,
+      label: `Paddle rental · ${equipment.paddleQty} × ${paddleHours} hour${paddleHours === 1 ? "" : "s"}`,
+      detail: `${peso(rates.paddle)} per paddle per hour`,
       amount: calculatePaddleRentalTotal(rates.paddle, equipment.paddleQty, paddleHours),
     });
-  if (equipment.ball) invoiceLines.push({ label: "Ball set (flat fee)", amount: rates.ball });
+  }
+  if (equipment.ball) invoiceLines.push({ label: "Ball set · one booking", amount: rates.ball });
 
+  const courtTimeNotes = groups.map((group) =>
+    `${group.courtName}: ${formatSlotRanges(group.slotStarts)}`,
+  );
   const calendarHref = googleCalendarUrl({
     title: `CK Grounds — ${courtNames.join(", ") || "Court booking"}`,
     slotStarts: sortedSlots,
     location: VENUE_ADDRESS,
     details: [
       `Booking ref: #${token.slice(0, 8).toUpperCase()}`,
-      courtSlotLines.join("; "),
+      ...(courtTimeNotes.length > 0 ? courtTimeNotes : [formatSlotRanges(sortedSlots)]),
       bookingUrl ? `Track your booking: ${bookingUrl}` : "",
-    ]
-      .filter(Boolean)
-      .join("\n"),
+    ].filter(Boolean).join("\n"),
   });
 
   return (
-    <div className="rounded-3xl border border-line-warm/70 bg-white shadow-sm overflow-hidden">
-
-      {/* Invoice header */}
-      <div className="flex items-center justify-between border-b border-line-warm/40 px-6 py-4 sm:px-7">
-        <div className="flex items-center gap-2.5">
-          <div className="grid size-9 place-items-center rounded-xl bg-flame-light text-flame">
-            <Receipt className="size-4.5" aria-hidden />
-          </div>
-          <div>
-            <h2 className="text-base font-extrabold text-ink">Booking Invoice</h2>
-            <p className="text-[11px] font-mono text-warm-muted">#{token.slice(0, 8).toUpperCase()}</p>
-          </div>
+    <section aria-labelledby="booking-invoice-title" className="overflow-hidden rounded-2xl border border-line-warm/70 bg-white">
+      <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line-warm/70 px-5 py-4 sm:px-6">
+        <div>
+          <h2 id="booking-invoice-title" className="text-base font-bold text-ink">Booking invoice</h2>
+          <p className="mt-0.5 font-mono text-xs text-warm-muted">Ref #{token.slice(0, 8).toUpperCase()}</p>
         </div>
         <div className="text-right">
-          <span className="block text-xs font-semibold text-warm-muted">Total Paid</span>
-          <span className="text-2xl font-black text-flame">{peso(Number(total))}</span>
+          <p className="text-xs text-warm-muted">Total paid</p>
+          <p className="text-lg font-bold tabular-nums text-ink">{peso(Number(total))}</p>
         </div>
-      </div>
+      </header>
 
-      <div className="grid gap-0 sm:grid-cols-2">
+      <div className="space-y-5 px-5 py-4 sm:px-6">
+        <section>
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-warm-muted">Booking</h3>
+          <dl className="mt-2 grid gap-x-8 gap-y-1.5 text-sm sm:grid-cols-2">
+            <div><dt className="text-xs text-warm-muted">Date</dt><dd className="font-medium text-ink">{formattedDate}</dd></div>
+            <div><dt className="text-xs text-warm-muted">Courts</dt><dd className="font-medium text-ink">{courtNames.join(", ") || "—"}</dd></div>
+          </dl>
+        </section>
 
-        {/* Left column: booking details */}
-        <div className="space-y-0 border-b border-line-warm/40 p-6 sm:border-b-0 sm:border-r sm:p-7">
-          <h3 className="mb-4 text-xs font-bold uppercase tracking-widest text-warm-muted">
-            Booking Details
-          </h3>
-
-          <div className="space-y-4 text-sm">
-            <div className="flex items-start gap-3">
-              <MapPin className="mt-0.5 size-4 shrink-0 text-flame" aria-hidden />
-              <div>
-                <span className="block text-[10px] font-semibold uppercase tracking-wide text-warm-muted">Court</span>
-                <span className="font-bold text-ink">{courtNames.join(", ")}</span>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-3">
-              <Calendar className="mt-0.5 size-4 shrink-0 text-flame" aria-hidden />
-              <div>
-                <span className="block text-[10px] font-semibold uppercase tracking-wide text-warm-muted">Play Date</span>
-                <span className="font-bold text-ink">{formattedDate}</span>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-3">
-              <Clock className="mt-0.5 size-4 shrink-0 text-flame" aria-hidden />
-              <div>
-                <span className="block text-[10px] font-semibold uppercase tracking-wide text-warm-muted">Time &amp; Duration</span>
-                {courtSlotLines.length > 0 ? (
-                  courtSlotLines.map((line) => (
-                    <span key={line} className="block font-bold text-ink">{line}</span>
-                  ))
-                ) : (
-                  <span className="font-bold text-ink">
-                    {timeRangeLabel}
-                  </span>
-                )}
-                <span className="block text-xs text-warm-muted">
-                  {sortedSlots.length} hour{sortedSlots.length === 1 ? "" : "s"}
-                </span>
-              </div>
-            </div>
-
-            {(equipment.paddleQty > 0 || equipment.ball) && (
-              <div className="flex items-start gap-3">
-                <Dumbbell className="mt-0.5 size-4 shrink-0 text-flame" aria-hidden />
-                <div>
-                  <span className="block text-[10px] font-semibold uppercase tracking-wide text-warm-muted">Equipment</span>
-                  {equipment.paddleQty > 0 && (
-                    <span className="block font-bold text-ink">
-                      {equipment.paddleQty} × Paddle ({paddleHours}h)
-                    </span>
-                  )}
-                  {equipment.ball && (
-                    <span className="block font-bold text-ink">Ball set</span>
-                  )}
+        <section>
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-warm-muted">Items</h3>
+          <div className="mt-2 divide-y divide-line-warm/70 border-y border-line-warm/70 text-sm">
+            {invoiceLines.map((line, index) => (
+              <div key={`${line.label}-${index}`} className="flex items-start justify-between gap-4 py-2.5">
+                <div className="min-w-0">
+                  <p className="font-medium text-ink">{line.label}</p>
+                  {line.detail && <p className="mt-0.5 text-xs leading-4 text-warm-muted">{line.detail}</p>}
                 </div>
-              </div>
-            )}
-          </div>
-
-          {/* Customer details */}
-          <div className="mt-6 border-t border-line-warm/40 pt-5">
-            <h3 className="mb-3 text-xs font-bold uppercase tracking-widest text-warm-muted">
-              Player Info
-            </h3>
-            <div className="space-y-2 text-sm">
-              <div className="flex items-center gap-2.5 text-ink">
-                <User className="size-3.5 shrink-0 text-warm-muted" aria-hidden />
-                <span className="font-semibold">{player.fullName}</span>
-              </div>
-              <div className="flex items-center gap-2.5 text-ink">
-                <Mail className="size-3.5 shrink-0 text-warm-muted" aria-hidden />
-                <span className="text-xs font-semibold">{player.email}</span>
-              </div>
-              <div className="flex items-center gap-2.5 text-ink">
-                <Phone className="size-3.5 shrink-0 text-warm-muted" aria-hidden />
-                <span className="text-xs font-semibold">{player.phone}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Right column: cost breakdown */}
-        <div className="p-6 sm:p-7">
-          <h3 className="mb-4 text-xs font-bold uppercase tracking-widest text-warm-muted">
-            Cost Breakdown
-          </h3>
-          <div className="space-y-2 text-sm">
-            {invoiceLines.map((line) => (
-              <div key={line.label} className="flex items-baseline justify-between gap-4">
-                <span className="text-xs text-ink/80">{line.label}</span>
-                <span className="shrink-0 font-semibold text-ink">{peso(line.amount)}</span>
+                <span className="shrink-0 font-medium tabular-nums text-ink">{peso(line.amount)}</span>
               </div>
             ))}
-            <div className="flex items-baseline justify-between gap-4 border-t border-line-warm/60 pt-3">
-              <span className="font-bold text-ink">Total</span>
-              <span className="text-xl font-extrabold text-flame">{peso(Number(total))}</span>
+            <div className="flex justify-between gap-4 py-2.5 font-bold text-ink">
+              <span>Total paid</span>
+              <span className="shrink-0 tabular-nums">{peso(Number(total))}</span>
             </div>
           </div>
-        </div>
+        </section>
+
+        <section className="border-t border-line-warm/70 pt-4">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-warm-muted">Customer</h3>
+          <dl className="mt-2 grid gap-x-8 gap-y-1.5 text-sm sm:grid-cols-2">
+            <div><dt className="text-xs text-warm-muted">Name</dt><dd className="font-medium text-ink">{player.fullName}</dd></div>
+            <div><dt className="text-xs text-warm-muted">Phone</dt><dd className="font-medium text-ink">{player.phone}</dd></div>
+            <div className="sm:col-span-2"><dt className="text-xs text-warm-muted">Email</dt><dd className="break-all font-medium text-ink">{player.email}</dd></div>
+          </dl>
+        </section>
       </div>
 
       {calendarHref && (
-        <div className="border-t border-line-warm/40 p-4 sm:px-7">
-          <a
-            href={calendarHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl border border-line-warm/70 bg-white px-4 text-sm font-bold text-ink transition-colors hover:bg-cream"
-          >
-            <CalendarPlus className="size-4 text-flame" aria-hidden />
-            <span>Add to Google Calendar</span>
+        <div className="border-t border-line-warm/70 px-5 py-3 sm:px-6">
+          <a href={calendarHref} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-line-warm/70 px-3 text-xs font-semibold text-ink hover:bg-cream">
+            <CalendarPlus className="size-4" aria-hidden /> Add to Google Calendar
           </a>
         </div>
       )}
-    </div>
+    </section>
   );
 }
