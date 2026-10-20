@@ -40,10 +40,9 @@ type NotifResponse = { bookings: NotifRow[] };
 /**
  * Admin header notification bell. Polls /api/admin/notifications every
  * POLL_INTERVAL_MS for the latest pending bookings and renders a traditional
- * notification panel: every recent booking (read AND unread) is listed, with
- * unread rows tinted + dotted + bold and read rows muted. A booking is marked
- * viewed the moment the admin clicks its row; "Mark all read" marks every
- * shown row at once. The badge counts only unread rows.
+ * notification panel: pending bookings stay listed until the admin explicitly
+ * clears them. Clicking a row only navigates to the booking. The badge counts
+ * uncleared notifications.
  *
  * First-visit seed: the very first time the bell mounts (SEEDED_KEY unset) it
  * marks every currently-pending booking as viewed, so the bell starts empty
@@ -207,16 +206,13 @@ export default function NotificationBell() {
   }
 
   function handleRowClick(id: string) {
-    // Mark this one booking viewed, then open the pending queue focused on
-    // that booking's row (highlighted + scrolled into view).
-    const merged = mergeViewed([...viewedIdsRef.current], [id], VIEWED_IDS_CAP);
-    setViewed(new Set(merged), merged);
+    // Navigation does not clear the notification; clearing is explicit.
     setOpen(false);
     router.push(pendingFocusHref(id));
   }
 
   function handleMarkAllRead() {
-    // Mark every currently-shown booking as viewed in one shot.
+    // Explicitly clear every currently-shown notification in one shot.
     const ids = bookings.map((b) => b.id);
     if (ids.length === 0) return;
     const merged = mergeViewed([...viewedIdsRef.current], ids, VIEWED_IDS_CAP);
@@ -254,14 +250,14 @@ export default function NotificationBell() {
           {mounted && unreadCount > 0 ? (
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground">
-                {unreadCount} unread
+                {unreadCount} new
               </span>
               <button
                 type="button"
                 onClick={handleMarkAllRead}
                 className="text-xs font-medium text-primary hover:underline"
               >
-                Mark all read
+                Clear all
               </button>
             </div>
           ) : null}
