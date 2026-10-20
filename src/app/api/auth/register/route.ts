@@ -85,7 +85,9 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json(
-      { ok: true, email, hasSession: !!signUp.session },
+      // The sign-up session predates the admin role update, so it cannot be
+      // used to enter the admin area until a fresh sign-in issues new claims.
+      { ok: true, email },
       { status: 201 },
     );
   } catch (e) {

@@ -129,6 +129,11 @@ export function formatSlotRange(startIso: string): string {
   return `${s} – ${e}`;
 }
 
+/** "7:00 – 8:00 AM (Court 1)" for one booked court slot. */
+export function formatCourtSlotLine(courtName: string, startIso: string): string {
+  return `${formatSlotRange(startIso)} (${courtName})`;
+}
+
 function splitMeridiem(s: string): [string, string] {
   const parts = s.trim().split(" ");
   if (parts.length >= 2) {

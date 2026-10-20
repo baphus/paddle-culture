@@ -87,3 +87,44 @@ export async function setAdminDisabled(
     console.error(`audit_log insert failed for admin_user.${verb}`, e);
   }
 }
+
+/** Permanently delete another admin account and write the audit row. */
+export async function deleteAdminUser(
+  actor: AdminSession,
+  userId: string,
+): Promise<void> {
+  if (actor.userId === userId) {
+    throw new LaneError(
+      "SELF_ACTION_FORBIDDEN",
+      "You cannot delete your own account.",
+      400,
+    );
+  }
+
+  const admin = getSupabaseAdmin();
+  const { data: found, error: fetchError } = await admin.auth.admin.getUserById(userId);
+  if (fetchError || !found?.user || !isAdmin(found.user)) {
+    throw new LaneError("NOT_FOUND", "User not found.", 404);
+  }
+
+  const { error: deleteError } = await admin.auth.admin.deleteUser(userId);
+  if (deleteError) {
+    throw new LaneError("INTERNAL", "Could not delete user.", 500);
+  }
+
+  try {
+    const { error: auditError } = await getDb().from("audit_log").insert([
+      {
+        actor: actor.email,
+        action: "admin_user.delete",
+        entity: "auth.users",
+        entity_id: userId,
+        before: { email: found.user.email ?? "", name: nameOf(found.user) },
+        after: null,
+      },
+    ]);
+    if (auditError) throw auditError;
+  } catch (e) {
+    console.error("audit_log insert failed for admin_user.delete", e);
+  }
+}

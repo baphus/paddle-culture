@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
-import { formatManilaLong, formatSlotRanges, formatCountdown, formatCourtSlotGroups, type CourtSlotGroup } from "@/lib/courts";
+import { formatCourtSlotLine, formatManilaLong, formatSlotRanges, formatCountdown, formatCourtSlotGroups, type CourtSlotGroup } from "@/lib/courts";
 import { calculatePaddleRentalTotal, courtRateForSlot, peso, type DisplayRates } from "@/lib/pricing-display";
 
 export interface SummaryData {
@@ -220,6 +220,15 @@ export function BookingSummaryDesktop({ data }: { data: SummaryData }) {
   const paddleHours = selectedSlots.length;
   // Non-empty only when the booking changes courts — otherwise `rangeLabel` is exact.
   const courtSlotLines = formatCourtSlotGroups(slotGroups ?? []);
+  const slotLines = (slotGroups ?? []).flatMap((group) =>
+    group.slotStarts
+      .slice()
+      .sort()
+      .map((iso) => ({
+        label: formatCourtSlotLine(group.courtName, iso),
+        amount: courtRateForSlot(rates, group.courtId, new Date(iso))?.amount ?? rates.morning,
+      })),
+  );
 
   // Nothing picked yet (or a Back just cleared the attempt) — the summary has
   // nothing to summarise, so it stays out of the way rather than sitting there
@@ -389,10 +398,25 @@ export function BookingSummaryDesktop({ data }: { data: SummaryData }) {
       {hasSlots && (
         <div className="rounded-xl border border-line-warm/70 bg-oat/60 p-3.5">
           <div className="space-y-1.5 text-xs">
-            <div className="flex justify-between text-warm-muted">
-              <span>{breakdown}</span>
-              <span className="font-semibold text-ink">{peso(courtTotal)}</span>
-            </div>
+            {slotLines.length > 0 ? (
+              <>
+                <div className="flex justify-between font-semibold text-ink">
+                  <span>{slotLines.length} slot{slotLines.length === 1 ? "" : "s"} booked</span>
+                  <span>{peso(courtTotal)}</span>
+                </div>
+                {slotLines.map((line) => (
+                  <div key={`${line.label}-${line.amount}`} className="flex justify-between gap-3 text-warm-muted">
+                    <span>{line.label}</span>
+                    <span className="shrink-0 font-semibold text-ink">{peso(line.amount)}</span>
+                  </div>
+                ))}
+              </>
+            ) : (
+              <div className="flex justify-between text-warm-muted">
+                <span>{breakdown}</span>
+                <span className="font-semibold text-ink">{peso(courtTotal)}</span>
+              </div>
+            )}
             {paddleQty > 0 && (
               <div className="flex items-center justify-between gap-2 text-warm-muted">
                 <span className="flex items-center gap-1.5">

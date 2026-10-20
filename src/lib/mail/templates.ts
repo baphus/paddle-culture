@@ -170,8 +170,8 @@ interface PriceLine {
 }
 
 // Build clean invoice lines from the raw pricing lines written by recalculateTotal.
-// Court lines (one raw row per slot) are aggregated: same court + unit rate →
-// one row: "CourtName (Nh) @ ₱X/hr  ₱Y.00"
+// Court lines remain one row per slot so customers can verify every time, court,
+// and amount independently.
 function linesOf(
   p: Payload,
   sessions: CourtSession[],
@@ -187,14 +187,7 @@ function linesOf(
     if (id) courtNameById.set(id, name);
   }
 
-  // Aggregate court lines by (courtId, unitAmount).
-  interface CourtAccum {
-    courtName: string;
-    unitAmount: string;
-    totalCents: number;
-    count: number;
-  }
-  const courtAccum = new Map<string, CourtAccum>();
+  const courtAmountsById = new Map<string, string[]>();
   const otherLines: Array<{ label: string; amount: string }> = [];
 
   for (const l of raw) {
@@ -205,19 +198,9 @@ function linesOf(
     const courtId = str(l.courtId ?? "");
 
     if (kind === "court" && courtId) {
-      const key = `${courtId}::${unitAmount}`;
-      const existing = courtAccum.get(key);
-      if (existing) {
-        existing.count += 1;
-        existing.totalCents += Math.round(Number(amount) * 100);
-      } else {
-        courtAccum.set(key, {
-          courtName: courtNameById.get(courtId) ?? "Court",
-          unitAmount,
-          totalCents: Math.round(Number(amount) * 100),
-          count: 1,
-        });
-      }
+      const amounts = courtAmountsById.get(courtId) ?? [];
+      amounts.push(amount || unitAmount);
+      courtAmountsById.set(courtId, amounts);
     } else if (kind === "paddle") {
       otherLines.push({ label: rawDetail, amount });
     } else if (kind === "ball") {
@@ -233,11 +216,16 @@ function linesOf(
   }
 
   const courtLines: Array<{ label: string; amount: string }> = [];
-  for (const acc of courtAccum.values()) {
-    const totalAmount = (acc.totalCents / 100).toFixed(2);
+  const slotAmountIndex = new Map<string, number>();
+  for (const slot of rawSlots) {
+    const courtId = str(slot.courtId);
+    const amounts = courtAmountsById.get(courtId) ?? [];
+    const index = slotAmountIndex.get(courtId) ?? 0;
+    const amount = amounts[index] ?? "";
+    slotAmountIndex.set(courtId, index + 1);
     courtLines.push({
-      label: `${acc.courtName} (${acc.count}h) @ ₱${acc.unitAmount}/hr`,
-      amount: totalAmount,
+      label: `${formatTime(str(slot.slotStart))} – ${formatTime(new Date(new Date(str(slot.slotStart)).getTime() + SLOT_DURATION_MS).toISOString())} (${courtNameById.get(courtId) ?? "Court"})`,
+      amount,
     });
   }
 
@@ -861,7 +849,7 @@ export async function renderOutboxEmail(
         "",
         "BOOKING",
         ...textSessions(sessions),
-        ...(total ? ["", `Total: ₱${total}`] : []),
+        ...(lines.length || total ? ["", "INVOICE", ...textInvoice(lines, total)] : []),
         ...textCalendar(sessions, trackingToken),
         ...(url ? ["", "YOUR QR PASS", url] : []),
         "",
@@ -888,7 +876,7 @@ export async function renderOutboxEmail(
         ${sectionLabel("Booking")}
         ${sessionsBlock(sessions)}
 
-        ${total ? `${sectionLabel("Total")}${invoiceBlock([], total)}` : ""}
+        ${lines.length || total ? `${sectionLabel("Invoice")}${invoiceBlock(lines, total)}` : ""}
 
         ${qrSection}`;
 

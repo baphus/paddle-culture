@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { BookingStatusBadge } from "@/components/admin/status-badge";
 import { formatBookingDate, type BookingDetail } from "@/lib/admin/bookings";
+import { formatCourtSlotLine } from "@/lib/courts";
 
 function pesos(total: string): string {
   return `₱${Number(total).toLocaleString("en-PH", {
@@ -359,7 +360,10 @@ function BookingSummary({ booking }: { booking: BookingDetail }) {
       <DetailRow label="Name" value={booking.fullName} />
       <DetailRow label="Courts" value={booking.courts || "—"} />
       <DetailRow label="Date" value={formatBookingDate(booking.date)} />
-      <DetailRow label="Slots" value={booking.slotLabels.join(", ") || "—"} />
+      <DetailRow
+        label={`Slots (${booking.slots.length})`}
+        value={booking.slots.map((slot) => formatCourtSlotLine(slot.courtName, slot.slotStart)).join("\n") || "—"}
+      />
       <DetailRow
         label="Paddles"
         value={
@@ -426,7 +430,9 @@ function DetailRow({
       <span className="shrink-0 text-muted-foreground">{label}</span>
       <span
         className={
-          bold ? "text-right font-semibold" : "text-right text-muted-foreground"
+          bold
+            ? "whitespace-pre-line text-right font-semibold"
+            : "whitespace-pre-line text-right text-muted-foreground"
         }
       >
         {value}

@@ -3,6 +3,7 @@
 import type { ColumnDef } from "@tanstack/react-table";
 import { BookingStatusBadge } from "@/components/admin/status-badge";
 import { formatBookingDate, type BookingDetail } from "@/lib/admin/bookings";
+import { formatCourtSlotLine } from "@/lib/courts";
 import BookingActions from "./booking-actions";
 
 function pesos(total: string): string {
@@ -66,11 +67,11 @@ export const columns: ColumnDef<BookingDetail>[] = [
   {
     id: "slots",
     header: "Slots",
-    accessorFn: (b) => b.slotLabels.join(", "),
+    accessorFn: (b) => b.slots.map((slot) => formatCourtSlotLine(slot.courtName, slot.slotStart)).join(", "),
     enableSorting: false,
     cell: ({ row }) => (
       <span className="text-xs text-muted-foreground">
-        {row.original.slotLabels.join(", ") || "—"}
+        {row.original.slots.map((slot) => formatCourtSlotLine(slot.courtName, slot.slotStart)).join(", ") || "—"}
       </span>
     ),
   },

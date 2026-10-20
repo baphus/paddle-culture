@@ -9,13 +9,12 @@ import {
   Receipt,
   User,
 } from "lucide-react";
-import { formatManilaLong, formatSlotRanges, formatCourtSlotGroups, type CourtSlotGroup } from "@/lib/courts";
+import { formatCourtSlotLine, formatManilaLong, formatSlotRanges, formatCourtSlotGroups, type CourtSlotGroup } from "@/lib/courts";
 import { slotSelectionDateStr } from "@/lib/booking/slots";
 import { googleCalendarUrl } from "@/lib/booking/calendar";
 import {
   calculatePaddleRentalTotal,
   courtRateForSlot,
-  courtRateLabel,
   FALLBACK_RATES,
   peso,
   type DisplayRates,
@@ -77,23 +76,12 @@ export default function BookingInvoice({
   const pricedGroups = (slotGroups ?? []).filter((group) => group.slotStarts.length > 0);
   if (pricedGroups.length > 0) {
     for (const group of pricedGroups) {
-      const grouped = new Map<string, { hours: number; amount: number; label: string }>();
       for (const iso of group.slotStarts) {
         const rate = courtRateForSlot(rates, group.courtId, new Date(iso));
         const amount = rate?.amount ?? rates.morning;
-        const label = rate ? `${peso(amount)}/hr (${courtRateLabel(rate)})` : `${peso(amount)}/hr`;
-        const existing = grouped.get(label);
-        if (existing) {
-          existing.hours += 1;
-          existing.amount += amount;
-        } else {
-          grouped.set(label, { hours: 1, amount, label });
-        }
-      }
-      for (const item of grouped.values()) {
         invoiceLines.push({
-          label: `${group.courtName} (${item.hours} hr${item.hours === 1 ? "" : "s"} @ ${item.label})`,
-          amount: item.amount,
+          label: formatCourtSlotLine(group.courtName, iso),
+          amount,
         });
       }
     }

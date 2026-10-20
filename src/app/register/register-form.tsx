@@ -41,13 +41,12 @@ export default function RegisterForm() {
       });
       const body = (await res.json()) as {
         error?: { message?: string };
-        hasSession?: boolean;
       };
       if (!res.ok) {
         setError(body.error?.message ?? "Registration failed.");
         return;
       }
-      router.push(body.hasSession ? "/admin" : "/login");
+      router.push("/login?next=/admin");
       router.refresh();
     } catch {
       setError("Registration failed.");
