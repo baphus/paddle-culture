@@ -28,6 +28,8 @@ export default async function BookingsPage({
     : "all";
   const from = first(sp.from).slice(0, 10);
   const to = first(sp.to).slice(0, 10);
+  // The booking a notification pointed at — highlights + scrolls to its row.
+  const focus = first(sp.focus).slice(0, 100);
   const requestedPage = Math.max(1, Number.parseInt(first(sp.page), 10) || 1);
 
   let db;
@@ -73,6 +75,7 @@ export default async function BookingsPage({
         page={page}
         pageCount={totalPages}
         filters={{ q, status, from, to }}
+        focusId={focus}
         newBookingHref="/admin/bookings/new"
       />
     </div>

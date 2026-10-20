@@ -24,10 +24,19 @@ export interface DisplayRates {
 export const FALLBACK_RATES: DisplayRates = {
   morning: 150,
   evening: 200,
-  paddle: 25,
+  paddle: 100,
   ball: 15,
   currency: "PHP",
 };
+
+/** Total paddle rental for the selected quantity and booked hours. */
+export function calculatePaddleRentalTotal(
+  hourlyRate: number,
+  paddleQty: number,
+  hoursBooked: number,
+): number {
+  return hourlyRate * paddleQty * hoursBooked;
+}
 
 /** "150" | "150.5" | "150.55" — trims trailing zeros for display copy. */
 export function formatAmount(n: number): string {

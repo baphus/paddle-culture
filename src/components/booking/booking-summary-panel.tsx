@@ -18,7 +18,7 @@ import {
 import { cn } from "@/lib/utils";
 import Image from "next/image";
 import { formatManilaLong, formatSlotRanges, formatCountdown, formatCourtSlotGroups, type CourtSlotGroup } from "@/lib/courts";
-import { peso, type DisplayRates } from "@/lib/pricing-display";
+import { calculatePaddleRentalTotal, peso, type DisplayRates } from "@/lib/pricing-display";
 import { timeBandFor } from "@/lib/booking/slots";
 
 export interface SummaryData {
@@ -163,7 +163,8 @@ function computeBreakdown(
   const courtTotal = perCourt * Math.max(courtCount, 1);
 
   const paddleHours = sorted.length; // equals booked court hours
-  const paddleTotal = paddleQty > 0 ? paddleQty * paddleHours * rates.paddle : 0;
+  const paddleTotal =
+    paddleQty > 0 ? calculatePaddleRentalTotal(rates.paddle, paddleQty, paddleHours) : 0;
   const ballTotal = ball ? rates.ball : 0;
   const total = courtTotal + paddleTotal + ballTotal;
 

@@ -8,11 +8,11 @@ export default function Rentals({ rates = FALLBACK_RATES }: { rates?: DisplayRat
       src: "/images/paddle.jpg",
       alt: "Pickleball paddles and match balls ready on court",
       price: peso(rates.paddle),
-      per: "per paddle",
+      per: "paddle per hour",
       label: "Paddle photo — drop /images/paddle.jpg here",
       blurb: "Sanitized composite paddles with cushioned grips.",
       metaLeft: "Available at checkout",
-      metaRight: `${peso(rates.paddle)} × Hours × Paddles`,
+      metaRight: `${peso(rates.paddle)} / hr × hours × paddles`,
     },
     {
       name: "Ball Rental",

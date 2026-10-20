@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { recalculateTotal } from "../src/lib/booking/pricing.ts";
+import { calculatePaddleRentalTotal } from "../src/lib/pricing-display.ts";
 import { isSlotOpen, type OpenRules } from "../src/lib/booking/hours.ts";
 
 // ------------------------------------------------------------------ fixtures
@@ -47,6 +48,10 @@ const SAT_9AM = new Date("2026-10-17T01:00:00.000Z"); // Sat 09:00
 const MON_8PM = new Date("2026-10-12T12:00:00.000Z"); // Mon 20:00
 
 // ------------------------------------------------------------------- pricing
+
+test("paddle rental total is hourly, not a flat per-booking amount", () => {
+  assert.equal(calculatePaddleRentalTotal(100, 1, 3), 300);
+});
 
 test("one weekday slot uses the weekday rule", async () => {
   const { total, lines } = await recalculateTotal(fakeDb(HOURS), {

@@ -12,6 +12,7 @@ import {
   Globe,
   Save,
   X,
+  Zap,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
   DAY_NAMES,
@@ -555,6 +557,169 @@ function AddHoursModal({
   );
 }
 
+// ── batch weekday hours & rate modal ───────────────────────────────────────
+
+function QuickSetupModal({
+  courtName,
+  busy,
+  onAdd,
+  onClose,
+}: {
+  courtName: string;
+  busy: string | null;
+  onAdd: (
+    dayOfWeek: number,
+    openTime: string,
+    closeTime: string,
+    amount: string,
+  ) => Promise<boolean>;
+  onClose: () => void;
+}) {
+  const [selectedDays, setSelectedDays] = useState<number[]>([1, 2, 3, 4, 5]);
+  const [from, setFrom] = useState("06:00");
+  const [until, setUntil] = useState("22:00");
+  const [amount, setAmount] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const hasTimes = from !== "" && until !== "";
+  const sameTime = hasTimes && from === until;
+  const hasRate = amount.trim() !== "";
+  const canSave = selectedDays.length > 0 && hasTimes && !sameTime && hasRate;
+
+  function toggleDay(day: number, checked: boolean) {
+    setSelectedDays((current) =>
+      checked
+        ? [...current, day].sort((a, b) => a - b)
+        : current.filter((selected) => selected !== day),
+    );
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!canSave || saving) return;
+
+    setSaving(true);
+    let added = 0;
+    for (const day of selectedDays) {
+      const ok = await onAdd(day, from, until, amount.trim());
+      if (ok) added += 1;
+    }
+    setSaving(false);
+
+    if (added === selectedDays.length) {
+      toast.success(`Quick setup added for ${added} days.`);
+      onClose();
+    } else if (added > 0) {
+      toast.warning(`Added ${added} of ${selectedDays.length} days. Review the remaining days.`);
+      onClose();
+    }
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="quick-setup-modal-title"
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === "Escape") onClose();
+      }}
+    >
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden />
+      <div className="relative flex w-full max-w-2xl flex-col overflow-hidden rounded-xl border bg-card text-card-foreground shadow-lg">
+        <div className="flex items-center justify-between gap-3 border-b px-5 py-4">
+          <div>
+            <h2 id="quick-setup-modal-title" className="text-sm font-medium">
+              Quick Setup
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground">{courtName}</p>
+          </div>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-7 shrink-0"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            <X className="size-4" />
+          </Button>
+        </div>
+
+        <form onSubmit={(e) => void submit(e)} className="space-y-5 p-5">
+          <div className="space-y-2">
+            <Label>Days</Label>
+            <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-4">
+              {DAY_NAMES.map((day, index) => {
+                const checked = selectedDays.includes(index);
+                return (
+                  <label
+                    key={day}
+                    className={cn(
+                      "flex min-w-0 cursor-pointer items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm transition-colors",
+                      checked && "border-ring bg-accent",
+                    )}
+                  >
+                    <span className="min-w-0 truncate">{day}</span>
+                    <Switch
+                      className="shrink-0"
+                      checked={checked}
+                      onCheckedChange={(value) => toggleDay(index, value)}
+                      aria-label={`${day} ${checked ? "selected" : "not selected"}`}
+                    />
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Hours</Label>
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+              <HourSelect label="Quick setup start time" value={from} onChange={setFrom} />
+              <span className="text-xs text-muted-foreground">to</span>
+              <HourSelect label="Quick setup end time" value={until} onChange={setUntil} />
+            </div>
+            {sameTime ? (
+              <p className="text-xs text-destructive">Start and end times must differ.</p>
+            ) : null}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="quick-setup-rate">Hourly rate</Label>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-muted-foreground">₱</span>
+              <Input
+                id="quick-setup-rate"
+                value={amount}
+                inputMode="decimal"
+                required
+                placeholder="150"
+                onChange={(e) => setAmount(e.target.value)}
+                className="max-w-32 text-right font-semibold tabular-nums"
+              />
+              <span className="text-xs text-muted-foreground">per hour</span>
+            </div>
+          </div>
+
+          {!selectedDays.length ? (
+            <p className="text-xs text-muted-foreground">Select at least one day.</p>
+          ) : null}
+
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!canSave || saving || busy !== null}>
+              {saving ? "Saving..." : "Add standard rates"}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ── merged court editor ───────────────────────────────────────────────────
 
 function EditCourtModal({
@@ -587,6 +752,7 @@ function EditCourtModal({
               Edit — {court.name}
             </h2>
           </div>
+          <div className="flex items-center gap-1">
           <Button
             size="icon"
             variant="ghost"
@@ -596,6 +762,7 @@ function EditCourtModal({
           >
             <X className="size-4" />
           </Button>
+          </div>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
@@ -1187,6 +1354,11 @@ function CardsView({
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [editing, setEditing] = useState<CourtRow | null>(null);
+  const [quickSetupCourt, setQuickSetupCourt] = useState<CourtRow | null>(null);
+  const {
+    busy: hoursBusy,
+    addRow: addHoursRow,
+  } = useHoursActions();
 
   const rentalRules = useMemo(
     () =>
@@ -1287,6 +1459,15 @@ function CardsView({
                   headerExtra={
                     <>
                       <CourtStatusBadge status={court.status} />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={busy !== null || hoursBusy !== null}
+                        onClick={() => setQuickSetupCourt(court)}
+                      >
+                        <Zap />
+                        Quick Setup
+                      </Button>
                       <Button
                         variant="outline"
                         size="sm"
@@ -1409,6 +1590,18 @@ function CardsView({
           court={editing}
           hours={hours}
           onClose={() => setEditing(null)}
+        />
+      ) : null}
+      {quickSetupCourt ? (
+        <QuickSetupModal
+          courtName={quickSetupCourt.name}
+          busy={hoursBusy}
+          onAdd={(dayOfWeek, openTime, closeTime, amount) =>
+            addHoursRow(dayOfWeek, quickSetupCourt.id, openTime, closeTime, amount, {
+              successMessage: "Standard rate added.",
+            })
+          }
+          onClose={() => setQuickSetupCourt(null)}
         />
       ) : null}
     </div>

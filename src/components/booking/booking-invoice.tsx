@@ -12,7 +12,12 @@ import {
 import { formatManilaLong, formatSlotRanges, formatCourtSlotGroups, type CourtSlotGroup } from "@/lib/courts";
 import { slotSelectionDateStr, timeBandFor } from "@/lib/booking/slots";
 import { googleCalendarUrl } from "@/lib/booking/calendar";
-import { FALLBACK_RATES, peso, type DisplayRates } from "@/lib/pricing-display";
+import {
+  calculatePaddleRentalTotal,
+  FALLBACK_RATES,
+  peso,
+  type DisplayRates,
+} from "@/lib/pricing-display";
 import { VENUE_ADDRESS } from "@/lib/venue";
 import type { DetailsValues } from "./details-form";
 
@@ -87,7 +92,7 @@ export default function BookingInvoice({
   if (equipment.paddleQty > 0)
     invoiceLines.push({
       label: `Paddle rental (${equipment.paddleQty} × ${paddleHours}h @ ${peso(rates.paddle)}/hr)`,
-      amount: equipment.paddleQty * paddleHours * rates.paddle,
+      amount: calculatePaddleRentalTotal(rates.paddle, equipment.paddleQty, paddleHours),
     });
   if (equipment.ball) invoiceLines.push({ label: "Ball set (flat fee)", amount: rates.ball });
 

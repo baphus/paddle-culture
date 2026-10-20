@@ -81,7 +81,7 @@ const MAX_SLOTS = 12;
 const FALLBACK_RATES: DisplayRates = {
   morning: 150,
   evening: 200,
-  paddle: 25,
+  paddle: 100,
   ball: 15,
   currency: "PHP",
 };

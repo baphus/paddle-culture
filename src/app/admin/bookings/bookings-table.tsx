@@ -32,12 +32,15 @@ export default function BookingsTable({
   page,
   pageCount,
   filters,
+  focusId,
   newBookingHref,
 }: {
   rows: BookingDetail[];
   page: number;
   pageCount: number;
   filters: BookingsFilters;
+  /** Booking id to highlight + scroll to (from a notification click). */
+  focusId?: string;
   newBookingHref: string;
 }) {
   const router = useRouter();
@@ -145,6 +148,8 @@ export default function BookingsTable({
       onSearchChange={setQ}
       placeholder="Search by name…"
       pageSize={BOOKINGS_PAGE_SIZE}
+      focusId={focusId}
+      getRowId={(b) => b.id}
       actions={filterActions}
       toolbarActions={
         <div className="flex items-center gap-2">

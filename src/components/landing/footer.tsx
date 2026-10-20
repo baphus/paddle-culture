@@ -2,9 +2,9 @@ import Image from "next/image";
 import { Clock, Mail, MapPin, Phone } from "lucide-react";
 import { FALLBACK_RATES, type DisplayRates } from "@/lib/pricing-display";
 import { VENUE_PHONE_DISPLAY, VENUE_PHONE_LINK } from "@/lib/booking/constants";
+import { VENUE_FACEBOOK_LINK, VENUE_MAP_LINK } from "@/lib/venue";
 import DeveloperPromo from "@/components/landing/developer-promo";
 
-const FB_LINK = "https://www.facebook.com/profile.php?id=61595287250420";
 const SEPHUS_PORTFOLIO_URL = "https://www.sephus.tech";
 
 export default function Footer({ rates = FALLBACK_RATES }: { rates?: DisplayRates }) {
@@ -67,7 +67,7 @@ export default function Footer({ rates = FALLBACK_RATES }: { rates?: DisplayRate
               RVF9+6XW, Poblacion, Tabuelan, Cebu, Philippines
             </p>
             <a
-              href="https://maps.app.goo.gl/ceUS9UK4TzD5FTK37"
+              href={VENUE_MAP_LINK}
               target="_blank"
               rel="noopener noreferrer"
               className="block w-fit text-[13px] font-bold text-flame hover:text-flame-hover hover:underline"
@@ -107,7 +107,7 @@ export default function Footer({ rates = FALLBACK_RATES }: { rates?: DisplayRate
               Facebook
             </p>
             <a
-              href={FB_LINK}
+              href={VENUE_FACEBOOK_LINK}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2 text-[13px] font-bold text-ink hover:text-flame hover:underline"

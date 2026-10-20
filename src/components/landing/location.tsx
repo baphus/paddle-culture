@@ -1,11 +1,7 @@
 import { CarFront, Clock, ExternalLink, MapPin, Phone } from "lucide-react";
 import { FALLBACK_RATES, type DisplayRates } from "@/lib/pricing-display";
 import { VENUE_PHONE_DISPLAY, VENUE_PHONE_LINK } from "@/lib/booking/constants";
-
-const MAP_EMBED =
-  "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d491.4386556!2d123.8695702!3d10.8232574!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x33a85725c976d467%3A0x3ec0c36bd48bb35!2sRVF9%2B6XW%2C+Poblacion%2C+Tabuelan%2C+Cebu!5e0!3m2!1sen!2sph!4v1700000000000!5m2!1sen!2sph";
-const MAP_LINK = "https://maps.app.goo.gl/ceUS9UK4TzD5FTK37";
-const FB_LINK = "https://www.facebook.com/profile.php?id=61595287250420";
+import { VENUE_FACEBOOK_LINK, VENUE_MAP_EMBED, VENUE_MAP_LINK } from "@/lib/venue";
 
 export default function Location({ rates = FALLBACK_RATES }: { rates?: DisplayRates }) {
   void rates;
@@ -83,7 +79,7 @@ export default function Location({ rates = FALLBACK_RATES }: { rates?: DisplayRa
 
             <div className="mt-5 flex flex-col gap-2.5">
               <a
-                href={MAP_LINK}
+                href={VENUE_MAP_LINK}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex w-full items-center justify-center gap-2 rounded-full bg-flame px-5 py-3.5 text-sm font-bold text-white transition-all hover:-translate-y-0.5 hover:bg-flame-hover"
@@ -91,7 +87,7 @@ export default function Location({ rates = FALLBACK_RATES }: { rates?: DisplayRa
                 Open in Google Maps <ExternalLink className="size-4" aria-hidden />
               </a>
               <a
-                href={FB_LINK}
+                href={VENUE_FACEBOOK_LINK}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex w-full items-center justify-center gap-2 rounded-full border border-line bg-cream px-5 py-3.5 text-sm font-bold text-ink transition-all hover:-translate-y-0.5 hover:bg-oat"
@@ -112,7 +108,7 @@ export default function Location({ rates = FALLBACK_RATES }: { rates?: DisplayRa
           <div className="relative overflow-hidden rounded-3xl border border-line bg-[repeating-linear-gradient(-45deg,#e9e4d8_0_8px,#f4efe2_8px_16px)] shadow-[0_20px_50px_rgba(66,48,45,0.12)]">
             <iframe
               title="Map — CK Grounds, Tabuelan Cebu"
-              src={MAP_EMBED}
+              src={VENUE_MAP_EMBED}
               className="relative h-full min-h-[360px] w-full border-0"
               loading="lazy"
               referrerPolicy="no-referrer-when-downgrade"

@@ -17,7 +17,8 @@ import {
 import { QRCodeCanvas } from "qrcode.react";
 import { toast } from "sonner";
 import type { DisplayRates } from "@/lib/pricing-display";
-import { VENUE_ADDRESS, VENUE_MAP_LINK } from "@/lib/venue";
+import { VENUE_ADDRESS, VENUE_FACEBOOK_LINK, VENUE_MAP_LINK } from "@/lib/venue";
+import { VENUE_PHONE_DISPLAY, VENUE_PHONE_LINK } from "@/lib/booking/constants";
 import BookingInvoice from "./booking-invoice";
 import type { DetailsValues } from "./details-form";
 import type { CourtSlotGroup } from "@/lib/courts";
@@ -112,6 +113,25 @@ export default function ConfirmationStep({
           We&apos;ve sent your receipt to{" "}
           <strong className="font-semibold text-ink">{details.email}</strong>. Staff will verify
           your payment screenshot shortly.
+        </p>
+        <p className="mx-auto mt-3 max-w-lg rounded-xl border border-line-warm/70 bg-cream/70 px-4 py-3 text-xs leading-relaxed text-ink/80">
+          Didn&apos;t receive the email? Please check your spam folder. You can also{" "}
+          <a
+            href={VENUE_FACEBOOK_LINK}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-bold text-flame underline decoration-flame/40 underline-offset-2 hover:text-flame-hover"
+          >
+            message our Facebook page
+          </a>{" "}
+          or call/text{" "}
+          <a
+            href={VENUE_PHONE_LINK}
+            className="whitespace-nowrap font-bold text-flame underline decoration-flame/40 underline-offset-2 hover:text-flame-hover"
+          >
+            {VENUE_PHONE_DISPLAY}
+          </a>
+          .
         </p>
         <div className="mt-4 inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-800">
           <span className="size-2 rounded-full bg-amber-500 animate-pulse" aria-hidden />

@@ -111,6 +111,8 @@ export function DataTable<TData, TValue>({
   view: controlledView,
   showColumnToggle = true,
   showSearch = true,
+  focusId,
+  getRowId,
 }: {
   columns: ColumnDef<TData, TValue>[]
   data: TData[]
@@ -137,6 +139,10 @@ export function DataTable<TData, TValue>({
   showColumnToggle?: boolean
   /** Search input in the toolbar (default true). */
   showSearch?: boolean
+  /** id of the row to highlight + scroll to (e.g. a booking id from a notification). */
+  focusId?: string
+  /** Resolve a row's domain id for focus matching. Required when `focusId` is set. */
+  getRowId?: (row: TData) => string
 }) {
   const [search, setSearch] = React.useState("")
   const [sorting, setSorting] = React.useState<SortingState>([])
@@ -156,6 +162,16 @@ export function DataTable<TData, TValue>({
   React.useEffect(() => {
     setInternalView(isMobile ? "grid" : "list")
   }, [isMobile])
+
+  // Highlight + scroll a focused row into view (e.g. the booking a notification
+  // points at). Only one row is focused at a time, so a single ref is enough.
+  const focusRef = React.useRef<HTMLElement | null>(null)
+  const setFocusRef = React.useCallback((el: HTMLElement | null) => {
+    focusRef.current = el
+  }, [])
+  React.useEffect(() => {
+    focusRef.current?.scrollIntoView({ block: "nearest" })
+  }, [focusId])
 
   const onPaginationChange = React.useCallback(
     (updater: Updater<PaginationState>) => {
@@ -236,11 +252,19 @@ export function DataTable<TData, TValue>({
       {gridCard && view === "grid" ? (
         table.getRowModel().rows.length ? (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {table.getRowModel().rows.map((row) => (
-              <React.Fragment key={row.id}>
-                {gridCard(row.original)}
-              </React.Fragment>
-            ))}
+            {table.getRowModel().rows.map((row) => {
+              const rid = getRowId?.(row.original)
+              const focused = focusId != null && rid != null && rid === focusId
+              return (
+                <div
+                  key={row.id}
+                  className={cn("rounded-xl", focused && "ring-2 ring-primary")}
+                  ref={focused ? setFocusRef : undefined}
+                >
+                  {gridCard(row.original)}
+                </div>
+              )
+            })}
           </div>
         ) : (
           <div className="rounded-lg border p-8 text-center text-sm text-muted-foreground">
@@ -283,18 +307,26 @@ export function DataTable<TData, TValue>({
             </TableHeader>
             <TableBody>
               {table.getRowModel().rows.length ? (
-                table.getRowModel().rows.map((row) => (
-                  <TableRow key={row.id} className="group">
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id} className="px-4">
-                        {flexRender(
-                          cell.column.columnDef.cell,
-                          cell.getContext()
-                        )}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))
+                table.getRowModel().rows.map((row) => {
+                  const rid = getRowId?.(row.original)
+                  const focused = focusId != null && rid != null && rid === focusId
+                  return (
+                    <TableRow
+                      key={row.id}
+                      className={cn("group", focused && "bg-primary/10")}
+                      ref={focused ? setFocusRef : undefined}
+                    >
+                      {row.getVisibleCells().map((cell) => (
+                        <TableCell key={cell.id} className="px-4">
+                          {flexRender(
+                            cell.column.columnDef.cell,
+                            cell.getContext()
+                          )}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  )
+                })
               ) : (
                 <TableRow>
                   <TableCell

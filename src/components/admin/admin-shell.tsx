@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import AdminSidebar from "./admin-sidebar";
+import NotificationBell from "./notification-bell";
 import ThemeToggle from "./theme-toggle";
 
 interface Props {
@@ -65,7 +66,8 @@ export default function AdminShell({ email, name, children }: Props) {
                     ) : null}
                   </BreadcrumbList>
                 </Breadcrumb>
-                <div className="ml-auto">
+                <div className="ml-auto flex items-center gap-1">
+                  <NotificationBell />
                   <ThemeToggle />
                 </div>
               </div>
