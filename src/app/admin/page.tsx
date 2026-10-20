@@ -122,8 +122,7 @@ export default async function AdminPage() {
           <QuickLink href="/admin/bookings" icon={BookOpen} label="Manage Bookings" desc="Review, approve, or reject" />
           <QuickLink href="/admin/revenue" icon={BarChart2} label="Revenue" desc="Daily breakdown & chart" />
           <QuickLink href="/admin/activity" icon={ScrollText} label="Activity" desc="Full action history" />
-          <QuickLink href="/admin/courts" icon={Settings} label="Courts & Pricing" desc="Courts, status, and rates" />
-          <QuickLink href="/admin/hours" icon={Clock} label="Hours & Closures" desc="Operating hours and closures" />
+          <QuickLink href="/admin/hours" icon={Settings} label="Court Setup" desc="Courts, rates, hours, and closures" />
         </div>
       </section>
     </div>

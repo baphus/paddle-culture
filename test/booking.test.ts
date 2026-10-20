@@ -6,22 +6,28 @@ import { isSlotOpen, type OpenRules } from "../src/lib/booking/hours.ts";
 // ------------------------------------------------------------------ fixtures
 
 // PostgREST-shaped rows: snake_case, numeric amounts come back as strings.
+// ADR-13: court rates are operating_hours.amount; paddle/ball stay on
+// pricing_rules.
+const HOURS = [
+  { id: "h1", court_id: "c1", day_of_week: 1, open_time: "06:00", close_time: "03:00", amount: "250.00" },
+  { id: "h2", court_id: "c1", day_of_week: 6, open_time: "06:00", close_time: "03:00", amount: "300.00" },
+];
+
 const RULES = [
-  { id: "r1", court_id: null, day_type: "all", time_band: "all", item_type: "court", unit: "hour", amount: "250.00" },
-  { id: "r2", court_id: null, day_type: "weekend", time_band: "all", item_type: "court", unit: "hour", amount: "300.00" },
   { id: "r3", court_id: null, day_type: "all", time_band: "all", item_type: "paddle", unit: "paddle-hour", amount: "40.00" },
   { id: "r4", court_id: null, day_type: "all", time_band: "all", item_type: "ball", unit: "flat", amount: "60.00" },
 ];
 
-function fakeDb(rules: unknown[]): any {
+function fakeDb(hours: unknown[], rules: unknown[] = RULES): any {
   return {
     from(table: string) {
-      assert.equal(table, "pricing_rules");
+      assert.ok(table === "pricing_rules" || table === "operating_hours");
+      const rows = table === "pricing_rules" ? rules : hours;
       return {
         // Mimic supabase-js: select() returns a thenable query builder whose
         // .order() is chainable and itself resolves to { data, error }.
         select() {
-          const result = Promise.resolve({ data: rules, error: null });
+          const result = Promise.resolve({ data: rows, error: null });
           const builder = {
             order: () => builder,
             then: result.then.bind(result),
@@ -43,7 +49,7 @@ const MON_8PM = new Date("2026-10-12T12:00:00.000Z"); // Mon 20:00
 // ------------------------------------------------------------------- pricing
 
 test("one weekday slot uses the weekday rule", async () => {
-  const { total, lines } = await recalculateTotal(fakeDb(RULES), {
+  const { total, lines } = await recalculateTotal(fakeDb(HOURS), {
     slots: [{ courtId: "c1", start: MON_9AM }],
     paddleQty: 0,
     paddleHours: null,
@@ -54,8 +60,8 @@ test("one weekday slot uses the weekday rule", async () => {
   assert.equal(lines[0].kind, "court");
 });
 
-test("weekend slot beats the all/all court rule", async () => {
-  const { total } = await recalculateTotal(fakeDb(RULES), {
+test("weekend slot uses the weekend hours rate", async () => {
+  const { total } = await recalculateTotal(fakeDb(HOURS), {
     slots: [{ courtId: "c1", start: SAT_9AM }],
     paddleQty: 0,
     paddleHours: null,
@@ -65,7 +71,7 @@ test("weekend slot beats the all/all court rule", async () => {
 });
 
 test("paddle hours default to the booked slot count", async () => {
-  const { total, lines } = await recalculateTotal(fakeDb(RULES), {
+  const { total, lines } = await recalculateTotal(fakeDb(HOURS), {
     slots: [
       { courtId: "c1", start: MON_9AM },
       { courtId: "c1", start: new Date("2026-10-12T02:00:00.000Z") },
@@ -83,7 +89,7 @@ test("paddle hours default to the booked slot count", async () => {
 test("paddle hours above the booked slot count are rejected", async () => {
   await assert.rejects(
     () =>
-      recalculateTotal(fakeDb(RULES), {
+      recalculateTotal(fakeDb(HOURS), {
         slots: [{ courtId: "c1", start: MON_9AM }],
         paddleQty: 1,
         paddleHours: 2,
@@ -94,7 +100,7 @@ test("paddle hours above the booked slot count are rejected", async () => {
 });
 
 test("ball fee is counted once, not per slot", async () => {
-  const { total } = await recalculateTotal(fakeDb(RULES), {
+  const { total } = await recalculateTotal(fakeDb(HOURS), {
     slots: [
       { courtId: "c1", start: MON_9AM },
       { courtId: "c1", start: new Date("2026-10-12T02:00:00.000Z") },
@@ -107,8 +113,8 @@ test("ball fee is counted once, not per slot", async () => {
   assert.equal(total, "810.00"); // 3 × 250 + 60
 });
 
-test("evening band falls back to the flat rule", async () => {
-  const { total } = await recalculateTotal(fakeDb(RULES), {
+test("evening slot uses the same hours row's rate", async () => {
+  const { total } = await recalculateTotal(fakeDb(HOURS), {
     slots: [{ courtId: "c1", start: MON_8PM }],
     paddleQty: 0,
     paddleHours: null,
@@ -133,7 +139,7 @@ test("a missing court rate is a hard error, not a zero", async () => {
 // ---------------------------------------------------------------------- hours
 
 const OPEN_9_TO_21: OpenRules = {
-  hours: [{ courtId: null, dayOfWeek: 1, openTime: "09:00", closeTime: "21:00" }],
+  hours: [{ courtId: "c1", dayOfWeek: 1, openTime: "09:00", closeTime: "21:00" }],
   closures: [],
 };
 
@@ -190,7 +196,15 @@ test("no hours rules at all means closed, not open (fail closed)", () => {
 
 test("hours for a different day do not open this one", () => {
   const rules: OpenRules = {
-    hours: [{ courtId: null, dayOfWeek: 0, openTime: "09:00", closeTime: "21:00" }],
+    hours: [{ courtId: "c1", dayOfWeek: 0, openTime: "09:00", closeTime: "21:00" }],
+    closures: [],
+  };
+  assert.equal(isSlotOpen(rules, "c1", MON_9AM), false);
+});
+
+test("hours for another court do not open this one", () => {
+  const rules: OpenRules = {
+    hours: [{ courtId: "c2", dayOfWeek: 1, openTime: "09:00", closeTime: "21:00" }],
     closures: [],
   };
   assert.equal(isSlotOpen(rules, "c1", MON_9AM), false);
@@ -199,7 +213,7 @@ test("hours for a different day do not open this one", () => {
 test("overnight hours spill into the next day", () => {
   // Sunday 20:00 → Monday 02:00.
   const rules: OpenRules = {
-    hours: [{ courtId: null, dayOfWeek: 0, openTime: "20:00", closeTime: "02:00" }],
+    hours: [{ courtId: "c1", dayOfWeek: 0, openTime: "20:00", closeTime: "02:00" }],
     closures: [],
   };
   // Monday 01:00–02:00 falls inside Sunday's overnight window.

@@ -19,27 +19,24 @@ export async function GET() {
         headers: { ...headers, "X-Pricing-Fallback": "1" },
       });
     }
-    const { data, error } = await db.from("pricing_rules").select("*");
-    if (error || !data) {
+    const [rulesRes, hoursRes] = await Promise.all([
+      db.from("pricing_rules").select("court_id,item_type,amount"),
+      db.from("operating_hours").select("amount"),
+    ]);
+    if (rulesRes.error || !rulesRes.data || hoursRes.error || !hoursRes.data) {
       return NextResponse.json(FALLBACK_RATES, {
         headers: { ...headers, "X-Pricing-Fallback": "1" },
       });
     }
-    // Map snake_case API response back to the shape deriveDisplayRates expects
-    // (which was previously a Drizzle select — snake_case columns).
     const rates = deriveDisplayRates(
-      data.map((r: {
-        id: string; court_id: string | null; day_type: string;
-        time_band: string; item_type: string; unit: string; amount: string;
+      rulesRes.data.map((r: {
+        court_id: string | null; item_type: string; amount: string;
       }) => ({
-        id: r.id,
         courtId: r.court_id,
-        dayType: r.day_type,
-        timeBand: r.time_band,
         itemType: r.item_type,
-        unit: r.unit,
         amount: r.amount,
       })),
+      hoursRes.data.map((h: { amount: string | null }) => ({ amount: h.amount })),
     );
     if (!rates) {
       return NextResponse.json(FALLBACK_RATES, {

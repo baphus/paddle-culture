@@ -6,9 +6,9 @@ import { createHours, hoursCreateSchema } from "@/lib/admin/config";
 
 export const runtime = "nodejs";
 
-// POST /api/admin/hours — admin only. Adds one operating_hours row + audit.
-// Rows for the same (court, day) act as a UNION in isSlotOpen; a court with
-// zero rows defaults to OPEN (see /admin/hours banner).
+// POST /api/admin/hours — admin only. Adds one operating_hours row (hours +
+// rate, ADR-13) + audit. Rows for the same (court, day) act as a UNION in
+// isSlotOpen; a court with zero rows on a day is CLOSED.
 export async function POST(request: Request) {
   try {
     const admin = await requireAdmin();

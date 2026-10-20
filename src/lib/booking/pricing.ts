@@ -1,6 +1,7 @@
 import type { Db } from "@/db/client";
 import { LaneError } from "./errors";
-import { dayTypeFor, timeBandFor } from "./slots";
+import { dayTypeFor, manilaParts, timeBandFor } from "./slots";
+import { dayName } from "./windows";
 
 // All Drizzle ORM imports replaced with @supabase/supabase-js HTTP client.
 
@@ -35,6 +36,41 @@ interface PricingRule {
   amount: string;
 }
 
+/** An operating_hours row (ADR-13). Court pricing's only source. */
+interface HoursRateRow {
+  id: string;
+  courtId: string;
+  dayOfWeek: number;
+  openTime: string;
+  closeTime: string;
+  amount: string | null;
+}
+
+function minutesOfWall(time: string): number {
+  const [h, m] = time.split(":").map(Number);
+  return (h as number) * 60 + (m as number);
+}
+
+/** True when `hour` (0-23) falls inside the row, wrap-aware (ADR-13 span). */
+function hourInRow(hour: number, row: HoursRateRow): boolean {
+  const open = minutesOfWall(row.openTime);
+  const close = minutesOfWall(row.closeTime);
+  const end = close <= open ? close + 1440 : close;
+  const at = hour * 60;
+  return (at >= open && at < end) || (at + 1440 >= open && at + 1440 < end);
+}
+
+/** "6:00 AM–12:00 PM" — the detail label for a priced hours row. */
+function rateRangeLabel(row: HoursRateRow): string {
+  const fmt = (time: string) => {
+    const [h, m] = time.split(":").map(Number);
+    const suffix = (h as number) < 12 ? "AM" : "PM";
+    const h12 = (h as number) % 12 === 0 ? 12 : (h as number) % 12;
+    return `${h12}:${String(m).padStart(2, "0")} ${suffix}`;
+  };
+  return `${fmt(row.openTime)}–${fmt(row.closeTime)}`;
+}
+
 function toCentavos(amount: string): number {
   const n = Number(amount);
   if (!Number.isFinite(n) || n < 0) throw new Error(`bad amount ${amount}`);
@@ -42,18 +78,18 @@ function toCentavos(amount: string): number {
 }
 
 /**
- * Wrap a rule amount for pricing math. A malformed `amount` in the DB is a
+ * Wrap a row amount for pricing math. A malformed `amount` in the DB is a
  * data/config fault the owner must fix — not a "no rate configured" case. We
  * surface it as PRICE_INVALID (500) so the error text points at the row
  * instead of telling the customer to try again.
  */
-function amountOrThrow(rule: PricingRule): number {
+function amountOrThrow(id: string, amount: string): number {
   try {
-    return toCentavos(rule.amount);
+    return toCentavos(amount);
   } catch {
     throw new LaneError(
       "PRICE_INVALID",
-      `Pricing rule ${rule.id} has a non-numeric amount (${JSON.stringify(rule.amount)}). Fix it in pricing_rules.`,
+      `Pricing row ${id} has a non-numeric amount (${JSON.stringify(amount)}). Fix it in the admin pricing page.`,
       500,
     );
   }
@@ -64,7 +100,8 @@ function fromCentavos(cents: number): string {
 }
 
 /**
- * Pick the best pricing_rules row for (court, dayType, timeBand, itemType).
+ * Pick the best pricing_rules band row for (court, dayType, timeBand, itemType).
+ * Paddle/ball only — court slots are priced by operating_hours.amount.
  */
 function pickRule(
   rules: PricingRule[],
@@ -101,7 +138,10 @@ function pickRule(
 }
 
 /**
- * Server-side total recalculation (ADR-03).
+ * Server-side total recalculation (ADR-03). Court slots are priced by the
+ * operating_hours row that covers them (ADR-13): one row = one rate, per court
+ * only, no global fallback. No covering row means the court is closed then;
+ * a NULL amount means the rate is not configured yet. Both are 503s.
  */
 export async function recalculateTotal(
   db: Db,
@@ -128,27 +168,51 @@ export async function recalculateTotal(
     amount: r.amount,
   }));
 
+  const { data: hourData, error: hoursError } = await db
+    .from("operating_hours")
+    .select("id,court_id,day_of_week,open_time,close_time,amount")
+    .order("id", { ascending: true });
+
+  if (hoursError) throw new LaneError("DB_ERROR", hoursError.message, 500);
+
+  const hours: HoursRateRow[] = (hourData ?? []).map((r) => ({
+    id: r.id,
+    courtId: r.court_id,
+    dayOfWeek: r.day_of_week,
+    openTime: r.open_time,
+    closeTime: r.close_time,
+    amount: r.amount === null ? null : String(r.amount),
+  }));
+
   const lines: TotalLine[] = [];
   let cents = 0;
 
   for (const slot of input.slots) {
-    const dayType = dayTypeFor(slot.start);
-    const timeBand = timeBandFor(slot.start);
-    const rule = pickRule(rules, slot.courtId, dayType, timeBand, "court");
-    if (!rule) {
+    const { day, hour } = manilaParts(slot.start);
+    const match = hours.find(
+      (r) => r.courtId === slot.courtId && r.dayOfWeek === day && hourInRow(hour, r),
+    );
+    if (!match) {
       throw new LaneError(
         "PRICING_NOT_CONFIGURED",
-        `No court rate for court ${slot.courtId} (${dayType}/${timeBand}).`,
+        `No court rate for court ${slot.courtId} (${String(hour).padStart(2, "0")}:00) — court is not open at this day/time.`,
         503,
       );
     }
-    const unit = amountOrThrow(rule);
+    if (match.amount === null) {
+      throw new LaneError(
+        "PRICING_NOT_CONFIGURED",
+        `No court rate configured yet for ${dayName(match.dayOfWeek)} ${rateRangeLabel(match)}.`,
+        503,
+      );
+    }
+    const unit = amountOrThrow(match.id, match.amount);
     cents += unit;
     lines.push({
       kind: "court",
       courtId: slot.courtId,
-      detail: `${dayType}/${timeBand} @ ${slot.start.toISOString()}`,
-      unitAmount: rule.amount,
+      detail: `${rateRangeLabel(match)} @ ${slot.start.toISOString()}`,
+      unitAmount: match.amount,
       qty: 1,
       amount: fromCentavos(unit),
     });
@@ -178,7 +242,7 @@ export async function recalculateTotal(
       );
     }
     const hours = input.paddleHours ?? input.slots.length;
-    const lineCents = amountOrThrow(rule) * input.paddleQty * hours;
+    const lineCents = amountOrThrow(rule.id, rule.amount) * input.paddleQty * hours;
     cents += lineCents;
     lines.push({
       kind: "paddle",
@@ -206,7 +270,7 @@ export async function recalculateTotal(
         503,
       );
     }
-    const lineCents = amountOrThrow(rule);
+    const lineCents = amountOrThrow(rule.id, rule.amount);
     cents += lineCents;
     lines.push({
       kind: "ball",

@@ -38,23 +38,36 @@ export const courts = pgTable("courts", {
 });
 
 // ------------------------------------------------------- operating_hours ---
-// One row per court (or global default when court_id IS NULL) per weekday.
+// ADR-13: one row per court per weekday, and that row OWNS the hourly rate.
 // Overnight ranges (06:00 → 03:00+1d) are handled app-side as datetime
 // ranges (ADR-03); selection date = start date. dayOfWeek: 0=Sunday..6=Saturday.
+// amount NULL = "hours exist, rate not configured yet" (engine returns 503).
+// No rows for a court on a weekday means CLOSED. Court rows only — the old
+// global (court_id NULL) scope is gone.
+// Applied by hand via supabase/hours-rates.sql; the generated `span int4range`
+// column and the operating_hours_no_overlap exclusion constraint exist in SQL
+// only (Drizzle cannot express them) and are deliberately absent here.
 export const operatingHours = pgTable(
   "operating_hours",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    courtId: uuid("court_id").references(() => courts.id),
+    courtId: uuid("court_id")
+      .notNull()
+      .references(() => courts.id),
     dayOfWeek: integer("day_of_week").notNull(),
     openTime: time("open_time").notNull(),
     closeTime: time("close_time").notNull(),
+    amount: numeric("amount", { precision: 12, scale: 2 }),
   },
   (t) => [
     index("operating_hours_court_day_idx").on(t.courtId, t.dayOfWeek),
     check(
       "operating_hours_day_range_check",
       sql`${t.dayOfWeek} >= 0 AND ${t.dayOfWeek} <= 6`,
+    ),
+    check(
+      "operating_hours_amount_check",
+      sql`${t.amount} IS NULL OR ${t.amount} >= 0`,
     ),
   ],
 );
@@ -95,6 +108,8 @@ export const pricingRules = pgTable(
   },
   (t) => [index("pricing_rules_lookup_idx").on(t.courtId, t.dayType, t.timeBand, t.itemType)],
 );
+
+// ADR-13 removed pricing_windows: court rates live on operating_hours.amount.
 
 // ------------------------------------------------------------------ holds ---
 export const holds = pgTable(

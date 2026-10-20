@@ -3,19 +3,22 @@
 // Reads + idempotent INSERTs only. NEVER updates or deletes existing rows:
 //   1. courts:          if empty → insert 2 active courts ("Court 1","Court 2",
 //                      owner can rename in /admin/courts). If non-empty → touch nothing.
-//   2. operating_hours: if empty → insert 7 GLOBAL (court_id NULL) rows, one per
-//                      weekday, open 06:00 close 03:00 — the frozen 06:00–03:00
-//                      daily schedule (ADR-02, evening-correction 18:00). The
+//   2. operating_hours: if empty → insert one row per COURT per weekday, open
+//                      06:00 close 03:00 — the frozen 06:00–03:00 daily
+//                      schedule (ADR-02, evening-correction 18:00). The
 //                      close<=open overnight form is exactly what
 //                      src/lib/booking/hours.ts:isSlotOpen expects (spill into
-//                      the next Manila day); global rows cover current + future
-//                      courts. If non-empty → touch nothing.
-//   3. pricing_rules:  if empty → insert 6 GLOBAL (court_id NULL) rows matching
-//                      the frozen ADR-02 rate card. Vocabulary used by pickRule():
+//                      the next Manila day). ADR-13: rows are per-court only
+//                      (no global NULL scope) and carry the rate; the seed
+//                      leaves amount NULL = "rate not configured yet", which
+//                      the owner fills in /admin/hours. If non-empty → touch
+//                      nothing.
+//   3. pricing_rules:  if empty → insert the 2 GLOBAL (court_id NULL) rental
+//                      rows. Vocabulary used by pickRule():
 //                        day_type:  'weekday' | 'weekend' | 'all'  (never 'any')
 //                        time_band: 'morning' | 'evening' | 'all'  (never 'any')
-//                      court rows use specific day+band combos; paddle+ball use
-//                      'all'/'all' so they match every slot via the fallback chain.
+//                      ADR-13: court slots are priced by operating_hours.amount,
+//                      so pricing_rules holds paddle/ball only.
 //                      If non-empty → touch nothing.
 //
 // DB access: same pattern as the app (postgres-js, DATABASE_POOLER_URL ??
@@ -71,16 +74,24 @@ try {
   const hours = await sql`SELECT day_of_week, open_time, close_time FROM operating_hours`;
   summary.operating_hours.before = hours.length;
   if (hours.length === 0) {
-    // Global rows (court_id NULL), one per weekday 0=Sunday..6=Saturday.
-    // time columns accept 'HH:MM'; close 03:00 <= open 06:00 = overnight spill.
-    const rows = [0, 1, 2, 3, 4, 5, 6].map((d) => ({
-      day: d,
-      open: "06:00",
-      close: "03:00",
-    }));
+    // One row per court per weekday 0=Sunday..6=Saturday, amount NULL until the
+    // owner sets a rate. time columns accept 'HH:MM'; close 03:00 <= open
+    // 06:00 = overnight spill. Query courts again so freshly inserted ones are
+    // included.
+    const courtRows = await sql`SELECT id, name FROM courts ORDER BY name`;
+    const rows = courtRows.flatMap((c) =>
+      [0, 1, 2, 3, 4, 5, 6].map((d) => ({
+        court_id: c.id,
+        court: c.name,
+        day: d,
+        open: "06:00",
+        close: "03:00",
+        amount: null,
+      })),
+    );
     for (const r of rows) {
-      await sql`INSERT INTO operating_hours (court_id, day_of_week, open_time, close_time)
-                VALUES (NULL, ${r.day}, ${r.open}, ${r.close})`;
+      await sql`INSERT INTO operating_hours (court_id, day_of_week, open_time, close_time, amount)
+                VALUES (${r.court_id}, ${r.day}, ${r.open}, ${r.close}, ${r.amount})`;
     }
     summary.operating_hours.inserted = rows;
   } else {
@@ -93,20 +104,14 @@ try {
   // Vocabulary MUST match pickRule() in src/lib/booking/pricing.ts:
   //   day_type:  'weekday' | 'weekend' | 'all'  (fallback key, never 'any')
   //   time_band: 'morning' | 'evening' | 'all'  (fallback key, never 'any')
-  // Frozen ADR-02 rate card (owner-accepted 2026-10-03):
-  //   court ₱150/hr morning (06:00–18:00), ₱200/hr evening (18:00–03:00), all days
+  // Frozen ADR-02 rental card (owner-accepted 2026-10-03):
   //   paddle ₱25/paddle/hr — applies to any day/band → day_type='all', time_band='all'
   //   ball ₱15 flat one-time → day_type='all', time_band='all'
+  //   Court rates are operating_hours.amount (ADR-13), seeded NULL above.
   const pricing = await sql`SELECT count(*)::int AS n FROM pricing_rules`;
   summary.pricing_rules.before = pricing[0].n;
   if (pricing[0].n === 0) {
     const pricingRows = [
-      // Court — weekday
-      { court_id: null, day_type: "weekday", time_band: "morning", item_type: "court", unit: "slot", amount: "150.00" },
-      { court_id: null, day_type: "weekday", time_band: "evening", item_type: "court", unit: "slot", amount: "200.00" },
-      // Court — weekend
-      { court_id: null, day_type: "weekend", time_band: "morning", item_type: "court", unit: "slot", amount: "150.00" },
-      { court_id: null, day_type: "weekend", time_band: "evening", item_type: "court", unit: "slot", amount: "200.00" },
       // Paddle rental — flat across all days/bands
       { court_id: null, day_type: "all", time_band: "all", item_type: "paddle", unit: "hour", amount: "25.00" },
       // Ball fee — flat across all days/bands

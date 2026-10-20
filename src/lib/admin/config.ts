@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Db } from "@/db/client";
 import { LaneError } from "@/lib/booking/errors";
+import { dayName, windowLabel } from "@/lib/booking/windows";
 import type { AdminSession } from "./session";
 
 // All Drizzle ORM imports replaced with @supabase/supabase-js HTTP client.
@@ -190,37 +191,41 @@ export async function updatePricingAmount(
   return row;
 }
 
-// Court-specific rates: a court-scoped row overrides the global default for
-// that court (pickRule tries the court row before the global one at each
-// fallback step). The vocabulary is still fixed — only the key and amount.
-export const pricingRuleSetSchema = z.object({
+// Paddle/ball rates: flat band rows. Court rates live on operating_hours.amount
+// (ADR-13); a band row can no longer price a court slot. Court-scoped
+// paddle/ball rows override the global default for that court via pickRule.
+const pricingBandSchema = z.object({
   courtId: z.string().uuid("Invalid court."),
   dayType: z.enum(PRICING_DAY_TYPES),
   timeBand: z.enum(PRICING_TIME_BANDS),
-  itemType: z.enum(PRICING_ITEM_TYPES),
+  itemType: z.enum(["paddle", "ball"]),
   unit: z.enum(PRICING_UNITS),
   amount: pricingAmountSchema.shape.amount,
 });
 
+export const pricingRuleSetSchema = pricingBandSchema;
+
 /**
- * Sets the rate for one (court, dayType, timeBand, itemType) key: updates the
- * court's own row when it has one, inserts the override when it does not. Keyed
- * so a repeated save can never create two rows for the same key. Overrides are
- * removed with deletePricingRule, which returns the court to the global default.
+ * Sets the rate for one (court, dayType, timeBand, itemType) paddle/ball key:
+ * updates the court's own row when it has one, inserts the override when it
+ * does not. Keyed so a repeated save can never create two rows for the same
+ * key. Overrides are removed with deletePricingRule, which returns the court to
+ * the global default. Court rates live on the operating_hours row.
  */
 export async function setPricingRule(
   db: Db,
   admin: AdminSession,
   input: z.infer<typeof pricingRuleSetSchema>,
 ): Promise<PricingRuleRow> {
-  const { data: existing, error: fetchError } = await db
+  let keyQuery = db
     .from("pricing_rules")
     .select("id")
-    .eq("court_id", input.courtId)
     .eq("day_type", input.dayType)
     .eq("time_band", input.timeBand)
-    .eq("item_type", input.itemType)
-    .maybeSingle();
+    .eq("item_type", input.itemType);
+  keyQuery =
+    input.courtId === null ? keyQuery.is("court_id", null) : keyQuery.eq("court_id", input.courtId);
+  const { data: existing, error: fetchError } = await keyQuery.maybeSingle();
   if (fetchError) throw new LaneError("DB_ERROR", fetchError.message, 500);
   if (existing) {
     return updatePricingAmount(db, admin, (existing as { id: string }).id, input.amount);
@@ -278,7 +283,10 @@ export async function deletePricingRule(
     id: string; court_id: string | null; day_type: string; time_band: string;
     item_type: string; unit: string; amount: string;
   };
-  if (rule.court_id === null) {
+  if (
+    rule.court_id === null &&
+    (PRICING_TIME_BANDS as readonly string[]).includes(rule.time_band)
+  ) {
     throw new LaneError("GLOBAL_RULE", "The global default rate cannot be removed.", 409);
   }
 
@@ -290,7 +298,11 @@ export async function deletePricingRule(
   ]);
 }
 
-// --- Operating hours -----------------------------------------------------------
+// --- Operating hours (ADR-13) --------------------------------------------------
+// One row per court per weekday and the row owns the hourly rate. No global
+// scope: no rows for a court on a day means CLOSED. Overlap is judged by the
+// operating_hours_no_overlap exclusion constraint; the check here only produces
+// a friendlier 409.
 
 export const DAY_NAMES: string[] = [
   "Sunday",
@@ -309,22 +321,47 @@ const hhmm = z
 
 export const hoursCreateSchema = z
   .object({
-    courtId: z.string().uuid().nullable(),
+    courtId: z.string().uuid("Invalid court."),
     dayOfWeek: z.number().int().min(0).max(6),
     openTime: hhmm,
     closeTime: hhmm,
+    amount: pricingAmountSchema.shape.amount,
   })
   .refine((d) => d.openTime !== d.closeTime, {
     message: "Open and close times must differ (use overnight close<=open for late nights).",
   });
 
+export const hoursAmountSchema = z.object({
+  amount: pricingAmountSchema.shape.amount,
+});
+
 export interface HoursRow {
   id: string;
-  courtId: string | null;
-  courtName: string;
+  courtId: string;
   dayOfWeek: number;
   openTime: string;
   closeTime: string;
+  amount: string | null;
+}
+
+interface HoursRowRaw {
+  id: string;
+  court_id: string | null;
+  day_of_week: number;
+  open_time: string;
+  close_time: string;
+  amount: string | number | null;
+}
+
+function toHoursRow(r: HoursRowRaw): HoursRow {
+  return {
+    id: r.id,
+    courtId: r.court_id as string,
+    dayOfWeek: r.day_of_week,
+    openTime: shortTime(r.open_time),
+    closeTime: shortTime(r.close_time),
+    amount: r.amount === null ? null : String(r.amount),
+  };
 }
 
 export function toDbTime(hhmmValue: string): string {
@@ -336,26 +373,59 @@ export function shortTime(dbTime: string): string {
 }
 
 export async function listHours(db: Db): Promise<HoursRow[]> {
-  const { data: rows, error: rowsError } = await db
+  const { data, error } = await db
     .from("operating_hours")
-    .select("id,court_id,day_of_week,open_time,close_time")
+    .select("id,court_id,day_of_week,open_time,close_time,amount")
     .order("day_of_week", { ascending: true });
-  if (rowsError) throw new LaneError("DB_ERROR", rowsError.message, 500);
+  if (error) throw new LaneError("DB_ERROR", error.message, 500);
 
-  const { data: courtRows, error: courtError } = await db
-    .from("courts")
-    .select("id,name");
-  if (courtError) throw new LaneError("DB_ERROR", courtError.message, 500);
+  return ((data ?? []) as HoursRowRaw[])
+    .filter((r) => r.court_id !== null)
+    .map(toHoursRow);
+}
 
-  const names = new Map((courtRows ?? []).map((c: { id: string; name: string }) => [c.id, c.name]));
-  return (rows ?? []).map((r: { id: string; court_id: string | null; day_of_week: number; open_time: string; close_time: string }) => ({
-    id: r.id,
-    courtId: r.court_id,
-    courtName: r.court_id ? (names.get(r.court_id) ?? "(deleted court)") : "All courts (global)",
-    dayOfWeek: r.day_of_week,
-    openTime: shortTime(r.open_time),
-    closeTime: shortTime(r.close_time),
-  }));
+function minutesOfWall(time: string): number {
+  const [h, m] = time.split(":").map(Number);
+  return (h as number) * 60 + (m as number);
+}
+
+/** Wrap-aware minute span: close <= open spills past midnight (+1440). */
+function minuteSpan(open: string, close: string): [number, number] {
+  const start = minutesOfWall(open);
+  const end = minutesOfWall(close);
+  return [start, end <= start ? end + 1440 : end];
+}
+
+function spansOverlap(a: [number, number], b: [number, number]): boolean {
+  return a[0] < b[1] && b[0] < a[1];
+}
+
+function overlapMessage(row: {
+  day_of_week: number;
+  open_time: string;
+  close_time: string;
+}): string {
+  const start = minutesOfWall(row.open_time) / 60;
+  const end = minutesOfWall(row.close_time) / 60;
+  return `This overlaps ${dayName(row.day_of_week)} ${windowLabel({ start, end })} — pick a different time.`;
+}
+
+async function findHoursConflict(
+  db: Db,
+  courtId: string,
+  dayOfWeek: number,
+  openTime: string,
+  closeTime: string,
+): Promise<{ day_of_week: number; open_time: string; close_time: string } | undefined> {
+  const { data } = await db
+    .from("operating_hours")
+    .select("day_of_week,open_time,close_time")
+    .eq("court_id", courtId)
+    .eq("day_of_week", dayOfWeek);
+  const wanted = minuteSpan(openTime, closeTime);
+  return (data ?? []).find((r: { open_time: string; close_time: string }) =>
+    spansOverlap(wanted, minuteSpan(r.open_time, r.close_time)),
+  );
 }
 
 export async function createHours(
@@ -363,10 +433,17 @@ export async function createHours(
   admin: AdminSession,
   input: z.infer<typeof hoursCreateSchema>,
 ): Promise<HoursRow> {
-  if (input.courtId) {
-    const { data: c } = await db.from("courts").select("id").eq("id", input.courtId).single();
-    if (!c) throw new LaneError("UNKNOWN_COURT", "Court does not exist.", 404);
-  }
+  const { data: c } = await db.from("courts").select("id").eq("id", input.courtId).maybeSingle();
+  if (!c) throw new LaneError("UNKNOWN_COURT", "Court does not exist.", 404);
+
+  const conflict = await findHoursConflict(
+    db,
+    input.courtId,
+    input.dayOfWeek,
+    input.openTime,
+    input.closeTime,
+  );
+  if (conflict) throw new LaneError("HOURS_OVERLAP", overlapMessage(conflict), 409);
 
   const { data: inserted, error: insertError } = await db
     .from("operating_hours")
@@ -375,15 +452,71 @@ export async function createHours(
       day_of_week: input.dayOfWeek,
       open_time: toDbTime(input.openTime),
       close_time: toDbTime(input.closeTime),
+      amount: input.amount,
     })
     .select("id")
     .single();
-  if (insertError || !inserted) throw new LaneError("INTERNAL", "Hours creation failed.", 500);
+  if (insertError || !inserted) {
+    // 23P01 = exclusion_violation (operating_hours_no_overlap). Re-read the
+    // scope so the 409 can still name the conflicting row.
+    if (insertError?.code === "23P01") {
+      const dbConflict = await findHoursConflict(
+        db,
+        input.courtId,
+        input.dayOfWeek,
+        input.openTime,
+        input.closeTime,
+      );
+      throw new LaneError(
+        "HOURS_OVERLAP",
+        dbConflict
+          ? overlapMessage(dbConflict)
+          : "This overlaps an existing hours row — pick a different time.",
+        409,
+      );
+    }
+    if (insertError?.code === "23503") {
+      throw new LaneError("UNKNOWN_COURT", "Court does not exist.", 404);
+    }
+    throw new LaneError("INTERNAL", "Hours creation failed.", 500);
+  }
 
   const id = (inserted as { id: string }).id;
   await db.from("audit_log").insert([
     audit(admin, "hours.create", "operating_hours", id, null, input),
   ]);
+
+  const rows = await listHours(db);
+  const row = rows.find((r) => r.id === id);
+  if (!row) throw new LaneError("INTERNAL", "Hours row unreadable.", 500);
+  return row;
+}
+
+/** Amount-only edit for one hours row (inline rate edit in the admin grid). */
+export async function updateHoursAmount(
+  db: Db,
+  admin: AdminSession,
+  id: string,
+  amount: string,
+): Promise<HoursRow> {
+  const { data: existing, error: fetchError } = await db
+    .from("operating_hours")
+    .select("id,amount")
+    .eq("id", id)
+    .maybeSingle();
+  if (fetchError || !existing) throw new LaneError("NOT_FOUND", "Hours row not found.", 404);
+
+  const before = existing as { amount: string | number | null };
+  if (String(before.amount) !== amount) {
+    const { error: updateError } = await db
+      .from("operating_hours")
+      .update({ amount })
+      .eq("id", id);
+    if (updateError) throw new LaneError("DB_ERROR", updateError.message, 500);
+    await db.from("audit_log").insert([
+      audit(admin, "hours.amount", "operating_hours", id, { amount: before.amount }, { amount }),
+    ]);
+  }
 
   const rows = await listHours(db);
   const row = rows.find((r) => r.id === id);

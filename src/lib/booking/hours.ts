@@ -7,7 +7,7 @@ import { LaneError } from "./errors";
 // All Drizzle ORM imports replaced with @supabase/supabase-js HTTP client.
 
 interface HoursRow {
-  courtId: string | null;
+  courtId: string;
   dayOfWeek: number;
   openTime: string;
   closeTime: string;
@@ -30,18 +30,17 @@ export async function loadOpenRules(
   db: Db,
   args: { courtIds: string[]; from: Date; to: Date },
 ): Promise<OpenRules> {
-  // operating_hours: rows for any of the specified courts OR global (court_id IS NULL)
+  // operating_hours: ADR-13 — per-court rows only, no global NULL fallback.
   // closures: overlapping the [from, to) range, global or for these courts
+  if (args.courtIds.length === 0) return { hours: [], closures: [] };
   const courtFilter = args.courtIds.map((id) => `court_id.eq.${id}`).join(",");
-  const scopeFilter = courtFilter
-    ? `scope.eq.global,and(scope.eq.court,or(${courtFilter}))`
-    : "scope.eq.global";
+  const scopeFilter = `scope.eq.global,and(scope.eq.court,or(${courtFilter}))`;
 
   const [hoursRes, closureRes] = await Promise.all([
     db
       .from("operating_hours")
       .select("court_id,day_of_week,open_time,close_time")
-      .or(`court_id.in.(${args.courtIds.join(",")}),court_id.is.null`),
+      .in("court_id", args.courtIds),
     db
       .from("closures")
       .select("scope,court_id,start_at,end_at")
@@ -97,18 +96,11 @@ export function isSlotOpen(
   const mins = z.getHours() * 60 + z.getMinutes();
   const prevDay = (day + 6) % 7;
   const scoped = rules.hours.filter((h) => h.courtId === courtId);
-  const forDay = (d: number): HoursRow[] => {
-    const s = scoped.filter((h) => h.dayOfWeek === d);
-    if (s.length > 0) return s;
-    return rules.hours.filter(
-      (h) => h.courtId === null && h.dayOfWeek === d,
-    );
-  };
+  const forDay = (d: number): HoursRow[] => scoped.filter((h) => h.dayOfWeek === d);
   const todayRows = forDay(day);
   const prevRows = forDay(prevDay);
-  // Fail closed: no hours row for this court (scoped or global) on this day or
-  // the previous one means "not configured", which is NOT the same as open.
-  // A mis-seeded hours table used to make every slot bookable.
+  // ADR-13: no hours row for this court on this day means CLOSED. There is no
+  // global fallback and no "open all day" default.
   if (todayRows.length === 0 && prevRows.length === 0) return false;
   for (const r of todayRows) {
     const o = minutesOfWall(r.openTime);

@@ -1,21 +1,23 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   PlusCircle,
   Trash2,
-  Clock,
   CalendarX,
   ChevronDown,
   ChevronUp,
   Globe,
+  Save,
+  X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import LandingImage from "@/components/landing/landing-image";
+import { CourtStatusBadge } from "@/components/admin/status-badge";
 import {
   Dialog,
   DialogContent,
@@ -28,8 +30,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import type { ClosureRow, CourtRow, HoursRow } from "@/lib/admin/config";
-import { DAY_NAMES } from "@/lib/admin/config";
+import {
+  DAY_NAMES,
+  type ClosureRow,
+  type CourtRow,
+  type PricingRuleRow,
+} from "@/lib/admin/config";
 import {
   fmtDay,
   groupRuns,
@@ -40,6 +46,16 @@ import {
 } from "@/lib/admin/hours-format";
 
 // ── helpers ───────────────────────────────────────────────────────────────
+
+/** One court, one day, one range, one optional rate (ADR-13). */
+type HourRow = {
+  id: string;
+  courtId: string;
+  dayOfWeek: number;
+  openTime: string;
+  closeTime: string;
+  amount: string | null;
+};
 
 function readError(data: unknown, fallback: string): string {
   if (
@@ -102,32 +118,41 @@ function isPast(endAt: string): boolean {
 const tileClass =
   "flex flex-col items-center gap-1.5 rounded-lg border p-1.5 text-center transition-colors hover:bg-accent/60";
 
-/** Pick a court by its photo; value "" means all courts. */
+/** Weekday order for display (0 = Sunday). */
+const MON_SUN = [1, 2, 3, 4, 5, 6, 0];
+const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const dayShort = (day: number) => DAY_SHORT[day] ?? "";
+
+/** Pick a court by its photo; value "" means all courts (closures only). */
 function CourtPicker({
   courts,
   value,
   onChange,
+  allowAll = true,
 }: {
   courts: CourtRow[];
   value: string;
   onChange: (courtId: string) => void;
+  allowAll?: boolean;
 }) {
   const tile = (selected: boolean) =>
     cn(tileClass, selected && "border-ring bg-accent");
   return (
     <div role="radiogroup" aria-label="Court" className="grid grid-cols-3 gap-2">
-      <button
-        type="button"
-        role="radio"
-        aria-checked={value === ""}
-        onClick={() => onChange("")}
-        className={tile(value === "")}
-      >
-        <span className="flex aspect-[4/3] w-full items-center justify-center rounded-md bg-muted text-muted-foreground">
-          <Globe className="size-5" />
-        </span>
-        <span className="w-full truncate text-[11px] font-medium">All courts</span>
-      </button>
+      {allowAll ? (
+        <button
+          type="button"
+          role="radio"
+          aria-checked={value === ""}
+          onClick={() => onChange("")}
+          className={tile(value === "")}
+        >
+          <span className="flex aspect-[4/3] w-full items-center justify-center rounded-md bg-muted text-muted-foreground">
+            <Globe className="size-5" />
+          </span>
+          <span className="w-full truncate text-[11px] font-medium">All courts</span>
+        </button>
+      ) : null}
       {courts.map((c, i) => (
         <button
           key={c.id}
@@ -150,231 +175,34 @@ function CourtPicker({
   );
 }
 
-// ── Hours section ─────────────────────────────────────────────────────────
+// ── hours mutations (used by the per-court modal) ─────────────────────────
 
-/** One day-of-week column: shows all rows for that day, plus an inline add form */
-function DayCell({
-  dayIndex,
-  dayLabel,
-  rows,
-  courts,
-  busy,
-  onAdd,
-  onDelete,
-}: {
-  dayIndex: number;
-  dayLabel: string;
-  rows: HoursRow[];
-  courts: CourtRow[];
-  busy: string | null;
-  onAdd: (
-    dayOfWeek: number,
-    courtId: string,
-    openTime: string,
-    closeTime: string,
-  ) => Promise<boolean>;
-  onDelete: (id: string) => void;
-}) {
-  const [formOpen, setFormOpen] = useState(false);
-  const [court, setCourt] = useState("");
-  const [open, setOpen] = useState("06:00");
-  const [close, setClose] = useState("03:00");
-  const [saving, setSaving] = useState(false);
-  const isToday = new Date().getDay() === dayIndex;
-
-  const sorted = useMemo(
-    () => [...rows].sort((a, b) => a.openTime.localeCompare(b.openTime)),
-    [rows],
-  );
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (open === close) {
-      toast.error("Open and close times must differ.");
-      return;
-    }
-    setSaving(true);
-    const ok = await onAdd(dayIndex, court, open, close);
-    setSaving(false);
-    if (ok) {
-      setFormOpen(false);
-      setCourt("");
-    }
-  }
-
-  return (
-    <div
-      className={cn(
-        "flex flex-col gap-2 rounded-lg border p-3",
-        isToday && "border-ring/50 bg-accent/40",
-      )}
-    >
-      {/* Day label */}
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-          {dayLabel.slice(0, 3)}
-        </span>
-        {isToday && (
-          <Badge variant="secondary" className="text-[10px]">
-            Today
-          </Badge>
-        )}
-      </div>
-
-      {/* Hour rows */}
-      {sorted.length === 0 ? (
-        <p className="text-[11px] text-muted-foreground italic">Open all day</p>
-      ) : (
-        sorted.map((h) => (
-          <div
-            key={h.id}
-            className="flex items-start justify-between gap-1 rounded-md bg-muted px-2 py-1.5"
-          >
-            <div className="min-w-0">
-              <p className="text-[11px] font-medium leading-tight truncate">
-                {h.courtName === "All courts (global)" ? "All courts" : h.courtName}
-              </p>
-              <p className="text-[11px] text-muted-foreground tabular-nums">
-                {fmt12(h.openTime)} – {fmt12(h.closeTime)}
-              </p>
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              disabled={busy !== null}
-              onClick={() => onDelete(h.id)}
-              title="Remove this hours row"
-              className="shrink-0 text-muted-foreground hover:text-destructive"
-            >
-              {busy === h.id ? <span className="text-[10px]">…</span> : <Trash2 />}
-            </Button>
-          </div>
-        ))
-      )}
-
-      {/* Add hours — modal, day comes from this cell */}
-      <Dialog
-        open={formOpen}
-        onOpenChange={(v) => {
-          setFormOpen(v);
-          if (!v) setCourt("");
-        }}
-      >
-        <DialogTrigger
-          render={
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              className="justify-start text-muted-foreground"
-            >
-              <PlusCircle />
-              Add hours
-            </Button>
-          }
-        />
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add hours — {dayLabel}</DialogTitle>
-            <DialogDescription>
-              Applies to {dayLabel} only. Leave the court as "All courts" to set a
-              default for every court.
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={(e) => void submit(e)} className="space-y-4">
-            <div className="space-y-2">
-              <Label>Court</Label>
-              <CourtPicker courts={courts} value={court} onChange={setCourt} />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label htmlFor={`h-open-${dayIndex}`}>Opens</Label>
-                <Input
-                  id={`h-open-${dayIndex}`}
-                  type="time"
-                  required
-                  value={open}
-                  onChange={(e) => setOpen(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor={`h-close-${dayIndex}`}>Closes</Label>
-                <Input
-                  id={`h-close-${dayIndex}`}
-                  type="time"
-                  required
-                  value={close}
-                  onChange={(e) => setClose(e.target.value)}
-                />
-              </div>
-            </div>
-            <p className="rounded-lg border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-              Closing earlier than opening means it runs past midnight.
-            </p>
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setFormOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={saving}>
-                {saving ? "Adding…" : "Add hours"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
-
-function HoursSection({
-  initialHours,
-  courts,
-}: {
-  initialHours: HoursRow[];
-  courts: CourtRow[];
-}) {
+function useHoursActions() {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
-
-  // Group hours by day of week
-  const byDay = useMemo(
-    () =>
-      DAY_NAMES.reduce<Record<number, HoursRow[]>>((acc, _, i) => {
-        acc[i] = initialHours.filter((h) => h.dayOfWeek === i);
-        return acc;
-      }, {}),
-    [initialHours],
-  );
 
   async function addRow(
     dayOfWeek: number,
     courtId: string,
     openTime: string,
     closeTime: string,
+    amount: string,
+    opts?: { successMessage?: string },
   ): Promise<boolean> {
     setBusy("add");
     try {
       const res = await fetch("/api/admin/hours", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          courtId: courtId === "" ? null : courtId,
-          dayOfWeek,
-          openTime,
-          closeTime,
-        }),
+        body: JSON.stringify({ courtId, dayOfWeek, openTime, closeTime, amount }),
       });
       const data = (await res.json().catch(() => null)) as unknown;
       if (!res.ok) {
+        // 409s name the row this one overlaps; show the message verbatim.
         toast.error(readError(data, "Request failed."));
         return false;
       }
-      toast.success("Hours added.");
+      toast.success(opts?.successMessage ?? "Hours added.");
       router.refresh();
       return true;
     } catch {
@@ -385,7 +213,31 @@ function HoursSection({
     }
   }
 
-  async function deleteRow(id: string) {
+  async function updateAmount(id: string, amount: string): Promise<boolean> {
+    setBusy(id);
+    try {
+      const res = await fetch(`/api/admin/hours/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ amount }),
+      });
+      const data = (await res.json().catch(() => null)) as unknown;
+      if (!res.ok) {
+        toast.error(readError(data, "Request failed."));
+        return false;
+      }
+      toast.success("Rate updated.");
+      router.refresh();
+      return true;
+    } catch {
+      toast.error("Request failed.");
+      return false;
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function deleteRow(id: string): Promise<void> {
     setBusy(id);
     try {
       const res = await fetch(`/api/admin/hours/${id}`, { method: "DELETE" });
@@ -403,39 +255,425 @@ function HoursSection({
     }
   }
 
+  return { busy, addRow, updateAmount, deleteRow };
+}
+
+// ── pricing vocabulary / ordering ─────────────────────────────────────────
+
+function labelFor(field: string) {
+  const map: Record<string, string> = {
+    weekday: "Weekday",
+    weekend: "Weekend",
+    holiday: "Holiday",
+    all: "All days",
+    morning: "Morning",
+    evening: "Evening",
+    paddle: "Paddle",
+    ball: "Ball",
+    slot: "per hour",
+    hour: "per hour",
+    flat: "one-time",
+  };
+  return map[field] ?? field.replace(/_/g, " ");
+}
+
+const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
+
+/** 24h hour → "6:00 AM". Display only; the payload stays 24h. */
+function fmtHour(hour: number) {
+  const h = hour % 24;
+  return `${h % 12 === 0 ? 12 : h % 12}:00 ${h < 12 ? "AM" : "PM"}`;
+}
+
+const selectClass =
+  "h-8 w-full rounded-md border bg-background px-1.5 text-xs tabular-nums disabled:opacity-40";
+
+/** Hour-granularity picker; "" means blank. */
+function HourSelect({
+  label,
+  value,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+}) {
   return (
-    <section className="space-y-4">
-      {/* Section header */}
-      <div className="flex items-center gap-2">
-        <Clock className="size-4 text-muted-foreground" />
-        <h2 className="text-sm font-semibold">Operating Hours</h2>
-      </div>
+    <select
+      aria-label={label}
+      value={value}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value)}
+      className={selectClass}
+    >
+      <option value="">—</option>
+      {HOUR_OPTIONS.map((h) => (
+        <option key={h} value={`${h}:00`}>
+          {fmtHour(Number(h))}
+        </option>
+      ))}
+    </select>
+  );
+}
 
-      {/* Info callout */}
-      <div className="flex items-start gap-2 rounded-lg border bg-muted/50 px-3 py-2.5 text-xs text-muted-foreground">
-        <Globe className="mt-0.5 size-3.5 shrink-0" />
-        <p>
-          Add hours inside a day to limit it. A court with <strong>no rows on a day</strong> is
-          treated as open all day; court-specific rows take priority over "All courts" rows.
+// ── fields ────────────────────────────────────────────────────────────────
+
+function AmountField({
+  label,
+  labelWidth = "w-16",
+  amount,
+  draft,
+  busy,
+  placeholder,
+  onChange,
+  onSave,
+}: {
+  label: string;
+  labelWidth?: string;
+  amount: string;
+  draft: string | undefined;
+  busy: boolean;
+  placeholder?: string;
+  onChange: (val: string) => void;
+  onSave: () => void;
+}) {
+  const current = draft ?? amount;
+  const isDirty = current.trim() !== amount;
+
+  return (
+    <div className="flex items-center gap-1.5">
+      {label ? (
+        <span className={cn(labelWidth, "shrink-0 text-xs text-muted-foreground")}>{label}</span>
+      ) : null}
+      <span className="text-sm font-medium text-muted-foreground">₱</span>
+      <Input
+        aria-label={label ? `${label} rate` : "Rate"}
+        value={current}
+        inputMode="decimal"
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        className={cn(
+          "h-8 w-20 text-right font-semibold tabular-nums",
+          isDirty && "border-ring ring-1 ring-ring/30",
+        )}
+      />
+      <Button
+        size="icon"
+        variant="ghost"
+        className={cn("size-7", !isDirty && "invisible")}
+        disabled={busy}
+        onClick={onSave}
+        aria-label="Save rate"
+      >
+        {busy ? "…" : <Save className="size-3.5" />}
+      </Button>
+    </div>
+  );
+}
+
+// ── one hours row in the merged court editor ──────────────────────────────
+
+/** "{6:00 AM – 10:00 PM} · ₱150" with an inline amount editor and delete. */
+function EditableHourRow({
+  row,
+  busy,
+  onDelete,
+  onSaveAmount,
+}: {
+  row: HourRow;
+  busy: string | null;
+  onDelete: (id: string) => void;
+  onSaveAmount: (id: string, amount: string) => Promise<boolean>;
+}) {
+  const [draft, setDraft] = useState<string | undefined>(undefined);
+  const amount = row.amount ?? "";
+
+  return (
+    <div className="space-y-1 rounded-md bg-muted px-2 py-1.5">
+      <div className="flex items-center justify-between gap-1">
+        <p className="min-w-0 truncate text-[11px] tabular-nums">
+          {fmt12(row.openTime)} – {fmt12(row.closeTime)}
+          {" · "}
+          {row.amount === null ? (
+            <span className="text-muted-foreground italic">no rate yet</span>
+          ) : (
+            <span className="font-semibold">₱{row.amount}</span>
+          )}
         </p>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          disabled={busy !== null}
+          onClick={() => onDelete(row.id)}
+          title="Remove this hours row"
+          aria-label="Remove this hours row"
+          className="shrink-0 text-muted-foreground hover:text-destructive"
+        >
+          {busy === row.id ? <span className="text-[10px]">…</span> : <Trash2 />}
+        </Button>
+      </div>
+      <AmountField
+        label=""
+        amount={amount}
+        draft={draft}
+        busy={busy === row.id}
+        placeholder="Set a rate"
+        onChange={setDraft}
+        onSave={() => {
+          const value = (draft ?? amount).trim();
+          if (!value) {
+            toast.error("Set a rate — hours without a price can't be booked.");
+            return;
+          }
+          void onSaveAmount(row.id, value);
+        }}
+      />
+    </div>
+  );
+}
+
+// ── add hours & rate modal (nested over the court editor) ─────────────────
+
+function AddHoursModal({
+  dayIndex,
+  dayLabel,
+  busy,
+  onAdd,
+  onClose,
+}: {
+  dayIndex: number;
+  dayLabel: string;
+  busy: string | null;
+  onAdd: (
+    dayOfWeek: number,
+    openTime: string,
+    closeTime: string,
+    amount: string,
+  ) => Promise<boolean>;
+  onClose: () => void;
+}) {
+  const [from, setFrom] = useState("");
+  const [until, setUntil] = useState("");
+  const [amount, setAmount] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const hasTimes = from !== "" && until !== "";
+  const sameTime = hasTimes && from === until;
+  const overnight = hasTimes && until < from;
+  const hasRate = amount.trim() !== "";
+  const canSave = hasTimes && hasRate && !sameTime;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!canSave || saving) return;
+    setSaving(true);
+    const ok = await onAdd(dayIndex, from, until, amount.trim());
+    setSaving(false);
+    if (ok) onClose();
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="add-hours-modal-title"
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+      onKeyDown={(e) => {
+        // Keep Escape/keys from reaching the edit modal underneath.
+        e.stopPropagation();
+        if (e.key === "Escape") onClose();
+      }}
+    >
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden />
+      <div className="relative flex w-full max-w-md flex-col overflow-hidden rounded-xl border bg-card text-card-foreground shadow-lg">
+        <div className="flex items-center justify-between gap-3 border-b px-5 py-4">
+          <h2 id="add-hours-modal-title" className="min-w-0 truncate text-sm font-medium">
+            Add hours &amp; rate — {dayLabel}
+          </h2>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-7 shrink-0"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            <X className="size-4" />
+          </Button>
+        </div>
+
+        <form onSubmit={(e) => void submit(e)} className="space-y-4 p-5">
+          <div className="space-y-1.5">
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+              <HourSelect label={`${dayLabel} from`} value={from} onChange={setFrom} />
+              <span className="text-xs text-muted-foreground">to</span>
+              <HourSelect label={`${dayLabel} until`} value={until} onChange={setUntil} />
+            </div>
+            {overnight ? (
+              <p className="text-xs text-muted-foreground">
+                Runs past midnight — {fmt12(from)} to {fmt12(until)} covers the overnight hours.
+              </p>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-2">
+            <Label className="w-16 shrink-0">Rate (₱)</Label>
+            <Input
+              aria-label={`${dayLabel} rate`}
+              value={amount}
+              inputMode="decimal"
+              required
+              autoFocus
+              placeholder="150"
+              onChange={(e) => setAmount(e.target.value)}
+              className="h-8 max-w-32 text-right font-semibold tabular-nums"
+            />
+          </div>
+
+          {sameTime ? (
+            <p className="text-xs text-muted-foreground">
+              Open and close times must differ.
+            </p>
+          ) : !hasRate ? (
+            <p className="text-xs text-muted-foreground">
+              Set a rate — hours without a price can&apos;t be booked.
+            </p>
+          ) : null}
+
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!canSave || saving || busy !== null}>
+              {saving ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── merged court editor ───────────────────────────────────────────────────
+
+function EditCourtModal({
+  court,
+  hours,
+  onClose,
+}: {
+  court: CourtRow;
+  hours: HourRow[];
+  onClose: () => void;
+}) {
+  const { busy, addRow, updateAmount, deleteRow } = useHoursActions();
+  const [addDay, setAddDay] = useState<number | null>(null);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="edit-court-modal-title"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onClose();
+      }}
+    >
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden />
+      <div className="relative flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border bg-card text-card-foreground shadow-lg">
+        <div className="flex items-center justify-between gap-3 border-b px-5 py-4">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <h2 id="edit-court-modal-title" className="min-w-0 truncate text-sm font-medium">
+              Edit — {court.name}
+            </h2>
+          </div>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-7 shrink-0"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            <X className="size-4" />
+          </Button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          <p className="mb-3 text-xs text-muted-foreground">
+            One row is one day's hours and rate. A different rate period is just
+            another row.
+          </p>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {DAY_NAMES.map((day, i) => {
+              const rows = hours
+                .filter((h) => h.courtId === court.id && h.dayOfWeek === i)
+                .sort((a, b) => a.openTime.localeCompare(b.openTime));
+              const isToday = new Date().getDay() === i;
+
+              return (
+                <div
+                  key={day}
+                  className={cn(
+                    "flex flex-col gap-2 rounded-lg border p-3",
+                    isToday && "border-ring/50 bg-accent/40",
+                  )}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      {day.slice(0, 3)}
+                    </span>
+                    {isToday && (
+                      <Badge variant="secondary" className="text-[10px]">
+                        Today
+                      </Badge>
+                    )}
+                  </div>
+
+                  {rows.length === 0 ? (
+                    <p className="text-[11px] text-muted-foreground italic">No hours yet</p>
+                  ) : (
+                    rows.map((row) => (
+                      <EditableHourRow
+                        key={row.id}
+                        row={row}
+                        busy={busy}
+                        onDelete={deleteRow}
+                        onSaveAmount={updateAmount}
+                      />
+                    ))
+                  )}
+
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="xs"
+                    className="mt-auto w-full justify-center text-muted-foreground"
+                    onClick={() => setAddDay(i)}
+                  >
+                    <PlusCircle />
+                    Add hours &amp; rate
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
-      {/* 7-day grid */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
-        {DAY_NAMES.map((day, i) => (
-          <DayCell
-            key={day}
-            dayIndex={i}
-            dayLabel={day}
-            rows={byDay[i] ?? []}
-            courts={courts}
-            busy={busy}
-            onAdd={addRow}
-            onDelete={deleteRow}
-          />
-        ))}
-      </div>
-    </section>
+      {addDay !== null ? (
+        <AddHoursModal
+          dayIndex={addDay}
+          dayLabel={DAY_NAMES[addDay] ?? ""}
+          busy={busy}
+          onAdd={(dayOfWeek, openTime, closeTime, amount) =>
+            addRow(dayOfWeek, court.id, openTime, closeTime, amount, {
+              successMessage: `${DAY_NAMES[dayOfWeek]} hours added.`,
+            })
+          }
+          onClose={() => setAddDay(null)}
+        />
+      ) : null}
+    </div>
   );
 }
 
@@ -849,22 +1087,353 @@ function ClosuresSection({
   );
 }
 
+// ── card chrome ───────────────────────────────────────────────────────────
+
+function RateCard({
+  title,
+  image,
+  headerExtra,
+  summary,
+  footer,
+  children,
+}: {
+  title: string;
+  image?: { src: string; alt: string };
+  headerExtra?: ReactNode;
+  summary: ReactNode;
+  footer?: ReactNode;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(true);
+
+  return (
+    <div className="flex flex-col overflow-hidden rounded-xl border bg-card text-card-foreground">
+      {image ? (
+        <LandingImage src={image.src} alt={image.alt} className="h-32 w-full shrink-0" />
+      ) : null}
+
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-4">
+        <p className="min-w-0 truncate text-sm font-medium">{title}</p>
+        {headerExtra}
+      </div>
+
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="mt-3 flex items-center justify-between border-t px-5 py-3 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50"
+        aria-expanded={open}
+      >
+        {summary}
+        {open ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+      </button>
+
+      {open ? children : null}
+      {open && footer ? (
+        <p className="border-t px-5 py-3 text-xs text-muted-foreground">{footer}</p>
+      ) : null}
+    </div>
+  );
+}
+
+// ── cards view ────────────────────────────────────────────────────────────
+
+type HourLine = { days: string; text: string };
+
+/** One line per run of consecutive days sharing the same hours + rates. */
+function courtHourLines(hours: HourRow[], courtId: string): HourLine[] {
+  const perDay = MON_SUN.map((day) => {
+    const rows = hours
+      .filter((h) => h.courtId === courtId && h.dayOfWeek === day)
+      .sort((a, b) => a.openTime.localeCompare(b.openTime));
+    return rows
+      .map(
+        (r) =>
+          `${fmt12(r.openTime)}–${fmt12(r.closeTime)} · ${
+            r.amount === null ? "no rate yet" : `₱${r.amount}`
+          }`,
+      )
+      .join(", ");
+  });
+
+  const runs: { first: number; last: number; text: string; at: number }[] = [];
+  perDay.forEach((text, i) => {
+    if (text === "") return;
+    const day = MON_SUN[i] as number;
+    const last = runs[runs.length - 1];
+    if (last && last.text === text && last.at === i - 1) {
+      last.last = day;
+      last.at = i;
+    } else {
+      runs.push({ first: day, last: day, text, at: i });
+    }
+  });
+
+  return runs.map((r) => ({
+    days: r.first === r.last ? dayShort(r.first) : `${dayShort(r.first)}–${dayShort(r.last)}`,
+    text: r.text,
+  }));
+}
+
+function CardsView({
+  courts,
+  rules,
+  hours,
+}: {
+  courts: CourtRow[];
+  rules: PricingRuleRow[];
+  hours: HourRow[];
+}) {
+  const router = useRouter();
+  const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const [editing, setEditing] = useState<CourtRow | null>(null);
+
+  const rentalRules = useMemo(
+    () =>
+      rules
+        .filter((r) => r.itemType === "paddle" || r.itemType === "ball")
+        .sort((a, b) => a.itemType.localeCompare(b.itemType)),
+    [rules],
+  );
+
+  const changeAmount = (draftKey: string, val: string) =>
+    setAmounts((m) => ({ ...m, [draftKey]: val }));
+
+  const rentalDirty = rentalRules.filter((r) => {
+    const draft = amounts[`global|${r.id}`];
+    return draft !== undefined && draft.trim() !== r.amount;
+  }).length;
+
+  async function saveRental(rule: PricingRuleRow, draftKey: string) {
+    const amount = (amounts[draftKey] ?? rule.amount).trim();
+    if (amount === rule.amount) {
+      toast.info("No change to save.");
+      return;
+    }
+    setBusy(draftKey);
+    try {
+      const res = await fetch(`/api/admin/pricing/${rule.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ amount }),
+      });
+      const data = (await res.json()) as { error?: { message?: string } };
+      if (!res.ok) {
+        toast.error(data.error?.message ?? "Pricing update failed.");
+        return;
+      }
+      // Clear the draft so it no longer shows as dirty
+      setAmounts((m) => {
+        const next = { ...m };
+        delete next[draftKey];
+        return next;
+      });
+      toast.success(`Rate updated to ₱${parseFloat(amount).toFixed(2)}.`);
+      router.refresh();
+    } catch {
+      toast.error("Request failed.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function flip(court: CourtRow) {
+    const next = court.status === "active" ? "inactive" : "active";
+    setBusy(court.id);
+    try {
+      const res = await fetch(`/api/admin/courts/${court.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: next }),
+      });
+      const data = (await res.json()) as { error?: { message?: string } };
+      if (!res.ok) {
+        toast.error(data.error?.message ?? "Court update failed.");
+        return;
+      }
+      toast.success(next === "active" ? "Court activated." : "Court deactivated.");
+      router.refresh();
+    } catch {
+      toast.error("Request failed.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="space-y-8">
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-sm font-medium">Courts</h2>
+          <p className="text-xs text-muted-foreground">
+            Each row sets a court's hours and rate for one day. Inactive courts
+            are hidden from booking but retain all history.
+          </p>
+        </div>
+
+        {courts.length > 0 ? (
+          <div className="grid items-start gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+            {courts.map((court, i) => {
+              const lines = courtHourLines(hours, court.id);
+
+              return (
+                <RateCard
+                  key={court.id}
+                  title={court.name}
+                  image={{
+                    src: `/images/court-${(i % 2) + 1}.jpg`,
+                    alt: `${court.name} photo`,
+                  }}
+                  headerExtra={
+                    <>
+                      <CourtStatusBadge status={court.status} />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={busy !== null}
+                        onClick={() => flip(court)}
+                      >
+                        {busy === court.id
+                          ? "Saving…"
+                          : court.status === "active"
+                            ? "Deactivate"
+                            : "Activate"}
+                      </Button>
+                    </>
+                  }
+                  summary={
+                    <span className="line-clamp-2">
+                      {lines.length > 0
+                        ? lines.map((l) => `${l.days} ${l.text}`).join(" · ")
+                        : "No open hours yet"}
+                    </span>
+                  }
+                >
+                  <div className="space-y-2 border-t px-5 py-4">
+                    {lines.length > 0 ? (
+                      <div className="space-y-1.5">
+                        {lines.map((line, j) => (
+                          <p key={`${line.days}-${j}`} className="text-sm">
+                            <span className="font-medium">{line.days}</span>
+                            <span className="text-muted-foreground"> {line.text}</span>
+                          </p>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        No open hours yet — click Edit to add.
+                      </p>
+                    )}
+
+                    <div className="flex justify-end">
+                      <Button variant="outline" size="sm" onClick={() => setEditing(court)}>
+                        Edit
+                      </Button>
+                    </div>
+                  </div>
+                </RateCard>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+            No courts found.
+          </p>
+        )}
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-sm font-medium">Paddle &amp; ball</h2>
+          <p className="text-xs text-muted-foreground">
+            Prices paddle/ball rental per booked hour.
+          </p>
+        </div>
+
+        <div className="grid items-start gap-4 lg:grid-cols-2">
+          <RateCard
+            title="Paddle & ball"
+            summary={
+              <span>
+                {rentalRules.length} rate{rentalRules.length !== 1 ? "s" : ""}
+                {rentalDirty > 0 ? (
+                  <span className="ml-2 font-medium text-foreground">
+                    {rentalDirty} unsaved
+                  </span>
+                ) : null}
+              </span>
+            }
+          >
+            {rentalRules.length > 0 ? (
+              <div className="space-y-2 px-5 pb-5">
+                {rentalRules.map((rule) => {
+                  const draftKey = `global|${rule.id}`;
+                  const scoped = rule.dayType !== "all" || rule.timeBand !== "all";
+                  return (
+                    <div
+                      key={rule.id}
+                      className="flex items-center justify-between gap-3 rounded-lg border px-4 py-3"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium">{labelFor(rule.itemType)}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {labelFor(rule.unit)}
+                          {scoped
+                            ? ` · ${labelFor(rule.dayType)} ${labelFor(rule.timeBand)}`
+                            : ""}
+                        </p>
+                      </div>
+                      <AmountField
+                        label={labelFor(rule.timeBand)}
+                        amount={rule.amount}
+                        draft={amounts[draftKey]}
+                        busy={busy === draftKey}
+                        onChange={(val) => changeAmount(draftKey, val)}
+                        onSave={() => saveRental(rule, draftKey)}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="px-5 pb-5 text-xs text-muted-foreground">
+                No paddle or ball rates found.
+              </p>
+            )}
+          </RateCard>
+        </div>
+      </section>
+
+      {editing ? (
+        <EditCourtModal
+          court={editing}
+          hours={hours}
+          onClose={() => setEditing(null)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 // ── root export ───────────────────────────────────────────────────────────
 
 export default function HoursManager({
-  initialHours,
-  initialClosures,
+  hours,
+  closures,
   courts,
+  rules,
 }: {
-  initialHours: HoursRow[];
-  initialClosures: ClosureRow[];
+  hours: HourRow[];
+  closures: ClosureRow[];
   courts: CourtRow[];
+  rules: PricingRuleRow[];
 }) {
   return (
     <div className="space-y-10">
-      <HoursSection initialHours={initialHours} courts={courts} />
+      <CardsView courts={courts} rules={rules} hours={hours} />
+
       <div className="border-t" />
-      <ClosuresSection initialClosures={initialClosures} courts={courts} />
+      <ClosuresSection initialClosures={closures} courts={courts} />
     </div>
   );
 }
