@@ -529,7 +529,7 @@ export function BookingSummaryMobile({ data, advance }: { data: SummaryData; adv
           )}
         >
           {/* Pill row — tap the left side to expand, the right-side CTA advances the step */}
-          <div className="flex items-center gap-2 py-2 pl-3 pr-2">
+          <div className="flex items-center gap-1.5 py-2 pl-3 pr-2">
             <button
               type="button"
               onClick={() => setOpen((o) => !o)}
@@ -599,9 +599,9 @@ export function BookingSummaryMobile({ data, advance }: { data: SummaryData; adv
               <button
                 type="button"
                 onClick={clearSlots}
-                className="inline-flex min-h-[40px] shrink-0 items-center justify-center gap-1 rounded-xl border border-line-warm/70 bg-white px-2.5 text-xs font-bold text-warm-muted transition-all hover:bg-oat hover:text-ink"
+                className="inline-flex min-h-[36px] shrink-0 items-center justify-center gap-0.5 rounded-xl border border-line-warm/70 bg-white px-2 text-[11px] font-bold text-warm-muted transition-all hover:bg-oat hover:text-ink"
               >
-                <X className="size-3.5" aria-hidden />
+                <X className="size-3" aria-hidden />
                 <span>Clear</span>
               </button>
             )}
@@ -613,10 +613,19 @@ export function BookingSummaryMobile({ data, advance }: { data: SummaryData; adv
                 type="button"
                 onClick={() => document.getElementById(advance.targetId)?.click()}
                 disabled={advance.disabled}
-                className="inline-flex min-h-[40px] shrink-0 items-center justify-center gap-1 rounded-xl bg-flame px-3 text-xs font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
+                aria-label={advance.label}
+                className="inline-flex min-h-[36px] shrink-0 items-center justify-center gap-0.5 rounded-xl bg-flame px-2 text-[11px] font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
               >
-                <span>{advance.label}</span>
-                <ArrowRight className="size-3.5" aria-hidden />
+                <span>{
+                  advance.label === "Continue to Details"
+                    ? "Details"
+                    : advance.label === "Submit Booking"
+                      ? "Submit"
+                      : advance.label === "Payment"
+                        ? "Pay"
+                        : advance.label
+                }</span>
+                <ArrowRight className="size-3" aria-hidden />
               </button>
             )}
           </div>

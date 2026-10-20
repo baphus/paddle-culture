@@ -16,7 +16,6 @@ import { MAX_SLOTS_PER_BOOKING } from "@/lib/booking/constants";
 import { clearDraft } from "@/lib/booking/draft";
 import { slotsForDate } from "@/lib/booking/slots";
 import {
-  addDaysManilaStr,
   daysInManilaMonth,
   firstWeekdayManila,
   formatManilaLong,
@@ -716,14 +715,6 @@ export default function Step1DateTime({
     setPanel((panel - 1) as Panel);
   }
 
-  // Shift selected date by +/- days — stay on the time grid
-  function shiftDate(dir: 1 | -1) {
-    if (!selectedDate) return;
-    const next = addDaysManilaStr(selectedDate, dir);
-    if (next < earliestStr || next > maxStr) return;
-    pickDate(next, true);
-  }
-
   const weekRows = useMemo<Array<Array<{ key: string; dateStr: string | null }>>>(() => {
     const cells: Array<{ key: string; dateStr: string | null }> = [];
     for (let i = 0; i < leadBlanks; i++) cells.push({ key: `blank-${i}`, dateStr: null });
@@ -748,14 +739,6 @@ export default function Step1DateTime({
     if (dateStr < earliestStr) return "past";
     return "open";
   }
-
-  const dateLabel = (() => {
-    if (!selectedDate) return "Pick a date";
-    const long = formatManilaLong(selectedDate);
-    if (selectedDate === todayStr) return `Today · ${long}`;
-    if (selectedDate === addDaysManilaStr(todayStr, 1)) return `Tomorrow · ${long}`;
-    return long;
-  })();
 
   const ctaDisabled = selected.length === 0 || holding || !!hold || courtIds.length === 0;
 
@@ -831,7 +814,7 @@ export default function Step1DateTime({
         </Dialog>
         {/* Sticky top bar */}
         <div className="sticky top-0 z-20 bg-cream border-b border-line-warm/60 shadow-sm">
-          <div className="flex items-center justify-between gap-3 px-4 py-3">
+          <div className="flex items-center justify-between gap-3 px-4 py-2">
             <button
               type="button"
               onClick={backToDates}
@@ -839,39 +822,6 @@ export default function Step1DateTime({
             >
               <ArrowLeft className="size-4" aria-hidden /> Back
             </button>
-
-            {/* Date navigator */}
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => shiftDate(-1)}
-                disabled={!selectedDate || selectedDate <= earliestStr}
-                aria-label="Previous day"
-                className="grid size-9 place-items-center rounded-lg border border-line-warm/60 text-warm-muted transition-colors hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <ChevronLeft className="size-4" aria-hidden />
-              </button>
-              <button
-                type="button"
-                onClick={backToDates}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-line-warm/60 bg-white px-3 py-1.5 text-xs font-bold text-ink hover:bg-oat transition-colors"
-              >
-                <span>{dateLabel}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => shiftDate(1)}
-                disabled={!selectedDate || selectedDate >= maxStr}
-                aria-label="Next day"
-                className="grid size-9 place-items-center rounded-lg border border-line-warm/60 text-ink transition-colors hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <ChevronRight className="size-4" aria-hidden />
-              </button>
-            </div>
-
-          </div>
-
-          <div className="flex justify-center border-t border-line-warm/40 px-4 py-2">
             {panelSteps()}
           </div>
 
@@ -1036,8 +986,8 @@ export default function Step1DateTime({
           )}
         </div>
 
-        {/* Bottom bar: selection summary + CTA — desktop only; on mobile the summary sheet owns the bottom */}
-        <div className="sticky bottom-0 z-20 hidden border-t border-line-warm/60 bg-white/95 px-4 py-3 lg:flex items-center justify-between gap-3">
+        {/* Main panel actions flow naturally after the time grid. */}
+        <div className="flex flex-col gap-2 border-t border-line-warm/60 bg-white/95 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-sm">
             {selected.length === 0 ? (
               <span className="text-warm-muted">Tap a cell to select a slot</span>
@@ -1047,15 +997,17 @@ export default function Step1DateTime({
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-end gap-2">
             {selected.length > 0 && (
               <button
                 type="button"
                 onClick={() => clearSelection()}
                 id="step1-clear"
-                className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl border border-line-warm/70 bg-white px-4 text-sm font-bold text-warm-muted transition-all hover:bg-oat hover:text-ink"
+                className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl border border-line-warm/70 bg-white px-3 text-sm font-bold text-warm-muted transition-all hover:bg-oat hover:text-ink sm:px-4"
               >
-                <X className="size-4" aria-hidden /> Clear slots
+                <X className="size-4" aria-hidden />
+                <span className="sm:hidden">Clear</span>
+                <span className="hidden sm:inline">Clear slots</span>
               </button>
             )}
             <button
@@ -1068,7 +1020,7 @@ export default function Step1DateTime({
               {holding ? (
                 <><LoadingAnimation size="compact" label="Holding slots" /> Holding…</>
               ) : hold ? (
-                <>Continue to Equipment <ArrowRight className="size-4" /></>
+                <><span className="sm:hidden">Gear</span><span className="hidden sm:inline">Continue to Equipment</span><ArrowRight className="size-4" /></>
               ) : (
                 <>Continue <ArrowRight className="size-4" /></>
               )}
