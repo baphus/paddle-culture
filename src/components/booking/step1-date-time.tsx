@@ -863,41 +863,6 @@ export default function Step1DateTime({
               </button>
             </div>
 
-            {/* Clear + CTA. The clear button mounts only when there is
-                something to clear, so the top bar keeps its width otherwise. */}
-            <div className="flex items-center gap-2">
-              {selected.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => clearSelection()}
-                  id="step1-clear"
-                  className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl border border-line-warm/70 bg-white px-3 text-sm font-bold text-warm-muted transition-all hover:bg-oat hover:text-ink"
-                >
-                  <X className="size-4" aria-hidden />
-                  <span>Clear</span>
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={handleContinueCta}
-                disabled={ctaDisabled}
-                className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-flame px-4 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
-              >
-                {holding ? (
-                  <LoadingAnimation size="compact" label="Holding slots" />
-                ) : (
-                  <>
-                    <span>Hold</span>
-                    {selected.length > 0 && (
-                      <span className="rounded-full bg-white/25 px-1.5 py-0.5 text-[11px] font-extrabold">
-                        {selected.length}
-                      </span>
-                    )}
-                    <ArrowRight className="size-4" aria-hidden />
-                  </>
-                )}
-              </button>
-            </div>
           </div>
 
           {/* Legend */}
@@ -1077,6 +1042,7 @@ export default function Step1DateTime({
               <button
                 type="button"
                 onClick={() => clearSelection()}
+                id="step1-clear"
                 className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl border border-line-warm/70 bg-white px-4 text-sm font-bold text-warm-muted transition-all hover:bg-oat hover:text-ink"
               >
                 <X className="size-4" aria-hidden /> Clear slots

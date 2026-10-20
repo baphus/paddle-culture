@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowRight,
   Calendar,
@@ -479,6 +480,9 @@ export function BookingSummaryDesktop({ data }: { data: SummaryData }) {
 
 export function BookingSummaryMobile({ data, advance }: { data: SummaryData; advance: SummaryAdvance | null }) {
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
   const { selectedDate, selectedSlots, courtNames, slotGroups, rates, paddleQty, ball, isHeld, holdDeadlineMs, canClearSlots } = data;
 
   const { courtTotal, paddleTotal, ballTotal, total, breakdown, rangeLabel, durationLabel } = useMemo(
@@ -501,8 +505,9 @@ export function BookingSummaryMobile({ data, advance }: { data: SummaryData; adv
 
   return (
     <>
-      {/* Backdrop. `m-0` opts out of the parent's `space-y-*`, which would otherwise
-          add 24px of margin and shrink this fixed box, leaving an undimmed strip. */}
+      {mounted && createPortal(
+        <>
+      {/* Backdrop for the expanded mobile summary. */}
       {open && (
         <div
           className="fixed inset-0 z-[60] m-0 bg-black/40 lg:hidden"
@@ -745,7 +750,11 @@ export function BookingSummaryMobile({ data, advance }: { data: SummaryData; adv
         </div>
       </div>
 
-      {/* Spacer */}
+        </>,
+        document.body,
+      )}
+
+      {/* Keep page content clear of the fixed mobile summary. */}
       <div className="h-24 lg:hidden" aria-hidden />
     </>
   );
