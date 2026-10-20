@@ -22,7 +22,7 @@ export default function TrackInput() {
       return;
     }
     if (!TRACKING_CODE_RE.test(code)) {
-      toast.error("Tracking codes are 5 characters — like AB3K7. Check your email.");
+      toast.error("Tracking codes are 5 characters, like AB3K7. Check your confirmation email.");
       return;
     }
     if (!cleanEmail) {
@@ -75,7 +75,7 @@ export default function TrackInput() {
         <button
           type="submit"
           disabled={busy || value.trim().length === 0}
-          className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-pine px-6 text-sm font-bold whitespace-nowrap text-white transition-all hover:-translate-y-0.5 hover:bg-pine-high disabled:opacity-50 disabled:cursor-not-allowed"
+          className="inline-flex h-12 shrink-0 box-border items-center justify-center gap-2 rounded-xl bg-pine py-3 pl-6 pr-8 text-sm font-bold whitespace-nowrap text-white transition-all hover:-translate-y-0.5 hover:bg-pine-high disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {busy ? (
             <>
@@ -85,7 +85,7 @@ export default function TrackInput() {
           ) : (
             <>
               <Search className="size-4" aria-hidden />
-              <span>View Booking</span>
+              <span>Find My Booking</span>
             </>
           )}
         </button>
@@ -106,8 +106,8 @@ export default function TrackInput() {
           className="h-12 w-full rounded-xl border border-line bg-oat/60 px-4 text-sm font-medium text-ink placeholder:text-warm-muted/60 focus:border-flame focus:outline-none"
         />
       </div>
-      <p className="mt-1.5 text-[11px] text-warm-muted/80">
-        5-character code and the email from your confirmation email
+      <p className="mt-2 text-xs leading-5 text-warm-muted/80">
+        Use both details from your booking: the 5-character code in your confirmation email and the same email address you booked with.
       </p>
     </form>
   );

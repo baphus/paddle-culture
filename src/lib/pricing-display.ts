@@ -62,6 +62,14 @@ export function peso(n: number): string {
   return `₱${formatAmount(n)}`;
 }
 
+/** Lowest configured court hourly rate, falling back when no schedule exists. */
+export function lowestCourtRate(rates: DisplayRates): number {
+  const configured = rates.courtRates
+    .map((rate) => rate.amount)
+    .filter((amount) => Number.isFinite(amount) && amount > 0);
+  return configured.length > 0 ? Math.min(...configured) : rates.morning;
+}
+
 function minutesOfWall(time: string): number {
   const [hour, minute] = time.split(":").map(Number);
   return (hour as number) * 60 + (minute as number);

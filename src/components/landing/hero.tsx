@@ -110,12 +110,6 @@ export default function Hero({
             no waiting — pick a time and show up ready.
           </p>
 
-          <p className="mt-4 text-sm font-bold text-white">
-            Court rates follow the hours configured for each court
-            <span className="ml-2 font-semibold text-pine-ink/70">
-              · Paddles &amp; balls for rent
-            </span>
-          </p>
 
           <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
             <a

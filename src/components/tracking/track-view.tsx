@@ -137,7 +137,7 @@ export default function TrackView({
         <div className="flex flex-col items-center gap-4 border-b border-line-warm/40 pb-6 text-center sm:flex-row sm:items-center sm:justify-between sm:text-left">
           <div>
             <span className="block text-xs font-bold tracking-wider text-warm-muted uppercase">
-              Booking Status
+              Booking status · {trackingCode}
             </span>
             <h1 className="mt-1 text-2xl font-black tracking-tight text-ink sm:text-3xl">
               Hello, {fullName}!
@@ -214,14 +214,16 @@ export default function TrackView({
             <span className="block text-xs font-bold tracking-wider text-warm-muted uppercase">
               Check-in Pass
             </span>
-            <h2 className="mt-0.5 text-lg font-bold text-ink">Your QR Code &amp; Tracking</h2>
+            <h2 className="mt-0.5 text-lg font-bold text-ink">Your check-in QR pass</h2>
           </div>
           <QrCode className="size-5 text-flame" />
         </div>
 
         <p className="mb-6 text-center text-xs leading-relaxed text-warm-muted sm:text-sm">
-          Show this QR code at the CK Grounds front desk on your game day for instant check-in.
-          You can also quote your tracking code to staff if you don&apos;t have your phone handy.
+          {status === "Approved"
+            ? "Your booking is confirmed. Show this QR code at the CK Grounds front desk on your game day to check in."
+            : "Keep this QR code for your records. Check your booking status above; show the QR at the front desk after your reservation is approved."}
+          {" "}If you cannot show the QR, staff can look up your booking with the tracking code.
         </p>
 
         <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-start">

@@ -22,8 +22,8 @@ export default function Rentals({ rates = FALLBACK_RATES }: { rates?: DisplayRat
       per: "booking (flat fee)",
       label: "Ball photo — drop /images/Pickleball.jpg here",
       blurb: "Official match balls, ready on court.",
-      metaLeft: "Unlimited match hours",
-      metaRight: `Fixed ${peso(rates.ball)} / session`,
+      metaLeft: "One-time session fee",
+      metaRight: `${peso(rates.ball)} / booking`,
     },
   ];
   return (

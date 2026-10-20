@@ -1,5 +1,10 @@
-import { ArrowRight, BadgeCheck } from "lucide-react";
-import { FALLBACK_RATES, peso, type DisplayRates } from "@/lib/pricing-display";
+import { ArrowRight } from "lucide-react";
+import {
+  FALLBACK_RATES,
+  lowestCourtRate,
+  peso,
+  type DisplayRates,
+} from "@/lib/pricing-display";
 import TrackInput from "./track-input";
 
 export default function BookTrack({ rates = FALLBACK_RATES }: { rates?: DisplayRates }) {
@@ -21,7 +26,7 @@ export default function BookTrack({ rates = FALLBACK_RATES }: { rates?: DisplayR
             </div>
             <div className="rounded-2xl border border-white/15 bg-white/10 p-4">
               <p className="text-xl font-black text-white">
-                From {peso(rates.morning)}
+                From {peso(lowestCourtRate(rates))}
                 <span className="text-sm font-bold text-white/70">/hr</span>
               </p>
               <p className="mt-1 text-[11px] leading-4 font-semibold text-white/70">
@@ -37,9 +42,9 @@ export default function BookTrack({ rates = FALLBACK_RATES }: { rates?: DisplayR
           </div>
 
           <div className="rounded-2xl bg-white p-6 text-ink sm:p-7" aria-label="View an existing booking">
-            <h3 className="text-xl font-black tracking-tight text-ink">View Your Booking</h3>
+            <h3 className="text-xl font-black tracking-tight text-ink">Track an Existing Booking</h3>
             <p className="mt-1 mb-4 text-sm leading-6 text-ink/70">
-              Enter the 5-character tracking code from your confirmation email to check your reservation status.
+              Check whether your payment is being verified or your reservation is confirmed. You’ll need your code and booking email.
             </p>
             <TrackInput />
           </div>

@@ -1,5 +1,10 @@
 import { ArrowRight, ArrowUpRight } from "lucide-react";
-import { FALLBACK_RATES, peso, type DisplayRates } from "@/lib/pricing-display";
+import {
+  FALLBACK_RATES,
+  lowestCourtRate,
+  peso,
+  type DisplayRates,
+} from "@/lib/pricing-display";
 import LandingImage from "./landing-image";
 
 const COURTS = [
@@ -16,7 +21,7 @@ const COURTS = [
 ];
 
 export default function Courts({ rates = FALLBACK_RATES }: { rates?: DisplayRates }) {
-  const from = `Starts from ${peso(rates.morning)}/hr`;
+  const from = `Starts from ${peso(lowestCourtRate(rates))}/hr`;
   return (
     <section id="courts" className="scroll-mt-20" aria-labelledby="courts-heading">
       <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:py-14">

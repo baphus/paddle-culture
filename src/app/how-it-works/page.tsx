@@ -207,7 +207,7 @@ export default async function HowItWorksPage() {
                 <Search className="size-4" aria-hidden /> Track Your Booking
               </p>
               <p className="mt-1 text-xs leading-5 text-white/70">
-                Already booked? Enter your code to check your status instantly.
+                Enter the 5-character code from your confirmation email and the email address used for the booking. We’ll show your status, court details, and QR pass.
               </p>
               <div className="mt-3">
                 <TrackInput />
