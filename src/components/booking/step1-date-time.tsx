@@ -88,17 +88,18 @@ function friendlyHoldError(code: string | undefined, fallback: string): string {
 
 /**
  * Release holds server-side. `keepalive` keeps the request alive across a
- * navigation, so a release fired just before leaving still lands. Failures are
- * swallowed — the 10-min TTL and the retention cron are the backstop.
+ * navigation, so a release fired just before leaving still lands. Callers
+ * choose whether to surface a failure or ignore it.
  */
-function releaseHoldTokens(tokens: string[]): void {
+async function releaseHoldTokens(tokens: string[]): Promise<void> {
   if (tokens.length === 0) return;
-  void fetch("/api/holds", {
+  const response = await fetch("/api/holds", {
     method: "DELETE",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ holdTokens: tokens }),
     keepalive: true,
-  }).catch(() => {});
+  });
+  if (!response.ok) throw new Error("Could not release your held slots.");
 }
 
 function cellState(slot: AvailabilitySlot): CellState {
@@ -301,7 +302,10 @@ export default function Step1DateTime({
     async (month: string, ids: string[], signal?: AbortSignal): Promise<MonthDays> => {
       const qs = new URLSearchParams({ month });
       for (const id of ids) qs.append("courtId", id);
-      const r = await fetch(`/api/availability/month?${qs.toString()}`, { signal });
+      const r = await fetch(`/api/availability/month?${qs.toString()}`, {
+        signal,
+        cache: "no-store",
+      });
       if (!r.ok) {
         let msg = "Could not load availability.";
         try {
@@ -421,7 +425,34 @@ export default function Step1DateTime({
   function goPanel(p: Panel) {
     if (p === 1 && !selectedDate) { toast.error("Pick a play date first."); return; }
     if (p === 2 && selected.length === 0) { toast.error("Pick at least 1 time slot first."); return; }
+    if (p < panel && hold) {
+      confirmBackNavigation(p);
+      return;
+    }
     setPanel(p);
+  }
+
+  function confirmBackNavigation(target: Panel) {
+    setReleaseConfirm({
+      message: "Going back releases your held slots and clears your selection. You can choose new slots afterward.",
+      confirmLabel: "Release hold & clear slots",
+      run: async () => {
+        try {
+          await releaseHoldTokens(hold?.tokens ?? []);
+        } catch {
+          toast.error("Could not release your held slots. Please try again.");
+          return;
+        }
+        // Availability is cached by month. Drop the cached snapshot only after
+        // the release has completed, then reload it from the server.
+        setMonthCache(new Map());
+        setRetryKey((key) => key + 1);
+        setHold(null);
+        setSelected([]);
+        onClearSelection?.();
+        setPanel(target);
+      },
+    });
   }
 
   function panelSteps() {
@@ -559,7 +590,7 @@ export default function Step1DateTime({
             if (b.error?.message) msg = b.error.message;
           } catch {}
           // A later group failed — free the holds this attempt already created.
-          releaseHoldTokens(allTokens);
+          void releaseHoldTokens(allTokens).catch(() => {});
           toast.error(friendlyHoldError(code, msg));
           return;
         }
@@ -629,7 +660,7 @@ export default function Step1DateTime({
   function applyDateChange(dateStr: string, stayOnTimeGrid: boolean) {
     const hadPicks = selected.length > 0;
     if (hold) {
-      releaseHoldTokens(hold.tokens);
+      void releaseHoldTokens(hold.tokens).catch(() => {});
       setHold(null);
       toast("Previous hold released — those slots are free again.");
     }
@@ -665,7 +696,7 @@ export default function Step1DateTime({
   /** End the attempt when the customer cancels. */
   function resetAll(next?: () => void) {
     if (hold) {
-      releaseHoldTokens(hold.tokens);
+      void releaseHoldTokens(hold.tokens).catch(() => {});
       setHold(null);
     }
     setSelected([]);
@@ -686,7 +717,7 @@ export default function Step1DateTime({
       return;
     }
     if (hold) {
-      releaseHoldTokens(hold.tokens);
+      void releaseHoldTokens(hold.tokens).catch(() => {});
       setHold(null);
     }
     setSelected([]);
@@ -705,14 +736,23 @@ export default function Step1DateTime({
     });
   }
 
-  /** Return to the date panel without changing the selected date or hold. */
+  /** Return to the date panel, confirming first if that releases a hold. */
   function backToDates() {
+    if (hold) {
+      confirmBackNavigation(0);
+      return;
+    }
     setPanel(0);
   }
 
-  /** Move to the previous panel without dropping the current selection or hold. */
+  /** Moving back after holding slots requires releasing the hold and clearing them. */
   function backPanel() {
-    setPanel((panel - 1) as Panel);
+    const target = (panel - 1) as Panel;
+    if (hold) {
+      confirmBackNavigation(target);
+      return;
+    }
+    setPanel(target);
   }
 
   const weekRows = useMemo<Array<Array<{ key: string; dateStr: string | null }>>>(() => {
@@ -748,7 +788,7 @@ export default function Step1DateTime({
 
   // ── Render ─────────────────────────────────────────────────────────
 
-  // Shared confirmation for actions that release the hold (date change, cancel)
+  // Shared confirmation for actions that release the hold.
   const releaseDialog = (
     <Dialog
       open={releaseConfirm !== null}
