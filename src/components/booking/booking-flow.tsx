@@ -21,13 +21,6 @@ import DetailsForm, { type DetailsValues } from "./details-form";
 import PaymentStep from "./payment-step";
 import Step1DateTime, { type HoldState } from "./step1-date-time";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import {
   BookingSummaryDesktop,
   BookingSummaryMobile,
   type SummaryAdvance,
@@ -165,7 +158,6 @@ export default function BookingFlow({
   // Wizard state
   const [step, setStep] = useState<Step>(restoredStep);
   const [hold, setHold] = useState<HoldState | null>(restoredDraft?.hold ?? null);
-  const [confirmBack, setConfirmBack] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(
     restoredDraft?.selectedDate ?? null,
   );
@@ -456,19 +448,9 @@ export default function BookingFlow({
     }).catch(() => {});
   }, []);
 
-  // Going back to step 1 releases the hold — confirm first, then await the
-  // release so the remounted step-1 availability read can't race it.
-  const returnToTimeSlots = useCallback(() => {
-    if (!hold) {
-      setStep("select");
-      window.scrollTo({ top: 0, behavior: "smooth" });
-      return;
-    }
-    setConfirmBack(true);
-  }, [hold]);
-
-  const confirmReturnToTimeSlots = useCallback(async () => {
-    setConfirmBack(false);
+  // Returning from details releases the hold silently before remounting
+  // step 1, so its availability read can't race the release.
+  const returnToTimeSlots = useCallback(async () => {
     if (hold) {
       try {
         await fetch("/api/holds", {
@@ -561,7 +543,13 @@ export default function BookingFlow({
             const isLast = idx === STEPS_LOCAL.length - 1;
 
             return (
-              <div key={s.id} className="relative flex flex-1 flex-col items-center">
+              <button
+                type="button"
+                disabled
+                key={s.id}
+                aria-current={isCurrent ? "step" : undefined}
+                className="relative flex flex-1 cursor-not-allowed flex-col items-center select-none disabled:opacity-100"
+              >
                 {/* Connector line */}
                 {!isLast && (
                   <div
@@ -574,7 +562,6 @@ export default function BookingFlow({
                 )}
                 {/* Circle */}
                 <div
-                  aria-current={isCurrent ? "step" : undefined}
                   className={cn(
                     "relative z-10 flex size-10 items-center justify-center rounded-full border-2 transition-all",
                     isCurrent
@@ -599,7 +586,7 @@ export default function BookingFlow({
                 >
                   {s.label}
                 </span>
-              </div>
+              </button>
             );
           })}
         </div>
@@ -749,25 +736,6 @@ export default function BookingFlow({
         />
       )}
 
-      <Dialog open={confirmBack} onOpenChange={(open) => { if (!open) setConfirmBack(false); }}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogTitle>Release your hold?</DialogTitle>
-          <DialogDescription>
-            Going back to pick times releases your current hold — you&apos;ll need to select those slots again.
-          </DialogDescription>
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button variant="outline" onClick={() => setConfirmBack(false)}>
-              Stay
-            </Button>
-            <Button
-              className="bg-flame text-white hover:bg-flame-hover"
-              onClick={() => void confirmReturnToTimeSlots()}
-            >
-              Release &amp; go back
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

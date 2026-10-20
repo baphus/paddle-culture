@@ -29,7 +29,7 @@ import {
   type CourtOption,
   type CourtSlotGroup,
 } from "@/lib/courts";
-import { courtRateForSlot, courtRateLabel, FALLBACK_RATES, peso, type DisplayRates } from "@/lib/pricing-display";
+import { calculatePaddleRentalTotal, courtRateForSlot, courtRateLabel, FALLBACK_RATES, peso, type DisplayRates } from "@/lib/pricing-display";
 import Image from "next/image";
 import LandingImage from "@/components/landing/landing-image";
 import {
@@ -236,7 +236,7 @@ export default function Step1DateTime({
   });
   const [hold, setHold] = useState<HoldState | null>(existingHold ?? null);
   const [holding, setHolding] = useState(false);
-  // Confirmation before an action that releases the hold (date change, cancel)
+  // Confirmation only when changing the date would release an active hold.
   const [releaseConfirm, setReleaseConfirm] = useState<{
     message: string;
     confirmLabel: string;
@@ -423,6 +423,42 @@ export default function Step1DateTime({
     if (p === 1 && !selectedDate) { toast.error("Pick a play date first."); return; }
     if (p === 2 && selected.length === 0) { toast.error("Pick at least 1 time slot first."); return; }
     setPanel(p);
+  }
+
+  function panelSteps() {
+    return (
+      <nav aria-label="Booking steps" className="flex shrink-0 items-center gap-1.5">
+        {([0, 1, 2] as const).map((i) => (
+          <button
+            key={i}
+            type="button"
+            onClick={() => goPanel(i)}
+            aria-current={panel === i ? "step" : undefined}
+            aria-label={
+              i === 0 ? "Step 1: pick a date" :
+              i === 1 ? "Step 2: pick times" :
+              "Step 3: equipment"
+            }
+            className={cn(
+              "inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 rounded-full px-2.5 text-xs font-bold transition-all",
+              panel === i
+                ? "bg-flame text-white shadow-sm"
+                : "border border-line-warm/60 bg-white text-warm-muted hover:border-flame/50 hover:text-ink",
+            )}
+          >
+            <span
+              className={cn(
+                "grid size-5 place-items-center rounded-full text-[11px] font-black",
+                panel === i ? "bg-white/25 text-white" : "bg-oat text-pine",
+              )}
+            >
+              {i + 1}
+            </span>
+            <span className="hidden sm:inline">{i === 0 ? "Date" : i === 1 ? "Time" : "Gear"}</span>
+          </button>
+        ))}
+      </nav>
+    );
   }
 
   // Slot state for a given court+slot combination
@@ -627,37 +663,18 @@ export default function Step1DateTime({
     applyDateChange(dateStr, stayOnTimeGrid);
   }
 
-  /**
-   * End the attempt in this step. Backing out of any step is a fresh start:
-   * the hold is released (asking first, since that gives the slots away), and
-   * the picks, the date, the equipment and the parent's summary all go.
-   *
-   * Going *back* is the customer saying "not this after all", so leaving the
-   * summary populated would offer to book hours they just walked away from.
-   */
+  /** End the attempt when the customer cancels. */
   function resetAll(next?: () => void) {
-    const run = () => {
-      setSelected([]);
-      setSelectedDate(null);
-      setPaddleQty(0);
-      setBall(false);
-      onClearSelection?.();
-      next?.();
-    };
     if (hold) {
-      setReleaseConfirm({
-        message:
-          "Going back releases your hold — those slots go back on sale and your picks are cleared.",
-        confirmLabel: "Release hold & go back",
-        run: () => {
-          releaseHoldTokens(hold.tokens);
-          setHold(null);
-          run();
-        },
-      });
-      return;
+      releaseHoldTokens(hold.tokens);
+      setHold(null);
     }
-    run();
+    setSelected([]);
+    setSelectedDate(null);
+    setPaddleQty(0);
+    setBall(false);
+    onClearSelection?.();
+    next?.();
   }
 
   /**
@@ -670,19 +687,8 @@ export default function Step1DateTime({
       return;
     }
     if (hold) {
-      setReleaseConfirm({
-        message:
-          "Clearing these slots releases your hold — they go back on sale and you'll need to pick them again.",
-        confirmLabel: "Release hold & clear",
-        run: () => {
-          releaseHoldTokens(hold.tokens);
-          setHold(null);
-          setSelected([]);
-          onClearSelection?.();
-          next?.();
-        },
-      });
-      return;
+      releaseHoldTokens(hold.tokens);
+      setHold(null);
     }
     setSelected([]);
     onClearSelection?.();
@@ -700,14 +706,14 @@ export default function Step1DateTime({
     });
   }
 
-  /** Back out of the time grid to the date panel — starts the attempt over. */
+  /** Return to the date panel without changing the selected date or hold. */
   function backToDates() {
-    resetAll(() => setPanel(0));
+    setPanel(0);
   }
 
-  /** The card's Back button — from equipment, or from the date panel itself. */
+  /** Move to the previous panel without dropping the current selection or hold. */
   function backPanel() {
-    resetAll(() => setPanel((panel - 1) as Panel));
+    setPanel((panel - 1) as Panel);
   }
 
   // Shift selected date by +/- days — stay on the time grid
@@ -863,6 +869,10 @@ export default function Step1DateTime({
               </button>
             </div>
 
+          </div>
+
+          <div className="flex justify-center border-t border-line-warm/40 px-4 py-2">
+            {panelSteps()}
           </div>
 
           {/* Legend */}
@@ -1086,39 +1096,7 @@ export default function Step1DateTime({
                 : "Pick your times"}
           </h1>
           {/* Step dots */}
-          <nav aria-label="Booking steps" className="flex shrink-0 items-center gap-1.5">
-            {([0, 1, 2] as const).map((i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={() => goPanel(i)}
-                aria-current={panel === i ? "step" : undefined}
-                aria-label={
-                  i === 0 ? "Step 1: pick a date" :
-                  i === 1 ? "Step 2: pick times" :
-                  "Step 3: equipment"
-                }
-                className={cn(
-                  "inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 rounded-full px-2.5 text-xs font-bold transition-all",
-                  panel === i
-                    ? "bg-flame text-white shadow-sm"
-                    : "border border-line-warm/60 bg-white text-warm-muted hover:border-flame/50 hover:text-ink",
-                )}
-              >
-                <span
-                  className={cn(
-                    "grid size-5 place-items-center rounded-full text-[11px] font-black",
-                    panel === i ? "bg-white/25 text-white" : "bg-oat text-pine",
-                  )}
-                >
-                  {i + 1}
-                </span>
-                <span className="hidden sm:inline">
-                  {i === 0 ? "Date" : i === 1 ? "Time" : "Gear"}
-                </span>
-              </button>
-            ))}
-          </nav>
+          {panelSteps()}
         </div>
         <div
           className="mt-3 h-1.5 overflow-hidden rounded-full bg-oat"
@@ -1272,7 +1250,7 @@ export default function Step1DateTime({
               <div className="rounded-2xl border border-line-warm/60 bg-cream/40 p-4 sm:p-5">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-3.5">
-                    <div className="relative size-16 shrink-0 overflow-hidden rounded-xl border border-line-warm/60 bg-gradient-to-br from-oat via-cream to-flame-light sm:size-20">
+                    <div className="relative size-12 shrink-0 overflow-hidden rounded-lg border border-line-warm/60 bg-gradient-to-br from-oat via-cream to-flame-light sm:size-20 sm:rounded-xl">
                       <Image
                         src="/images/paddle.jpg"
                         alt="Paddle rental"
@@ -1284,33 +1262,43 @@ export default function Step1DateTime({
                     </div>
                     <div>
                       <span className="block text-sm font-bold text-ink">Paddle Rentals</span>
-                      <span className="block text-xs text-warm-muted">
-                        {peso(rates.paddle)} per paddle per hour · High-grade carbon fiber paddles
+                      <span className="mt-1 inline-flex rounded-full bg-flame/10 px-2.5 py-0.5 text-xs font-extrabold text-flame">
+                        {peso(rates.paddle)} / paddle / hour
+                      </span>
+                      <span className="mt-1 block text-[11px] text-warm-muted">
+                        High-grade carbon fiber paddles
                       </span>
                       {paddleQty > 0 && selectedSorted.length > 0 && (
                         <span className="mt-1 block text-xs font-bold text-flame">
-                          = {peso(paddleQty * selectedSorted.length * rates.paddle)} total
+                          = {peso(calculatePaddleRentalTotal(rates.paddle, paddleQty, selectedSorted.length))} total
                         </span>
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 self-start sm:self-auto">
+                    <label htmlFor="paddle-quantity" className="text-xs font-semibold text-warm-muted">Quantity</label>
                     <button
                       type="button"
-                      onClick={() => setPaddleQty((q) => Math.max(0, q - 1))}
+                      onClick={() => setPaddleQty((quantity) => Math.max(0, quantity - 1))}
                       disabled={paddleQty <= 0}
-                      className="flex size-10 items-center justify-center rounded-xl border border-line-warm bg-white text-base font-bold text-ink transition-all hover:bg-cream disabled:opacity-40"
-                      aria-label="Decrease paddles"
+                      aria-label="Decrease paddle quantity"
+                      className="grid size-11 place-items-center rounded-xl border border-line-warm bg-white text-lg font-bold text-ink disabled:opacity-40"
                     >
                       −
                     </button>
-                    <span className="min-w-8 text-center text-base font-extrabold text-ink">{paddleQty}</span>
+                    <input id="paddle-quantity" type="number" inputMode="numeric" min={0} max={50} step={1} value={paddleQty}
+                      onChange={(event) => {
+                        const value = event.currentTarget.valueAsNumber;
+                        if (Number.isFinite(value)) setPaddleQty(Math.min(50, Math.max(0, Math.floor(value))));
+                        else if (event.currentTarget.value === "") setPaddleQty(0);
+                      }}
+                      className="h-11 w-20 rounded-xl border border-line-warm bg-white px-2 text-center text-base font-bold text-ink" />
                     <button
                       type="button"
-                      onClick={() => setPaddleQty((q) => Math.min(50, q + 1))}
+                      onClick={() => setPaddleQty((quantity) => Math.min(50, quantity + 1))}
                       disabled={paddleQty >= 50}
-                      className="flex size-10 items-center justify-center rounded-xl border border-line-warm bg-white text-base font-bold text-ink transition-all hover:bg-cream disabled:opacity-40"
-                      aria-label="Increase paddles"
+                      aria-label="Increase paddle quantity"
+                      className="grid size-11 place-items-center rounded-xl border border-line-warm bg-white text-lg font-bold text-ink disabled:opacity-40"
                     >
                       +
                     </button>
@@ -1326,7 +1314,7 @@ export default function Step1DateTime({
                   ball ? "border-flame bg-flame-light/30 shadow-xs" : "border-line-warm/60 bg-cream/40 hover:bg-cream/70",
                 )}
               >
-                <div className="relative size-16 shrink-0 overflow-hidden rounded-xl border border-line-warm/60 bg-gradient-to-br from-oat via-cream to-flame-light sm:size-20">
+                <div className="relative size-12 shrink-0 overflow-hidden rounded-lg border border-line-warm/60 bg-gradient-to-br from-oat via-cream to-flame-light sm:size-20 sm:rounded-xl">
                   <Image
                     src="/images/Pickleball.jpg"
                     alt="Ball set"
@@ -1338,13 +1326,13 @@ export default function Step1DateTime({
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-bold text-ink">Add Pickleball Ball Set</span>
-                    <span className="rounded-full bg-flame/10 px-2.5 py-0.5 text-xs font-extrabold text-flame">
-                      +{peso(rates.ball)} flat
+                    <span className="text-sm font-bold text-ink">Pickleball Balls</span>
+                    <span className="shrink-0 rounded-full bg-flame/10 px-2.5 py-0.5 text-xs font-extrabold text-flame">
+                      {peso(rates.ball)} / booking
                     </span>
                   </div>
                   <p className="mt-1 text-xs text-warm-muted">
-                    One-time fee per booking. Official tournament-grade outdoor pickleball balls.
+                    One-time rental fee per booking. Official tournament-grade outdoor pickleball balls.
                   </p>
                 </div>
                 <input
