@@ -24,7 +24,7 @@ import type { HoldState } from "@/components/booking/step1-date-time";
 
 const DRAFT_KEY = "pc.booking.draft.v1";
 
-export type DraftStep = "select" | "details" | "payment";
+export type DraftStep = "select" | "details" | "review" | "payment";
 
 export interface BookingDraft {
   /** Bumped whenever the shape changes; older drafts are discarded. */

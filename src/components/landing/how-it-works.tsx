@@ -1,9 +1,10 @@
 import {
   CalendarCheck,
+  ClipboardCheck,
   Package,
   ReceiptText,
   QrCode,
-  MapPinned,
+  UserRound,
 } from "lucide-react";
 import { FALLBACK_RATES, peso, type DisplayRates } from "@/lib/pricing-display";
 
@@ -23,21 +24,27 @@ export default function HowItWorks({ rates = FALLBACK_RATES }: { rates?: Display
     },
     {
       n: "03",
-      icon: ReceiptText,
-      title: "Pay & Upload Proof",
-      blurb: "Pay via GCash, BDO, or BPI and upload proof of payment.",
+      icon: UserRound,
+      title: "Add Your Details",
+      blurb: "Enter your name, email, and phone so we can send your booking confirmation and QR pass.",
     },
     {
       n: "04",
-      icon: QrCode,
-      title: "Payment Review & Tracking QR",
-      blurb: "Receive your tracking QR code instantly by email while our team verifies payment.",
+      icon: ClipboardCheck,
+      title: "Review Your Booking",
+      blurb: "Check your courts, schedule, gear, contact details, and full total before payment.",
     },
     {
       n: "05",
-      icon: MapPinned,
-      title: "Check-in & Venue Arrival",
-      blurb: "Once approved, present that same QR pass at the desk when you arrive at court.",
+      icon: ReceiptText,
+      title: "Pay & Upload Proof",
+      blurb: "Pay via GCash, BDO, or BPI and upload your receipt before the 10-minute hold ends.",
+    },
+    {
+      n: "06",
+      icon: QrCode,
+      title: "Get Your QR Pass & Play",
+      blurb: "Your pass arrives on screen and by email after submission. Once payment is approved, show it at check-in.",
     },
   ];
 
@@ -52,11 +59,11 @@ export default function HowItWorks({ rates = FALLBACK_RATES }: { rates?: Display
             How It Works
           </h2>
           <p className="text-sm leading-6 text-ink/70 sm:text-base">
-            Seamless court reservation in 5 straightforward steps.
+            Seamless court reservation in 6 straightforward steps. Review everything before you pay.
           </p>
         </div>
 
-        <ol className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <ol className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {STEPS.map((s) => (
             <li
               key={s.n}

@@ -587,7 +587,7 @@ export default function PaymentStep({
           className="inline-flex min-h-[48px] items-center gap-2 rounded-xl border border-line-warm/70 bg-white px-5 text-sm font-bold text-pine transition-all hover:bg-cream active:scale-[0.99] disabled:opacity-50"
         >
           <ArrowLeft className="size-4" />
-          <span>Back to Details</span>
+          <span>Back to Review</span>
         </button>
 
         <button

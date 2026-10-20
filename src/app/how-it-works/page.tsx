@@ -1,4 +1,4 @@
-import { ArrowRight, BadgeCheck, ChevronDown, Mail, MapPin, Search } from "lucide-react";
+import { ArrowRight, BadgeCheck, ChevronDown, Mail, Search } from "lucide-react";
 import { getDb } from "@/db/client";
 import { FALLBACK_RATES, getDisplayRates, peso, type DisplayRates } from "@/lib/pricing-display";
 import Header from "@/components/landing/header";
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export const metadata = {
   title: "How It Works — CK Grounds",
   description:
-    "Book a pickleball court in five steps: pick hours, add gear, hold your slots, pay with proof, then track and play. No account needed.",
+    "Book a pickleball court in six steps: choose a time, add gear, enter your details, review your booking, pay, then get your QR pass. No account needed.",
 };
 
 // Same fail-soft pattern as src/app/page.tsx: live pricing via lazy getDb(),
@@ -29,7 +29,7 @@ export default async function HowItWorksPage() {
   const faqs = [
     {
       q: "Do I need an account to book?",
-      a: "No. Pick your hours, hold them for 10 minutes, add your name + contact, pay by QR and upload proof. Your QR pass arrives by email instantly.",
+      a: "No. Pick your hours, add optional gear, enter your contact details, and review your full booking and total before paying by QR and uploading proof. Your QR pass arrives by email instantly.",
     },
     {
       q: "How do holds and payment work?",
@@ -56,7 +56,7 @@ export default async function HowItWorksPage() {
         {/* Hero — centered */}
         <section className="mx-auto w-full max-w-[1100px] px-4 pt-12 pb-8 text-center sm:px-6" aria-labelledby="hiw-heading">
           <p className="inline-block rounded-full bg-flame-light px-4 py-1.5 text-[11px] font-extrabold tracking-[0.14em] text-flame uppercase">
-            Simple 5-step process
+            Simple 6-step process
           </p>
           <h1
             id="hiw-heading"
@@ -66,11 +66,11 @@ export default async function HowItWorksPage() {
           </h1>
           <p className="mx-auto mt-3 max-w-xl text-base leading-7 text-warm-muted">
             No account, no downloads, no group-chat haggling.
-            Five quick steps stand between you and first serve.
+            Six quick steps stand between you and first serve. Review your full booking before you pay.
           </p>
         </section>
 
-        {/* Cards — row1: 3 equal; row2: 04 (1/3) + 05 (2/3) */}
+        {/* Six steps shown in two rows of three on large screens. */}
         <section className="mx-auto w-full max-w-[1100px] px-4 pb-4 sm:px-6" aria-label="Booking steps">
           <ol className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
             {/* 01 */}
@@ -124,18 +124,17 @@ export default async function HowItWorksPage() {
                   Step 3
                 </span>
               </div>
-              <h2 className="mt-5 text-xl font-bold text-pine">Pay & Upload Proof</h2>
+              <h2 className="mt-5 text-xl font-bold text-pine">Add Your Details</h2>
               <p className="mt-2 flex-1 text-sm leading-relaxed text-warm-muted">
-                Pay by QR, then upload your receipt (JPG/PNG/WebP, ≤5MB) before your 10-minute
-                hold ends. No proof, no booking — fair for everyone.
+                Enter your name, email, and phone number so we can send your confirmation and QR pass.
               </p>
               <p className="mt-5 flex items-center gap-1.5 border-t border-line pt-4 text-[13px] font-bold text-pine">
                 <BadgeCheck className="size-4 shrink-0 text-flame" aria-hidden />
-                GCash • BDO • BPI Accepted
+                No account needed
               </p>
             </li>
 
-            {/* 04 — 1/3 width */}
+            {/* 04 */}
             <li className="flex flex-col rounded-2xl border border-line bg-white p-7 shadow-sm">
               <div className="flex items-center justify-between">
                 <span className="grid size-12 place-items-center rounded-full bg-flame text-lg font-extrabold text-white" aria-hidden>
@@ -145,38 +144,55 @@ export default async function HowItWorksPage() {
                   Step 4
                 </span>
               </div>
-              <h2 className="mt-5 text-xl font-bold text-pine">Receive Your QR Pass</h2>
+              <h2 className="mt-5 text-xl font-bold text-pine">Review Your Booking</h2>
               <p className="mt-2 flex-1 text-sm leading-relaxed text-warm-muted">
-                Your QR pass lands instantly — on screen and by email. Scan it at the front desk
-                for fast check-in on your game day.
+                Check your court, date, times, gear, contact details, and complete total before moving to payment.
               </p>
               <p className="mt-5 flex items-center gap-1.5 border-t border-line pt-4 text-[13px] font-bold text-pine">
-                <Mail className="size-4 shrink-0 text-flame" aria-hidden />
-                Instant on-screen + email pass
+                Edit your details before paying
               </p>
             </li>
 
-            {/* 05 — 2/3 width, dark-green number */}
-            <li className="flex flex-col rounded-2xl border border-line bg-white p-7 shadow-sm md:col-span-2 lg:col-span-2">
+            {/* 05 */}
+            <li className="flex flex-col rounded-2xl border border-line bg-white p-7 shadow-sm">
               <div className="flex items-center justify-between">
-                <span className="grid size-12 place-items-center rounded-full bg-pine text-lg font-extrabold text-white" aria-hidden>
+                <span className="grid size-12 place-items-center rounded-full bg-flame text-lg font-extrabold text-white" aria-hidden>
                   05
                 </span>
                 <span className="rounded-full bg-oat px-3 py-1 text-[11px] font-bold tracking-[0.12em] text-warm-muted uppercase">
                   Step 5
                 </span>
               </div>
-              <h2 className="mt-5 text-xl font-bold text-pine">Arrive, Scan & Play</h2>
+              <h2 className="mt-5 text-xl font-bold text-pine">Pay & Upload Proof</h2>
               <p className="mt-2 flex-1 text-sm leading-relaxed text-warm-muted">
-                Flash your QR at the gate and walk straight onto the court. CK Grounds,
-                Tabuelan, Cebu, with free on-site parking.
+                Pay by QR, then upload your receipt (JPG/PNG/WebP, ≤5MB) before your 10-minute hold ends.
+              </p>
+              <p className="mt-5 flex items-center gap-1.5 border-t border-line pt-4 text-[13px] font-bold text-pine">
+                <BadgeCheck className="size-4 shrink-0 text-flame" aria-hidden />
+                GCash • BDO • BPI Accepted
+              </p>
+            </li>
+
+            {/* 06 */}
+            <li className="flex flex-col rounded-2xl border border-line bg-white p-7 shadow-sm md:col-span-2 lg:col-span-2">
+              <div className="flex items-center justify-between">
+                <span className="grid size-12 place-items-center rounded-full bg-pine text-lg font-extrabold text-white" aria-hidden>
+                  06
+                </span>
+                <span className="rounded-full bg-oat px-3 py-1 text-[11px] font-bold tracking-[0.12em] text-warm-muted uppercase">
+                  Step 6
+                </span>
+              </div>
+              <h2 className="mt-5 text-xl font-bold text-pine">Get Your QR Pass & Play</h2>
+              <p className="mt-2 flex-1 text-sm leading-relaxed text-warm-muted">
+                Your QR pass arrives on screen and by email after you submit. Once your payment is approved, show it at check-in and play.
               </p>
               <p className="mt-5 flex items-center justify-between gap-3 border-t border-line pt-4 text-[13px] font-bold">
                 <span className="flex items-center gap-1.5 text-pine">
-                  <MapPin className="size-4 shrink-0 text-flame" aria-hidden />
-                  Tabuelan, Cebu · Free parking
+                  <Mail className="size-4 shrink-0 text-flame" aria-hidden />
+                  Instant on-screen + email pass
                 </span>
-                <span className="shrink-0 text-flame">Zero waiting lines</span>
+                <span className="shrink-0 text-flame">Tabuelan, Cebu · Free parking</span>
               </p>
             </li>
           </ol>

@@ -237,7 +237,7 @@ export default function DetailsForm({
             {busy ? (
               <><LoadingAnimation size="compact" label="Preparing payment" /> <span>Preparing payment…</span></>
             ) : (
-              <><span>Payment</span><ArrowRight className="size-4" /></>
+              <><span>Review Booking</span><ArrowRight className="size-4" /></>
             )}
         </button>
       </div>

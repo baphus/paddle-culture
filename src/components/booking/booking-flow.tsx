@@ -5,14 +5,15 @@ import {
   Calendar,
   Check,
   CreditCard,
+  ClipboardCheck,
   Receipt,
   Sparkles,
   Timer,
   User,
 } from "lucide-react";
 import { toast } from "sonner";
-import { formatCountdown, type CourtOption, type CourtSlotGroup } from "@/lib/courts";
-import { FALLBACK_RATES, type DisplayRates } from "@/lib/pricing-display";
+import { formatCountdown, formatManilaLong, formatSlotRanges, type CourtOption, type CourtSlotGroup } from "@/lib/courts";
+import { calculatePaddleRentalTotal, courtRateForSlot, FALLBACK_RATES, peso, type DisplayRates } from "@/lib/pricing-display";
 import { cn } from "@/lib/utils";
 import { clearDraft, loadDraft, newOwnerToken, saveDraft, type BookingDraft } from "@/lib/booking/draft";
 import { HOLD_GRACE_MINUTES } from "@/lib/booking/constants";
@@ -27,7 +28,7 @@ import {
   type SummaryData,
 } from "./booking-summary-panel";
 
-type Step = "select" | "details" | "payment" | "confirmation";
+type Step = "select" | "details" | "review" | "payment" | "confirmation";
 
 interface StepItem {
   id: Step;
@@ -53,15 +54,22 @@ const STEPS_LOCAL: StepItem[] = [
     icon: User,
   },
   {
-    id: "payment",
+    id: "review",
     number: 3,
+    label: "Review",
+    description: "Confirm your booking details",
+    icon: ClipboardCheck,
+  },
+  {
+    id: "payment",
+    number: 4,
     label: "Payment",
     description: "GCash / Bank transfer",
     icon: CreditCard,
   },
   {
     id: "confirmation",
-    number: 4,
+    number: 5,
     label: "Confirmed",
     description: "Tracking pass & code",
     icon: Receipt,
@@ -130,14 +138,11 @@ export default function BookingFlow({
   const [courts, setCourts] = useState<CourtOption[]>(initialCourts);
   const [rates, setRates] = useState<DisplayRates>(initialRates);
 
-  // Restore an interrupted booking before first paint. Reading sessionStorage
-  // in a lazy initialiser (not an effect) means a returning customer never
-  // sees step 1 flash past before landing back on payment. Remember that we
-  // restored, so a leftover step-1 selection hint shows and the draft is
-  // flagged once.
-  const [restoredDraft] = useState<BookingDraft | null>(() =>
-    typeof window === "undefined" ? null : loadDraft(),
-  );
+  // Draft state is browser-only. Start with the same state during SSR and the
+  // browser's hydration pass, then restore it in an effect before showing the
+  // interactive flow.
+  const [restoredDraft, setRestoredDraft] = useState<BookingDraft | null>(null);
+  const [ready, setReady] = useState(false);
   // A draft may only re-enter the flow at or beyond the details step if it
   // carries everything those steps render. Anything less falls back to the
   // booking grid (with the details kept), never to a blank screen.
@@ -145,46 +150,30 @@ export default function BookingFlow({
     const d = restoredDraft;
     if (!d) return "select";
     if (d.step === "payment" && d.hold && d.details && d.idempotencyKey) return "payment";
+    if (d.step === "review" && d.hold && d.details && d.idempotencyKey) return "review";
     if (d.step === "details" && d.hold) return "details";
     return "select";
   })();
-  const [resumedNotice, setResumedNotice] = useState<string | null>(() => {
-    const d = restoredDraft;
-    if (!d?.details) return null;
-    if (restoredStep !== "select") return "We restored your booking — nothing was lost.";
-    return "Welcome back — your details are saved. Re-confirm your slots to continue.";
-  });
+  const [resumedNotice, setResumedNotice] = useState<string | null>(null);
 
   // Wizard state
   const [step, setStep] = useState<Step>(restoredStep);
-  const [hold, setHold] = useState<HoldState | null>(restoredDraft?.hold ?? null);
-  const [selectedDate, setSelectedDate] = useState<string | null>(
-    restoredDraft?.selectedDate ?? null,
+  const [hold, setHold] = useState<HoldState | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [courtIds, setCourtIds] = useState<string[]>(() =>
+    initialCourts.length > 0 ? [initialCourts[0].id] : [],
   );
-  const [courtIds, setCourtIds] = useState<string[]>(() => {
-    // The draft's courtIds are "courts actually booked" (the summary names
-    // them). Drop any id the catalog no longer lists, so a deactivated or
-    // renamed court can't produce a phantom "Court" entry.
-    const known = new Set(initialCourts.map((c) => c.id));
-    const restored = (restoredDraft?.courtIds ?? []).filter((id) => known.has(id));
-    if (restored.length > 0) return restored;
-    return initialCourts.length > 0 ? [initialCourts[0].id] : [];
-  });
-  const [selectedSlots, setSelectedSlots] = useState<string[]>(
-    restoredDraft?.selectedSlots ?? [],
-  );
+  const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
   // Per-court slot attribution — kept for display only (summary + invoice);
   // pricing and hold/submit payloads stay keyed off the flat arrays above.
   const [slotGroups, setSlotGroups] = useState<CourtSlotGroup[]>(
-    restoredDraft?.slotGroups ?? [],
+    [],
   );
   // Equipment — live from step 1 panel 4, pre-fills DetailsForm
-  const [livePaddleQty, setLivePaddleQty] = useState(restoredDraft?.paddleQty ?? 0);
-  const [liveBall, setLiveBall] = useState(restoredDraft?.ball ?? false);
-  const [details, setDetails] = useState<DetailsValues | null>(restoredDraft?.details ?? null);
-  const [idempotencyKey, setIdempotencyKey] = useState<string | null>(
-    restoredDraft?.idempotencyKey ?? null,
-  );
+  const [livePaddleQty, setLivePaddleQty] = useState(0);
+  const [liveBall, setLiveBall] = useState(false);
+  const [details, setDetails] = useState<DetailsValues | null>(null);
+  const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{
     trackingToken: string;
@@ -197,7 +186,40 @@ export default function BookingFlow({
   // Stable per-tab capability that ties this browsing session to its holds.
   // Stable across reloads is the whole point — it is what a refreshed page
   // uses to reclaim its own slots.
-  const [ownerToken] = useState<string>(() => restoredDraft?.ownerToken ?? newOwnerToken());
+  const [ownerToken, setOwnerToken] = useState("");
+
+  useEffect(() => {
+    const draft = loadDraft();
+    setRestoredDraft(draft);
+    setOwnerToken(draft?.ownerToken ?? newOwnerToken());
+    if (draft) {
+      setHold(draft.hold);
+      setSelectedDate(draft.selectedDate);
+      const known = new Set(initialCourts.map((court) => court.id));
+      const validCourtIds = draft.courtIds.filter((id) => known.has(id));
+      setCourtIds(validCourtIds.length > 0 ? validCourtIds : initialCourts.slice(0, 1).map((court) => court.id));
+      setSelectedSlots(draft.selectedSlots);
+      setSlotGroups(draft.slotGroups ?? []);
+      setLivePaddleQty(draft.paddleQty);
+      setLiveBall(draft.ball);
+      setDetails(draft.details);
+      setIdempotencyKey(draft.idempotencyKey);
+      const draftStep = draft.step === "review" && draft.hold && draft.details && draft.idempotencyKey
+        ? "review"
+        : draft.step === "payment" && draft.hold && draft.details && draft.idempotencyKey
+          ? "payment"
+          : draft.step === "details" && draft.hold
+            ? "details"
+            : "select";
+      setResumedNotice(draft.details
+        ? draftStep !== "select"
+          ? "We restored your booking — nothing was lost."
+          : "Welcome back — your details are saved. Re-confirm your slots to continue."
+        : null);
+      setStep(draftStep);
+    }
+    setReady(true);
+  }, [initialCourts]);
   // Latest step for callbacks created once (the hold timer's onExpired).
   const stepRef = useRef<Step>(step);
   stepRef.current = step;
@@ -207,6 +229,7 @@ export default function BookingFlow({
   // Confirmation is deliberately not persisted: a completed booking must not
   // resurrect a stale wizard.
   useEffect(() => {
+    if (!ready) return;
     if (step === "confirmation") {
       clearDraft();
       return;
@@ -237,6 +260,7 @@ export default function BookingFlow({
     liveBall,
     details,
     idempotencyKey,
+    ready,
   ]);
 
   // Refresh courts and pricing live. The page already SSR'd both, so only
@@ -390,8 +414,8 @@ export default function BookingFlow({
 
   const handleHoldExpired = useCallback(() => {
     // On the payment step the customer is mid-payment: money may already be on
-    // its way. Do NOT wipe their hold and dump them at step 1 — the payment
-    // step shows a "hold my slots again" restore instead (POST
+  // its way. Do NOT wipe their hold and dump them at step 1 — payment
+  // shows a "hold my slots again" restore instead (POST
     // /api/holds/reclaim), which keeps their details, proof and timer alive.
     if (stepRef.current === "payment") {
       toast.error("Your hold ran out. Restore your slots to finish — we kept your payment proof.", {
@@ -510,6 +534,58 @@ export default function BookingFlow({
     [selectedDate, selectedSlots, courtNames, slotGroups, rates, livePaddleQty, liveBall, hold, step],
   );
 
+  const reviewInvoice = useMemo(() => {
+    const groups = (slotGroups ?? []).filter((group) => group.slotStarts.length > 0);
+    const courtLines = groups.length > 0
+      ? groups.map((group) => {
+          const slotStarts = [...group.slotStarts].sort();
+          const rateRuns: { amount: number; slots: string[] }[] = [];
+          for (const iso of slotStarts) {
+            const amount = courtRateForSlot(rates, group.courtId, new Date(iso))?.amount ?? rates.morning;
+            const previousRun = rateRuns[rateRuns.length - 1];
+            const previousSlot = previousRun?.slots[previousRun.slots.length - 1];
+            if (
+              previousRun?.amount === amount &&
+              previousSlot &&
+              new Date(iso).getTime() - new Date(previousSlot).getTime() === 3_600_000
+            ) {
+              previousRun.slots.push(iso);
+            } else {
+              rateRuns.push({ amount, slots: [iso] });
+            }
+          }
+          const amount = rateRuns.reduce((sum, run) => sum + run.amount * run.slots.length, 0);
+          return {
+            label: group.courtName,
+            detail: rateRuns
+              .map((run) => `${formatSlotRanges(run.slots)} · ${peso(run.amount)}/hour`)
+              .join("; "),
+            quantity: `${slotStarts.length} hour${slotStarts.length === 1 ? "" : "s"}`,
+            amount,
+          };
+        })
+      : selectedSlots.length > 0
+        ? [{
+            label: courtNames.join(", ") || "Court booking",
+            detail: `${formatSlotRanges(selectedSlots)} · ${peso(rates.morning)}/hour${courtNames.length > 1 ? " per court" : ""}`,
+            quantity: `${selectedSlots.length * Math.max(courtNames.length, 1)} court-hours`,
+            amount: selectedSlots.length * Math.max(courtNames.length, 1) * rates.morning,
+          }]
+        : [];
+    const courtTotal = courtLines.reduce((sum, line) => sum + line.amount, 0);
+    const paddleTotal = livePaddleQty > 0
+      ? calculatePaddleRentalTotal(rates.paddle, livePaddleQty, selectedSlots.length)
+      : 0;
+    const ballTotal = liveBall ? rates.ball : 0;
+    return {
+      courtLines,
+      courtTotal,
+      paddleTotal,
+      ballTotal,
+      total: courtTotal + paddleTotal + ballTotal,
+    };
+  }, [slotGroups, selectedSlots, courtNames, rates, livePaddleQty, liveBall]);
+
   const showSummaryPanel = step !== "confirmation";
   // Summary exists once there's a date, courts or slots to talk about. Both
   // summary surfaces check the same things; this keeps the desktop grid in step.
@@ -526,10 +602,16 @@ export default function BookingFlow({
           disabled: selectedSlots.length === 0,
         }
       : step === "details"
-        ? { targetId: "details-advance", label: "Payment", disabled: false }
-        : step === "payment"
+        ? { targetId: "details-advance", label: "Review Booking", disabled: false }
+        : step === "review"
+          ? { targetId: "review-advance", label: "Continue to Payment", disabled: false }
+          : step === "payment"
           ? { targetId: "payment-advance", label: "Submit Booking", disabled: false }
           : null;
+
+  if (!ready) {
+    return <div className="min-h-[360px]" aria-busy="true" aria-label="Restoring booking" />;
+  }
 
   return (
     <div className="space-y-6">
@@ -619,7 +701,7 @@ export default function BookingFlow({
       {showSummaryPanel ? (
         <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-12 lg:gap-8">
           {/* Main content — 8 cols beside the summary, full width without it */}
-          <div className={cn("lg:col-span-8", !hasSummaryContent && "lg:col-span-12")}>
+          <div className={cn("lg:col-span-8", (!hasSummaryContent || step === "review") && "lg:col-span-12")}>
             {/* Step 1: Book (Courts → Date → Time → Equipment) */}
             {step === "select" && (
               <Step1DateTime
@@ -662,11 +744,76 @@ export default function BookingFlow({
                     // Keep live equipment in sync with any edits made in step 2
                     setLivePaddleQty(vals.paddleQty);
                     setLiveBall(vals.ball);
-                    setStep("payment");
+                    setStep("review");
                     window.scrollTo({ top: 0, behavior: "smooth" });
                   }}
                 />
               </div>
+            )}
+
+            {/* Step 3: Complete booking review before payment */}
+            {step === "review" && hold && details && (
+              <section className="animate-rise mx-auto w-full max-w-3xl" aria-labelledby="booking-review-title">
+                <div className="rounded-2xl border border-line-warm/70 bg-white p-5 sm:p-8">
+                  <h2 id="booking-review-title" className="text-2xl font-bold text-ink">Review booking</h2>
+                  <p className="mt-1 text-sm text-warm-muted">Check the invoice details before continuing to payment.</p>
+
+                <div className="mt-8 border-y border-line-warm py-5">
+                  <h3 className="text-xs font-bold uppercase tracking-wide text-warm-muted">Booking</h3>
+                  <dl className="mt-3 grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
+                    <div><dt className="text-warm-muted">Date</dt><dd className="font-medium text-ink">{selectedDate ? formatManilaLong(selectedDate) : "—"}</dd></div>
+                    <div><dt className="text-warm-muted">Court{courtNames.length === 1 ? "" : "s"}</dt><dd className="font-medium text-ink">{courtNames.join(", ") || "—"}</dd></div>
+                  </dl>
+                </div>
+
+                <div className="py-5">
+                  <h3 className="text-xs font-bold uppercase tracking-wide text-warm-muted">Invoice</h3>
+                  <div className="mt-3 divide-y divide-line-warm/70 border-y border-line-warm/70 text-sm">
+                    {reviewInvoice.courtLines.map((line, index) => (
+                      <div key={`${line.label}-${index}`} className="flex items-start justify-between gap-4 py-3">
+                        <div className="min-w-0">
+                          <p className="font-medium text-ink">{line.label} · {line.quantity}</p>
+                          <p className="mt-0.5 text-xs leading-5 text-warm-muted">{line.detail}</p>
+                        </div>
+                        <span className="shrink-0 font-medium tabular-nums text-ink">{peso(line.amount)}</span>
+                      </div>
+                    ))}
+                    {livePaddleQty > 0 && (
+                      <div className="flex justify-between gap-4 py-3">
+                        <span className="text-ink">Paddle rental · {livePaddleQty} × {selectedSlots.length} hour{selectedSlots.length === 1 ? "" : "s"}<span className="mt-0.5 block text-xs text-warm-muted">{peso(rates.paddle)} per paddle per hour</span></span>
+                        <span className="shrink-0 font-medium tabular-nums text-ink">{peso(reviewInvoice.paddleTotal)}</span>
+                      </div>
+                    )}
+                    {liveBall && (
+                      <div className="flex justify-between gap-4 py-3">
+                        <span className="text-ink">Ball set · one booking</span>
+                        <span className="shrink-0 font-medium tabular-nums text-ink">{peso(reviewInvoice.ballTotal)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between gap-4 py-3 font-bold text-ink">
+                      <span>Total due</span>
+                      <span className="shrink-0 tabular-nums">{peso(reviewInvoice.total)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-t border-line-warm py-5">
+                  <h3 className="text-xs font-bold uppercase tracking-wide text-warm-muted">Customer</h3>
+                  <dl className="mt-3 grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
+                    <div><dt className="text-warm-muted">Name</dt><dd className="font-medium text-ink">{details.fullName}</dd></div>
+                    <div><dt className="text-warm-muted">Phone</dt><dd className="font-medium text-ink">{details.phone}</dd></div>
+                    <div className="sm:col-span-2"><dt className="text-warm-muted">Email</dt><dd className="break-all font-medium text-ink">{details.email}</dd></div>
+                  </dl>
+                </div>
+
+                <div className="mt-3 flex items-center justify-between gap-4 border-t border-line-warm pt-5">
+                  <button type="button" onClick={() => { setStep("details"); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="min-h-11 px-1 text-sm font-semibold text-pine underline underline-offset-4 hover:text-flame">Edit details</button>
+                  <button type="button" id="review-advance" onClick={() => { setStep("payment"); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-flame px-5 text-sm font-semibold text-white hover:bg-flame-hover">
+                    <span>Continue to Payment</span><CreditCard className="size-4" />
+                  </button>
+                </div>
+                </div>
+              </section>
             )}
 
             {/* Step 3: Payment & Proof Upload */}
@@ -687,7 +834,7 @@ export default function BookingFlow({
                   busy={submitting}
                   setBusy={setSubmitting}
                   onBack={() => {
-                    setStep("details");
+                    setStep("review");
                     window.scrollTo({ top: 0, behavior: "smooth" });
                   }}
                   onHoldExpired={handleHoldExpired}
@@ -708,7 +855,7 @@ export default function BookingFlow({
           {/* Sticky summary panel — desktop only. When it has nothing to show
               (fresh visit, or a Back just cleared the attempt) the main column
               takes the full width instead of leaving an empty 4-col gutter. */}
-          {hasSummaryContent ? (
+          {hasSummaryContent && step !== "review" ? (
             <div className="hidden lg:col-span-4 lg:block lg:sticky lg:top-24 lg:self-start">
               <BookingSummaryDesktop data={summaryData} />
             </div>
@@ -717,7 +864,7 @@ export default function BookingFlow({
       ) : null}
 
       {/* Mobile floating summary — steps 1–3 */}
-      {showSummaryPanel && <BookingSummaryMobile data={summaryData} advance={summaryAdvance} />}
+      {showSummaryPanel && step !== "review" && <BookingSummaryMobile data={summaryData} advance={summaryAdvance} />}
 
       {/* Step 4: Confirmation */}
       {step === "confirmation" && result && details && (
