@@ -44,7 +44,7 @@ export default function Location({ rates = FALLBACK_RATES }: { rates?: DisplayRa
                 <span>
                   <span className="block text-sm font-extrabold text-ink">Operating Hours</span>
                   <span className="block text-[13px] text-ink/70">
-                    Open Daily: 6:00 AM – 3:00 AM
+                    Courts available daily for booking
                   </span>
                 </span>
               </li>

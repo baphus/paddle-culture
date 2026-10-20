@@ -20,7 +20,7 @@ function buildFaqs(rates: DisplayRates) {
     },
     {
       q: "Can I book a court for today?",
-      a: "Yes — you can book today if a slot is still coming up. Pick today in the calendar and take any hour that hasn't started yet. Booking is open from today up to 12 months ahead. Courts are open daily from 6:00 AM to 3:00 AM.",
+      a: "Yes — you can book today if a slot is still coming up. Pick today in the calendar and take any hour that hasn't started yet. Booking is open from today up to 12 months ahead.",
     },
     {
       q: "Can I cancel or get a refund?",

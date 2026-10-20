@@ -169,7 +169,7 @@ export default async function HowItWorksPage() {
               <h2 className="mt-5 text-xl font-bold text-pine">Arrive, Scan & Play</h2>
               <p className="mt-2 flex-1 text-sm leading-relaxed text-warm-muted">
                 Flash your QR at the gate and walk straight onto the court. CK Grounds,
-                Tabuelan, Cebu — open daily 6 AM–3 AM with free on-site parking.
+                Tabuelan, Cebu, with free on-site parking.
               </p>
               <p className="mt-5 flex items-center justify-between gap-3 border-t border-line pt-4 text-[13px] font-bold">
                 <span className="flex items-center gap-1.5 text-pine">

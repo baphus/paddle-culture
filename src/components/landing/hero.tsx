@@ -82,11 +82,6 @@ export default function Hero({
         <div className="max-w-xl animate-rise motion-reduce:animate-none">
           <p className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 py-1.5 pr-4 pl-1.5 text-xs font-bold text-white backdrop-blur">
             <span className="inline-flex items-center gap-1 rounded-full bg-pine px-2.5 py-1 text-[11px] text-pine-ink">
-              <span
-                className="size-1.5 animate-pulse rounded-full bg-live-dot"
-                aria-hidden
-              />
-              Open today
             </span>
 
             <MapPin className="size-3.5 text-flame" aria-hidden />
@@ -142,7 +137,7 @@ export default function Hero({
 
             <li className="inline-flex items-center gap-1.5">
               <Clock className="size-4 text-flame" aria-hidden />
-              Open till 3 AM
+              Optional paddle rentals
             </li>
           </ul>
         </div>

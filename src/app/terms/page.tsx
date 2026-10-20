@@ -18,7 +18,6 @@ const SECTIONS: { heading: string; body: string[] }[] = [
   {
     heading: "2. Bookings and hours",
     body: [
-      "The venue is open daily from 6:00 AM to 3:00 AM. Hours after midnight are treated as part of the previous operating day.",
       "Courts are booked in one-hour slots. You may book between 1 and 12 consecutive hours. Online booking is open from today up to 12 months in advance; hours that have already started on the current day are not bookable.",
     ],
   },

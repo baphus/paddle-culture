@@ -64,10 +64,6 @@ export default function Header() {
         </nav>
 
         <div className="hidden items-center gap-2.5 lg:flex">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-parchment px-3.5 py-2 text-xs font-bold whitespace-nowrap text-pine">
-            <span className="size-1.5 rounded-full bg-live-dot" aria-hidden />
-            Open Daily: 6:00 AM – 3:00 AM
-          </span>
           <a
             href="/login"
             className="text-sm font-semibold text-pine/80 transition-colors hover:text-pine"
@@ -120,10 +116,6 @@ export default function Header() {
             >
               Log in
             </a>
-            <p className="mx-4 mt-2 mb-1 inline-flex items-center gap-1.5 rounded-full border border-line bg-cream px-3 py-1.5 text-[11px] font-bold text-pine">
-              <span className="size-1.5 rounded-full bg-live-dot" aria-hidden />
-              Open Daily: 6:00 AM – 3:00 AM
-            </p>
             <a
               href="/book"
               className="mt-1 flex items-center justify-center gap-2 rounded-xl bg-flame px-4 py-3 text-center text-sm font-bold text-white hover:bg-flame-hover"

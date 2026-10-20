@@ -32,9 +32,7 @@ export default function Footer({ rates = FALLBACK_RATES }: { rates?: DisplayRate
               Championship outdoor and covered canopy pickleball courts in Tabuelan,
               Cebu. Premier cushioned surface with instant reservations.
             </p>
-            <p className="inline-flex items-center gap-1.5 rounded-full border border-line bg-cream px-3 py-1.5 text-[11px] font-bold text-pine">
-              <Clock className="size-3.5" aria-hidden /> Open Daily: 6:00 AM – 3:00 AM
-            </p>
+
           </div>
 
           <nav className="space-y-2.5" aria-label="Quick links">

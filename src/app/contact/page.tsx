@@ -92,7 +92,7 @@ export default function ContactPage() {
                 <h2 className="mt-2 text-lg font-bold text-pine">Open Every Day</h2>
                 <p className="mt-3 flex items-center gap-3 rounded-xl border border-line bg-oat/60 px-4 py-3 text-sm font-bold text-pine">
                   <span className="size-2 shrink-0 rounded-full bg-live-dot" aria-hidden />
-                  6:00 AM – 3:00 AM daily
+                  Courts available daily for booking
                 </p>
               </div>
 

@@ -41,8 +41,8 @@ export default async function Home() {
         <Hero rates={initialRates} />
         <Courts rates={initialRates} />
         <Rentals rates={initialRates} />
-        <HowItWorks rates={initialRates} />
         <VenueGallery />
+        <HowItWorks rates={initialRates} />
         <BookTrack rates={initialRates} />
 
         <Location rates={initialRates} />

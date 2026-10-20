@@ -59,6 +59,9 @@ export default function Courts({ rates = FALLBACK_RATES }: { rates?: DisplayRate
                     {from}
                   </span>
                 </div>
+                <p className="border-t border-line px-5 py-3 text-sm font-semibold text-ink/70">
+                  Covered pickleball court
+                </p>
                 <div className="p-5">
                   <h3 className="text-lg font-extrabold text-ink">{c.name}</h3>
                   <div className="mt-4 flex items-center justify-between gap-3">
