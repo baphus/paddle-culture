@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/card";
 import { BookingStatusBadge } from "@/components/admin/status-badge";
 import { formatBookingDate, type BookingDetail } from "@/lib/admin/bookings";
-import { formatCourtSlotLine } from "@/lib/courts";
+import { formatCourtSlotGroup } from "@/lib/courts";
 import BookingActions from "./booking-actions";
 
 function pesos(total: string): string {
@@ -50,7 +50,13 @@ export default function BookingCard({ booking }: { booking: BookingDetail }) {
           <Field label="Date" value={formatBookingDate(booking.date)} />
           <Field
             label={`${booking.slots.length} slots`}
-            value={booking.slots.map((slot) => formatCourtSlotLine(slot.courtName, slot.slotStart)).join(", ") || "—"}
+            value={(() => {
+              const groups = new Map<string, string[]>();
+              for (const slot of booking.slots) {
+                groups.set(slot.courtName, [...(groups.get(slot.courtName) ?? []), slot.slotStart]);
+              }
+              return [...groups].map(([court, starts]) => formatCourtSlotGroup(court, starts)).join("; ") || "—";
+            })()}
           />
         </div>
       </CardContent>

@@ -30,7 +30,7 @@ export function RevenueRangeFilter({ from, to }: { from: string; to: string }) {
     if (nextFrom) params.set("from", nextFrom);
     if (nextTo) params.set("to", nextTo);
     const qs = params.toString();
-    router.push(`/admin/revenue${qs ? `?${qs}` : ""}`);
+    router.push(`/admin/finance${qs ? `?${qs}` : ""}`);
   }
 
   return (

@@ -32,7 +32,7 @@ const NAV_ITEMS = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/admin/bookings", label: "Bookings", icon: BookOpen },
   { href: "/admin/calendar", label: "Calendar", icon: CalendarDays },
-  { href: "/admin/revenue", label: "Revenue", icon: BarChart2 },
+  { href: "/admin/finance", label: "Finance", icon: BarChart2 },
   { href: "/admin/activity", label: "Activity", icon: ScrollText },
   { href: "/admin/users", label: "Users", icon: Users },
 ] as const;

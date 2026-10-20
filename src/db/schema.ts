@@ -272,6 +272,38 @@ export const auditLog = pgTable("audit_log", {
   at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ---------------------------------------------------------------- expenses ---
+// Internal cash expenses. Amounts are stored in integer centavos so financial
+// reporting never relies on floating-point arithmetic.
+export const expenses = pgTable(
+  "expenses",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    title: text("title").notNull(),
+    category: text("category").notNull(),
+    amountCentavos: integer("amount_centavos").notNull(),
+    paidDate: date("paid_date").notNull(),
+    description: text("description"),
+    vendor: text("vendor"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    check("expenses_amount_centavos_check", sql`${t.amountCentavos} > 0`),
+    check(
+      "expenses_category_check",
+      sql`${t.category} IN ('Rent', 'Payroll/Contractors', 'Utilities', 'Maintenance & Repairs', 'Supplies & Equipment', 'Marketing', 'Software/Subscriptions', 'Taxes & Fees', 'Other')`,
+    ),
+    index("expenses_paid_date_idx").on(t.paidDate, t.id),
+    index("expenses_category_paid_date_idx").on(t.category, t.paidDate),
+  ],
+);
+
 // ----------------------------------------------------------- admin_invites ---
 // Single-use invite rows (ADR-04): no expiry; revoke = delete unused row;
 // use stamps used_at. Email immutable after register (app-level guard).
@@ -306,5 +338,6 @@ export type BookingRental = typeof bookingRentals.$inferSelect;
 export type PaymentProof = typeof paymentProofs.$inferSelect;
 export type EmailOutbox = typeof emailOutbox.$inferSelect;
 export type AuditLog = typeof auditLog.$inferSelect;
+export type Expense = typeof expenses.$inferSelect;
 export type AdminInvite = typeof adminInvites.$inferSelect;
 export type IdempotencyKey = typeof idempotencyKeys.$inferSelect;

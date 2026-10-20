@@ -3,7 +3,6 @@ import Link from "next/link";
 import { TZDate } from "@date-fns/tz";
 import { addDays, subDays } from "date-fns";
 import {
-  BarChart2,
   BookOpen,
   BookOpenCheck,
   CalendarCheck,
@@ -15,7 +14,6 @@ import {
 } from "lucide-react";
 import {
   Card,
-  CardAction,
   CardContent,
   CardHeader,
   CardTitle,
@@ -30,9 +28,9 @@ import { getDb } from "@/db/client";
 import { requireAdmin } from "@/lib/admin/session";
 import { getDashboardStats, type DashboardStats } from "@/lib/admin/dashboard";
 import { manilaDateToday } from "@/lib/admin/calendar";
-import { formatPesosFromCents, revenueByDay, revenueByMonth } from "@/lib/admin/bookings";
+import { formatPesosFromCents, revenueByDay } from "@/lib/admin/bookings";
 import { manilaDateStr, manilaWallClock } from "@/lib/booking/slots";
-import RevenueChartLoader from "@/components/admin/revenue-chart-loader";
+import { getFinanceReport } from "@/lib/admin/finance";
 import RecentBookingsCard from "./recent-bookings-card";
 import RecentBookingsTable from "./recent-bookings-table";
 
@@ -48,7 +46,6 @@ function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
 }
 
 type DayArr = Awaited<ReturnType<typeof revenueByDay>>["days"];
-type MonthArr = Awaited<ReturnType<typeof revenueByMonth>>["months"];
 
 export default async function AdminPage() {
   const session = await requireAdmin();
@@ -64,8 +61,9 @@ export default async function AdminPage() {
       (await revenueByDay(getDb(), { from: subDays(todayStart, 29), to: addDays(todayStart, 1) })).days,
     [] as DayArr,
   );
-  // all-time monthly
-  const chartMonthsPromise = safe(async () => (await revenueByMonth(getDb())).months, [] as MonthArr);
+  const todayStr = manilaDateToday();
+  const monthStart = `${todayStr.slice(0, 7)}-01`;
+  const financePromise = safe(() => getFinanceReport(getDb(), monthStart, todayStr), null);
 
   return (
     <div className="space-y-6">
@@ -91,22 +89,7 @@ export default async function AdminPage() {
         <StatCards stats={statsPromise} days={chartDaysPromise} />
       </Suspense>
 
-      {/* Revenue chart (same as /admin/revenue) */}
-      <Card>
-        <CardHeader className="border-b">
-          <CardTitle>Revenue</CardTitle>
-          <CardAction>
-            <Link href="/admin/revenue" className="text-sm text-muted-foreground hover:text-foreground">
-              Full report
-            </Link>
-          </CardAction>
-        </CardHeader>
-        <CardContent>
-          <Suspense fallback={<Skeleton className="h-72" />}>
-            <DashboardRevenueChart days={chartDaysPromise} months={chartMonthsPromise} />
-          </Suspense>
-        </CardContent>
-      </Card>
+      <Suspense fallback={<Skeleton className="h-32" />}><FinanceSummary report={financePromise} /></Suspense>
 
       {/* Recent bookings */}
       <RecentBookingsCard>
@@ -120,7 +103,7 @@ export default async function AdminPage() {
         <h2 className="mb-3 text-sm font-medium text-muted-foreground">Quick access</h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <QuickLink href="/admin/bookings" icon={BookOpen} label="Manage Bookings" desc="Review, approve, or reject" />
-          <QuickLink href="/admin/revenue" icon={BarChart2} label="Revenue" desc="Daily breakdown & chart" />
+          <QuickLink href="/admin/finance" icon={DollarSign} label="Finance" desc="Revenue, expenses & profit" />
           <QuickLink href="/admin/activity" icon={ScrollText} label="Activity" desc="Full action history" />
           <QuickLink href="/admin/hours" icon={Settings} label="Court Setup" desc="Courts, rates, hours, and closures" />
         </div>
@@ -154,10 +137,10 @@ async function StatCards({
   return (
     <div className={STAT_CARD_GRID}>
       <StatCard
-        label="Total Revenue"
+        label="Booking Revenue"
         value={stats ? formatPesosFromCents(revenueCents) : "—"}
         icon={DollarSign}
-        href="/admin/revenue"
+        href="/admin/finance"
         trend={pctChange(revenueCents, total(prior, "revenueCents"))}
         trendLabel="vs prior 15 days"
         subtitle="Last 15 days"
@@ -189,15 +172,9 @@ async function StatCards({
   );
 }
 
-async function DashboardRevenueChart({
-  days: daysPromise,
-  months: monthsPromise,
-}: {
-  days: Promise<DayArr>;
-  months: Promise<MonthArr>;
-}) {
-  const [days, months] = await Promise.all([daysPromise, monthsPromise]);
-  return <RevenueChartLoader days={days} months={months} mode="full" />;
+async function FinanceSummary({ report: reportPromise }: { report: Promise<Awaited<ReturnType<typeof getFinanceReport>> | null> }) {
+  const report = await reportPromise;
+  return <Card><CardHeader className="flex flex-row items-center justify-between"><div><CardTitle>Finance this month</CardTitle><p className="text-sm text-muted-foreground">Approved booking revenue less recorded expenses</p></div><Link href="/admin/finance" className="text-sm text-muted-foreground hover:text-foreground">Open Finance</Link></CardHeader><div className="grid gap-4 px-4 pb-4 sm:grid-cols-3"><div><p className="text-xs text-muted-foreground">Booking revenue</p><p className="text-lg font-semibold">{report ? formatPesosFromCents(report.revenueCents) : "—"}</p></div><div><p className="text-xs text-muted-foreground">Expenses</p><p className="text-lg font-semibold">{report ? formatPesosFromCents(report.expenseCents) : "—"}</p></div><div><p className="text-xs text-muted-foreground">Net profit</p><p className="text-lg font-semibold">{report ? formatPesosFromCents(report.profitCents) : "—"}</p></div></div></Card>;
 }
 
 async function RecentBookingsSection({ stats: statsPromise }: { stats: Promise<DashboardStats | null> }) {

@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { BookingStatusBadge } from "@/components/admin/status-badge";
 import { formatBookingDate, type BookingDetail } from "@/lib/admin/bookings";
-import { formatCourtSlotLine } from "@/lib/courts";
+import { formatCourtSlotGroup } from "@/lib/courts";
 
 function pesos(total: string): string {
   return `₱${Number(total).toLocaleString("en-PH", {
@@ -362,7 +362,13 @@ function BookingSummary({ booking }: { booking: BookingDetail }) {
       <DetailRow label="Date" value={formatBookingDate(booking.date)} />
       <DetailRow
         label={`Slots (${booking.slots.length})`}
-        value={booking.slots.map((slot) => formatCourtSlotLine(slot.courtName, slot.slotStart)).join("\n") || "—"}
+        value={(() => {
+          const groups = new Map<string, string[]>();
+          for (const slot of booking.slots) {
+            groups.set(slot.courtName, [...(groups.get(slot.courtName) ?? []), slot.slotStart]);
+          }
+          return [...groups].map(([court, starts]) => formatCourtSlotGroup(court, starts)).join("\n") || "—";
+        })()}
       />
       <DetailRow
         label="Paddles"

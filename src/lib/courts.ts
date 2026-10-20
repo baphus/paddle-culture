@@ -134,6 +134,24 @@ export function formatCourtSlotLine(courtName: string, startIso: string): string
   return `${formatSlotRange(startIso)} (${courtName})`;
 }
 
+/** Compact admin label: "7:00 – 8:00, 8:00 – 9:00 AM (Court 1)". */
+export function formatCourtSlotGroup(courtName: string, startIsos: string[]): string {
+  const labels = [...startIsos]
+    .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())
+    .map(formatSlotRange);
+  if (labels.length === 0) return "";
+
+  const meridiems = labels.map((label) => label.trim().split(" ").at(-1));
+  const sharedMeridiem = meridiems.every((meridiem) => meridiem === meridiems[0])
+    ? meridiems[0]
+    : null;
+  const compactLabels = sharedMeridiem
+    ? labels.map((label) => label.slice(0, -(sharedMeridiem.length + 1)).trim())
+    : labels;
+
+  return `${compactLabels.join(", ")}${sharedMeridiem ? ` ${sharedMeridiem}` : ""} (${courtName})`;
+}
+
 function splitMeridiem(s: string): [string, string] {
   const parts = s.trim().split(" ");
   if (parts.length >= 2) {

@@ -47,6 +47,14 @@ export default function LoginForm() {
       <CardContent className="grid p-0 md:grid-cols-2">
         <form onSubmit={onSubmit} className="flex flex-col gap-6 p-6 md:p-8">
           <div className="flex flex-col items-center gap-2 text-center">
+            <Image
+              src="/images/ck-grounds-logo.jpg"
+              alt="CK Grounds"
+              width={96}
+              height={96}
+              priority
+              className="size-20 rounded-xl object-contain"
+            />
             <h1 className="text-2xl font-bold">Welcome back</h1>
             <p className="text-sm text-balance text-muted-foreground">
               Sign in to your CK Grounds admin account

@@ -3,7 +3,7 @@
 import type { ColumnDef } from "@tanstack/react-table";
 import { BookingStatusBadge } from "@/components/admin/status-badge";
 import { formatBookingDate, type BookingDetail } from "@/lib/admin/bookings";
-import { formatCourtSlotLine } from "@/lib/courts";
+import { formatCourtSlotGroup } from "@/lib/courts";
 import BookingActions from "./booking-actions";
 
 function pesos(total: string): string {
@@ -67,11 +67,23 @@ export const columns: ColumnDef<BookingDetail>[] = [
   {
     id: "slots",
     header: "Slots",
-    accessorFn: (b) => b.slots.map((slot) => formatCourtSlotLine(slot.courtName, slot.slotStart)).join(", "),
+    accessorFn: (b) => {
+      const groups = new Map<string, string[]>();
+      for (const slot of b.slots) {
+        groups.set(slot.courtName, [...(groups.get(slot.courtName) ?? []), slot.slotStart]);
+      }
+      return [...groups].map(([court, starts]) => formatCourtSlotGroup(court, starts)).join("; ");
+    },
     enableSorting: false,
     cell: ({ row }) => (
       <span className="text-xs text-muted-foreground">
-        {row.original.slots.map((slot) => formatCourtSlotLine(slot.courtName, slot.slotStart)).join(", ") || "—"}
+        {(() => {
+          const groups = new Map<string, string[]>();
+          for (const slot of row.original.slots) {
+            groups.set(slot.courtName, [...(groups.get(slot.courtName) ?? []), slot.slotStart]);
+          }
+          return [...groups].map(([court, starts]) => formatCourtSlotGroup(court, starts)).join("; ") || "—";
+        })()}
       </span>
     ),
   },

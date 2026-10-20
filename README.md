@@ -28,6 +28,7 @@ You must also run the SQL in the Supabase editor, once, in this order:
 2. `supabase/proof-bucket.sql` — private `proofs` bucket
 3. `supabase/audit-rls.sql` — RLS policies
 4. `supabase/rpc-functions.sql` — the RPCs + `holds_court_slot_unique_idx`
+5. `supabase/expenses.sql` — expense table, default-deny RLS, and audited expense RPCs
 
 Then seed the courts and hours: `node scripts/seed-production.mjs`.
 
