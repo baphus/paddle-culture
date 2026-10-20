@@ -45,7 +45,9 @@ export function manilaWallClock(dateStr: string, hour = 0, minute = 0): TZDate {
 export function slotsForDate(dateStr: string): SlotInstant[] {
   const baseMs = manilaWallClock(dateStr, DAY_START_HOUR_MANILA).getTime();
   const out: SlotInstant[] = [];
-  for (let i = 0; i < SLOT_COUNT; i++) {
+  // Cover every admin-configurable hour, including the early-morning tail.
+  const slotCount = Math.max(SLOT_COUNT, 23);
+  for (let i = 0; i < slotCount; i++) {
     out.push({ index: i, start: new Date(baseMs + i * HOUR_MS) });
   }
   return out;
@@ -123,7 +125,8 @@ export function isOnSlotGrid(instant: Date): boolean {
   const todayStr = `${z.getFullYear()}-${pad(z.getMonth() + 1)}-${pad(z.getDate())}`;
   const baseMs = manilaWallClock(todayStr, DAY_START_HOUR_MANILA).getTime();
   const diffHours = (z.getTime() - baseMs) / HOUR_MS;
-  if (Number.isInteger(diffHours) && diffHours >= 0 && diffHours < SLOT_COUNT) {
+  const slotCount = Math.max(SLOT_COUNT, 23);
+  if (Number.isInteger(diffHours) && diffHours >= 0 && diffHours < slotCount) {
     return true;
   }
   // Overnight spill: 00:00–02:00 wall time belongs to the previous
@@ -135,7 +138,7 @@ export function isOnSlotGrid(instant: Date): boolean {
   return (
     Number.isInteger(prevDiffHours) &&
     prevDiffHours >= 0 &&
-    prevDiffHours < SLOT_COUNT
+    prevDiffHours < slotCount
   );
 }
 

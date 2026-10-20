@@ -81,12 +81,10 @@ export default function Hero({
             ============================================================ */}
         <div className="max-w-xl animate-rise motion-reduce:animate-none">
           <p className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 py-1.5 pr-4 pl-1.5 text-xs font-bold text-white backdrop-blur">
-            <span className="inline-flex items-center gap-1 rounded-full bg-pine px-2.5 py-1 text-[11px] text-pine-ink">
-            </span>
 
             <MapPin className="size-3.5 text-flame" aria-hidden />
 
-            Tabuelan, Cebu · 6:00 AM – 3:00 AM
+            Tabuelan, Cebu
           </p>
 
           <h1
