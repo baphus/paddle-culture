@@ -162,6 +162,7 @@ export function formatSlotRanges(startIsos: string[]): string {
 /** One court's slice of a booking: the (court, slots) pairing that the flat
  *  `courtNames` + `slotStarts` arrays lose. */
 export interface CourtSlotGroup {
+  courtId?: string;
   courtName: string;
   slotStarts: string[];
 }

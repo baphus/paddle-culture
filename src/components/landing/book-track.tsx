@@ -19,25 +19,14 @@ export default function BookTrack({ rates = FALLBACK_RATES }: { rates?: DisplayR
                 10-minute hold while verifying payment. No sign-up required.
               </p>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-2xl border border-white/15 bg-white/10 p-4">
-                <p className="text-xl font-black text-white">
-                  {peso(rates.morning)}
-                  <span className="text-sm font-bold text-white/70">/hr</span>
-                </p>
-                <p className="mt-1 text-[11px] leading-4 font-semibold text-white/70">
-                  Morning (6 AM – 6 PM)
-                </p>
-              </div>
-              <div className="rounded-2xl border border-white/15 bg-white/10 p-4">
-                <p className="text-xl font-black text-white">
-                  {peso(rates.evening)}
-                  <span className="text-sm font-bold text-white/70">/hr</span>
-                </p>
-                <p className="mt-1 text-[11px] leading-4 font-semibold text-white/70">
-                  Evening (6 PM – 3 AM)
-                </p>
-              </div>
+            <div className="rounded-2xl border border-white/15 bg-white/10 p-4">
+              <p className="text-xl font-black text-white">
+                From {peso(rates.morning)}
+                <span className="text-sm font-bold text-white/70">/hr</span>
+              </p>
+              <p className="mt-1 text-[11px] leading-4 font-semibold text-white/70">
+                Court rates follow the hours configured by the venue.
+              </p>
             </div>
             <a
               href="/book"

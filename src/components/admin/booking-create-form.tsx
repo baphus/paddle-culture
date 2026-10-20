@@ -27,6 +27,7 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { PROOF_CLIENT_ACCEPT, precheckProofFile } from "@/lib/proof-client";
 import { formatSlotRange } from "@/lib/courts";
+import { courtRateForSlot } from "@/lib/pricing-display";
 import { suggestEmailDomain } from "@/lib/booking/email";
 
 // ── Shapes mirrored from the server (no server-only imports here) ────────────
@@ -41,6 +42,13 @@ interface DisplayRates {
   evening: number;
   paddle: number;
   ball: number;
+  courtRates: Array<{
+    courtId: string;
+    dayOfWeek: number;
+    openTime: string;
+    closeTime: string;
+    amount: number;
+  }>;
   currency: "PHP";
 }
 
@@ -83,6 +91,7 @@ const FALLBACK_RATES: DisplayRates = {
   evening: 200,
   paddle: 100,
   ball: 15,
+  courtRates: [],
   currency: "PHP",
 };
 
@@ -118,21 +127,6 @@ function pesoOf(n: number): string {
 
 function slotKey(courtId: string, slotStart: string): string {
   return `${courtId}@${slotStart}`;
-}
-
-/** Hour of the slot in Manila wall-clock, used for the morning/evening band. */
-function manilaHour(iso: string): number {
-  return Number(
-    new Intl.DateTimeFormat("en-GB", {
-      timeZone: "Asia/Manila",
-      hour: "2-digit",
-      hour12: false,
-    }).format(new Date(iso)),
-  );
-}
-
-function isEvening(iso: string): boolean {
-  return manilaHour(iso) >= 12;
 }
 
 // ── Component ───────────────────────────────────────────────────────────────
@@ -340,7 +334,8 @@ export default function BookingCreateForm({
   const estimate = useMemo(() => {
     if (!rates) return null;
     const courtTotal = picked.reduce(
-      (sum, p) => sum + (isEvening(p.slotStart) ? rates.evening : rates.morning),
+      (sum, p) =>
+        sum + (courtRateForSlot(rates, p.courtId, new Date(p.slotStart))?.amount ?? rates.morning),
       0,
     );
     const hours = picked.length;

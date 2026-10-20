@@ -86,7 +86,7 @@ export default async function TrackPage({
   const [{ data: slotData }, { data: rentalData }] = await Promise.all([
     db
       .from("booking_slots")
-      .select("slot_start,courts(name)")
+      .select("court_id,slot_start,courts(name)")
       .eq("booking_id", booking.id)
       .order("slot_start", { ascending: true }),
     db
@@ -101,7 +101,7 @@ export default async function TrackPage({
     loadRates(),
   ]);
 
-  type SlotRow = { slot_start: string; courts: unknown };
+  type SlotRow = { court_id: string; slot_start: string; courts: unknown };
   function getCourtName(s: SlotRow): string {
     const c = s.courts;
     if (!c) return "";
@@ -110,6 +110,7 @@ export default async function TrackPage({
   }
   const serializedSlots = ((slotData ?? []) as SlotRow[]).map((s) => ({
     courtName: getCourtName(s),
+    courtId: s.court_id,
     slotStart: s.slot_start,
   }));
 

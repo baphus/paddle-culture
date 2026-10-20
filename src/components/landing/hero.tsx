@@ -10,7 +10,7 @@ import {
   Search,
   Zap,
 } from "lucide-react";
-import { FALLBACK_RATES, peso, type DisplayRates } from "@/lib/pricing-display";
+import { FALLBACK_RATES, type DisplayRates } from "@/lib/pricing-display";
 import LandingImage from "./landing-image";
 
 const Hero3D = dynamic(() => import("./hero-3d"), {
@@ -111,17 +111,7 @@ export default function Hero({
           </p>
 
           <p className="mt-4 text-sm font-bold text-white">
-            Morning {peso(rates.morning)}/hr
-
-            <span
-              className="mx-2 font-normal text-white/40"
-              aria-hidden
-            >
-              |
-            </span>
-
-            Night {peso(rates.evening)}/hr
-
+            Court rates follow the hours configured for each court
             <span className="ml-2 font-semibold text-pine-ink/70">
               · Paddles &amp; balls for rent
             </span>

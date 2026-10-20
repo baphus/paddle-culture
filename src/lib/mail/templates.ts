@@ -161,14 +161,6 @@ function collapseSlots(p: Payload): CourtSession[] {
   return sessions;
 }
 
-// Map timeBand values from pricing detail strings to human-readable labels.
-const TIME_BAND_LABEL: Record<string, string> = {
-  morning: "Morning",
-  afternoon: "Afternoon",
-  evening: "Evening",
-  all: "Court",
-};
-
 interface PriceLine {
   kind?: unknown;
   detail?: unknown;
@@ -179,7 +171,7 @@ interface PriceLine {
 
 // Build clean invoice lines from the raw pricing lines written by recalculateTotal.
 // Court lines (one raw row per slot) are aggregated: same court + unit rate →
-// one row: "CourtName — Morning/Evening (Nh) @ ₱X/hr  ₱Y.00"
+// one row: "CourtName (Nh) @ ₱X/hr  ₱Y.00"
 function linesOf(
   p: Payload,
   sessions: CourtSession[],
@@ -201,7 +193,6 @@ function linesOf(
     unitAmount: string;
     totalCents: number;
     count: number;
-    timeBands: Set<string>;
   }
   const courtAccum = new Map<string, CourtAccum>();
   const otherLines: Array<{ label: string; amount: string }> = [];
@@ -215,21 +206,16 @@ function linesOf(
 
     if (kind === "court" && courtId) {
       const key = `${courtId}::${unitAmount}`;
-      // Extract timeBand from "weekday/evening @ …"
-      const bandMatch = rawDetail.match(/\/([a-z]+)\s*@/i);
-      const band = bandMatch ? (bandMatch[1] ?? "").toLowerCase() : "";
       const existing = courtAccum.get(key);
       if (existing) {
         existing.count += 1;
         existing.totalCents += Math.round(Number(amount) * 100);
-        if (band) existing.timeBands.add(band);
       } else {
         courtAccum.set(key, {
           courtName: courtNameById.get(courtId) ?? "Court",
           unitAmount,
           totalCents: Math.round(Number(amount) * 100),
           count: 1,
-          timeBands: band ? new Set([band]) : new Set(),
         });
       }
     } else if (kind === "paddle") {
@@ -248,16 +234,9 @@ function linesOf(
 
   const courtLines: Array<{ label: string; amount: string }> = [];
   for (const acc of courtAccum.values()) {
-    const bands = [...acc.timeBands];
-    const bandLabel =
-      bands.length === 1
-        ? (TIME_BAND_LABEL[bands[0] ?? ""] ?? "Court")
-        : bands.length > 1
-          ? bands.map((b) => TIME_BAND_LABEL[b] ?? b).join(" / ")
-          : "Court";
     const totalAmount = (acc.totalCents / 100).toFixed(2);
     courtLines.push({
-      label: `${acc.courtName} — ${bandLabel} (${acc.count}h) @ ₱${acc.unitAmount}/hr`,
+      label: `${acc.courtName} (${acc.count}h) @ ₱${acc.unitAmount}/hr`,
       amount: totalAmount,
     });
   }

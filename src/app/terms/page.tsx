@@ -39,7 +39,7 @@ const SECTIONS: { heading: string; body: string[] }[] = [
   {
     heading: "5. Rates",
     body: [
-      "Court rates differ between daytime and evening hours, and optional paddle and ball rentals are added to your total. The total is recalculated on our servers when you submit, and the amount shown at that point is the amount you pay.",
+      "Court rates follow the operating hours configured for each court, and optional paddle and ball rentals are added to your total. The total is recalculated on our servers when you submit, and the amount shown at that point is the amount you pay.",
     ],
   },
   {

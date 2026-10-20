@@ -23,6 +23,7 @@ import { slotSelectionDateStr } from "@/lib/booking/slots";
 import BookingInvoice from "@/components/booking/booking-invoice";
 
 interface SlotItem {
+  courtId: string;
   courtName: string;
   slotStart: string;
 }
@@ -117,6 +118,7 @@ export default function TrackView({
 
   // Per-court attribution for the invoice — each row carries its own court.
   const slotGroups = courtNames.map((name) => ({
+    courtId: slots.find((s) => s.courtName === name)?.courtId,
     courtName: name,
     slotStarts: slots.filter((s) => s.courtName === name).map((s) => s.slotStart),
   }));

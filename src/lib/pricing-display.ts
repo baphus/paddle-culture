@@ -10,14 +10,25 @@
 // Updated: Drizzle ORM replaced with @supabase/supabase-js HTTP client.
 
 import type { Db } from "@/db/client";
+import { manilaParts } from "@/lib/booking/slots";
 
 export interface DisplayRates {
-  /** "From" hourly court rate; equal to `evening` because windows are per-hour. */
+  /** Legacy aggregate values retained for offline fallback compatibility. */
   morning: number;
   evening: number;
   paddle: number;
   ball: number;
+  /** Court rates configured by admin on operating-hours rows. */
+  courtRates: CourtHourRate[];
   currency: "PHP";
+}
+
+export interface CourtHourRate {
+  courtId: string;
+  dayOfWeek: number;
+  openTime: string;
+  closeTime: string;
+  amount: number;
 }
 
 /** Frozen fallback — used ONLY when the DB is unreachable/empty. */
@@ -26,6 +37,7 @@ export const FALLBACK_RATES: DisplayRates = {
   evening: 200,
   paddle: 100,
   ball: 15,
+  courtRates: [],
   currency: "PHP",
 };
 
@@ -48,6 +60,47 @@ export function formatAmount(n: number): string {
 /** "₱150" — landing display formatting. */
 export function peso(n: number): string {
   return `₱${formatAmount(n)}`;
+}
+
+function minutesOfWall(time: string): number {
+  const [hour, minute] = time.split(":").map(Number);
+  return (hour as number) * 60 + (minute as number);
+}
+
+function rateCoversHour(rate: CourtHourRate, hour: number): boolean {
+  const open = minutesOfWall(rate.openTime);
+  const close = minutesOfWall(rate.closeTime);
+  const end = close <= open ? close + 1440 : close;
+  const at = hour * 60;
+  return (at >= open && at < end) || (at + 1440 >= open && at + 1440 < end);
+}
+
+/** Find the admin-configured rate for one court slot. */
+export function courtRateForSlot(
+  rates: DisplayRates,
+  courtId: string | undefined,
+  slot: Date,
+): CourtHourRate | null {
+  if (!courtId) return null;
+  const { day, hour } = manilaParts(slot);
+  return (
+    rates.courtRates.find(
+      (rate) =>
+        rate.courtId === courtId &&
+        rate.dayOfWeek === day &&
+        rateCoversHour(rate, hour),
+    ) ?? null
+  );
+}
+
+export function courtRateLabel(rate: CourtHourRate): string {
+  const format = (time: string) => {
+    const [hour, minute] = time.split(":").map(Number);
+    const suffix = (hour as number) < 12 ? "AM" : "PM";
+    const h12 = (hour as number) % 12 === 0 ? 12 : (hour as number) % 12;
+    return `${h12}:${String(minute).padStart(2, "0")} ${suffix}`;
+  };
+  return `${format(rate.openTime)}-${format(rate.closeTime)}`;
 }
 
 // Internal shape used inside this module (camelCase, normalised from API response)
@@ -78,6 +131,7 @@ export function deriveDisplayRates(
     | { court_id: string | null; item_type: string; amount: string }
   >,
   hours: Array<{ amount: string | null }>,
+  courtRates: CourtHourRate[] = [],
 ): DisplayRates | null {
   const normalised: PricingRuleInternal[] = rules.map((r) => {
     if ("courtId" in r) return r as PricingRuleInternal;
@@ -92,7 +146,7 @@ export function deriveDisplayRates(
   if (from === null || paddle === null || ball === null) {
     return null;
   }
-  return { morning: from, evening: from, paddle, ball, currency: "PHP" };
+  return { morning: from, evening: from, paddle, ball, courtRates, currency: "PHP" };
 }
 
 /** Server helper for RSCs / API routes (landing page). Fail-soft: never throws. */
@@ -100,11 +154,27 @@ export async function getDisplayRates(db: Db): Promise<DisplayRates> {
   try {
     const [rulesRes, hoursRes] = await Promise.all([
       db.from("pricing_rules").select("court_id,item_type,amount"),
-      db.from("operating_hours").select("amount"),
+      db.from("operating_hours").select("court_id,day_of_week,open_time,close_time,amount"),
     ]);
     if (rulesRes.error || !rulesRes.data) return FALLBACK_RATES;
     if (hoursRes.error || !hoursRes.data) return FALLBACK_RATES;
-    return deriveDisplayRates(rulesRes.data, hoursRes.data) ?? FALLBACK_RATES;
+    const courtRates = hoursRes.data
+      .filter((row: { amount: string | null }) => row.amount !== null)
+      .map((row: {
+        court_id: string;
+        day_of_week: number;
+        open_time: string;
+        close_time: string;
+        amount: string;
+      }) => ({
+        courtId: row.court_id,
+        dayOfWeek: row.day_of_week,
+        openTime: row.open_time,
+        closeTime: row.close_time,
+        amount: Number(row.amount),
+      }))
+      .filter((row: CourtHourRate) => Number.isFinite(row.amount) && row.amount > 0);
+    return deriveDisplayRates(rulesRes.data, hoursRes.data, courtRates) ?? FALLBACK_RATES;
   } catch {
     return FALLBACK_RATES;
   }

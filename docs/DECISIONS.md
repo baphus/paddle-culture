@@ -26,7 +26,7 @@ Tables: `courts(id, name, status, created_at)` · `operating_hours` + `closures(
 
 Derived, not stored: revenue rollups, booking QR (encodes tracking URL), website QR (static asset).
 
-**Rates FROZEN per owner 2026-10-03:** off-peak ₱150/slot-hour (06:00–18:00), peak ₱200/slot-hour (18:00–03:00), ALL days (weekday = weekend); paddle ₱25/paddle/hour; ball ₱15 flat one-time per booking. CORRECTION: peak starts 18:00, not 17:00 (code `timeBandFor` must use 18:00).
+**Court rates are configured per court and operating-hours row by the admin. Customer-facing court pricing must use the matching `operating_hours.amount` for each selected slot, without labeling rates as day/night or assuming fixed time bands. Paddle and ball rates remain in `pricing_rules`.
 
 ## ADR-03 — Holds, concurrency, submit (DB is source of truth)
 

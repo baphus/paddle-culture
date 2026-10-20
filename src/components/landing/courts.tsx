@@ -5,12 +5,12 @@ import LandingImage from "./landing-image";
 const COURTS = [
   {
     src: "/images/court-1.jpg",
-    alt: "Court 1 — daytime play at CK Grounds",
+    alt: "Court 1 at CK Grounds",
     name: "Court 1",
   },
   {
     src: "/images/court-2.jpg",
-    alt: "Court 2 — evening session under the lights",
+    alt: "Court 2 at CK Grounds",
     name: "Court 2",
   },
 ];

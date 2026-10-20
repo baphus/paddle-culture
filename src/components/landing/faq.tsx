@@ -8,7 +8,7 @@ function buildFaqs(rates: DisplayRates) {
     },
     {
       q: "What are the court rates?",
-      a: `Courts are ${peso(rates.morning)}/hr from 6:00 AM to 6:00 PM and ${peso(rates.evening)}/hr from 6:00 PM to 3:00 AM — same rate every day of the week. Optional paddle rental is ${peso(rates.paddle)}/paddle/hr and a ball set is a flat ${peso(rates.ball)} per booking.`,
+      a: `Court rates follow the operating hours configured for each court. The booking grid shows the applicable hourly rate for every available slot. Optional paddle rental is ${peso(rates.paddle)}/paddle/hr and a ball set is a flat ${peso(rates.ball)} per booking.`,
     },
     {
       q: "What is the 10-minute hold?",

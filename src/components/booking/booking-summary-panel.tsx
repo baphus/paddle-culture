@@ -18,8 +18,7 @@ import {
 import { cn } from "@/lib/utils";
 import Image from "next/image";
 import { formatManilaLong, formatSlotRanges, formatCountdown, formatCourtSlotGroups, type CourtSlotGroup } from "@/lib/courts";
-import { calculatePaddleRentalTotal, peso, type DisplayRates } from "@/lib/pricing-display";
-import { timeBandFor } from "@/lib/booking/slots";
+import { calculatePaddleRentalTotal, courtRateForSlot, peso, type DisplayRates } from "@/lib/pricing-display";
 
 export interface SummaryData {
   /** ISO date string "YYYY-MM-DD", or null if not yet picked */
@@ -138,12 +137,11 @@ function clearSlots(): void {
 function computeBreakdown(
   selectedSlots: string[],
   courtCount: number,
+  slotGroups: CourtSlotGroup[] | undefined,
   rates: DisplayRates,
   paddleQty: number,
   ball: boolean,
 ): {
-  dayCount: number;
-  nightCount: number;
   courtTotal: number;
   paddleTotal: number;
   ballTotal: number;
@@ -153,14 +151,20 @@ function computeBreakdown(
   durationLabel: string;
 } {
   const sorted = [...selectedSlots].sort();
-  let dayCount = 0;
-  let nightCount = 0;
-  for (const iso of sorted) {
-    if (timeBandFor(new Date(iso)) === "evening") nightCount++;
-    else dayCount++;
-  }
-  const perCourt = dayCount * rates.morning + nightCount * rates.evening;
-  const courtTotal = perCourt * Math.max(courtCount, 1);
+  const groups = (slotGroups ?? []).filter((group) => group.slotStarts.length > 0);
+  const configuredCourtTotal = groups.reduce((sum, group) => {
+    return (
+      sum +
+      group.slotStarts.reduce((groupTotal, iso) => {
+        const rate = courtRateForSlot(rates, group.courtId, new Date(iso));
+        return groupTotal + (rate?.amount ?? rates.morning);
+      }, 0)
+    );
+  }, 0);
+  const courtTotal =
+    groups.length > 0
+      ? configuredCourtTotal
+      : sorted.length * rates.morning * Math.max(courtCount, 1);
 
   const paddleHours = sorted.length; // equals booked court hours
   const paddleTotal =
@@ -172,11 +176,7 @@ function computeBreakdown(
     sorted.length === 0
       ? "No hours selected"
       : [
-          dayCount > 0 && nightCount > 0
-            ? `${dayCount}h Morning + ${nightCount}h Night`
-            : dayCount > 0
-              ? `${dayCount} hr${dayCount === 1 ? "" : "s"} @ ${peso(rates.morning)}/hr`
-              : `${nightCount} hr${nightCount === 1 ? "" : "s"} @ ${peso(rates.evening)}/hr`,
+          `${sorted.length} court hour${sorted.length === 1 ? "" : "s"} at configured rates`,
           courtCount > 1 ? `× ${courtCount} courts` : null,
         ]
           .filter(Boolean)
@@ -190,7 +190,7 @@ function computeBreakdown(
       ? "Select at least 1 hour"
       : `${sorted.length} Hour${sorted.length === 1 ? "" : "s"}`;
 
-  return { dayCount, nightCount, courtTotal, paddleTotal, ballTotal, total, breakdown, rangeLabel, durationLabel };
+  return { courtTotal, paddleTotal, ballTotal, total, breakdown, rangeLabel, durationLabel };
 }
 
 // ---- Desktop sticky panel ---------------------------------------------------
@@ -207,8 +207,8 @@ export interface SummaryAdvance {
 export function BookingSummaryDesktop({ data }: { data: SummaryData }) {
   const { selectedDate, selectedSlots, courtNames, slotGroups, rates, paddleQty, ball, isHeld, holdDeadlineMs, canClearSlots } = data;
   const { courtTotal, paddleTotal, ballTotal, total, breakdown, rangeLabel, durationLabel } = useMemo(
-    () => computeBreakdown(selectedSlots, courtNames.length, rates, paddleQty, ball),
-    [selectedSlots, courtNames, rates, paddleQty, ball],
+    () => computeBreakdown(selectedSlots, courtNames.length, slotGroups, rates, paddleQty, ball),
+    [selectedSlots, courtNames, slotGroups, rates, paddleQty, ball],
   );
 
   const { urgent, label: countdownLabel } = useHoldCountdown(holdDeadlineMs);
@@ -458,8 +458,8 @@ export function BookingSummaryMobile({ data, advance }: { data: SummaryData; adv
   const { selectedDate, selectedSlots, courtNames, slotGroups, rates, paddleQty, ball, isHeld, holdDeadlineMs, canClearSlots } = data;
 
   const { courtTotal, paddleTotal, ballTotal, total, breakdown, rangeLabel, durationLabel } = useMemo(
-    () => computeBreakdown(selectedSlots, courtNames.length, rates, paddleQty, ball),
-    [selectedSlots, courtNames, rates, paddleQty, ball],
+    () => computeBreakdown(selectedSlots, courtNames.length, slotGroups, rates, paddleQty, ball),
+    [selectedSlots, courtNames, slotGroups, rates, paddleQty, ball],
   );
 
   const { urgent, label: countdownLabel } = useHoldCountdown(holdDeadlineMs);

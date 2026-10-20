@@ -292,6 +292,7 @@ export default function BookingFlow({
             evening: b.evening,
             paddle: b.paddle,
             ball: b.ball,
+            courtRates: b.courtRates ?? [],
             currency: "PHP",
           });
         }

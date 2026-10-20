@@ -37,7 +37,7 @@ export default async function HowItWorksPage() {
     },
     {
       q: "What are the rates, exactly?",
-      a: `Courts are ${peso(rates.morning)}/hr from 6 AM–6 PM and ${peso(rates.evening)}/hr from 6 PM–3 AM. Paddle rental is ${peso(rates.paddle)} per paddle per hour, balls are ${peso(rates.ball)} flat per booking. The server recomputes your total at submit so what you see is what you pay.`,
+      a: `Court rates follow the operating hours configured for each court, and the booking grid shows the applicable rate for every slot. Paddle rental is ${peso(rates.paddle)} per paddle per hour, balls are ${peso(rates.ball)} flat per booking. The server recomputes your total at submit so what you see is what you pay.`,
     },
     {
       q: "Can I book for today?",
@@ -88,9 +88,8 @@ export default async function HowItWorksPage() {
                 Pick a date, a court, and any hours on the live grid. Book any day
                 from today up to 12 months ahead — same-day slots included.
               </p>
-              <p className="mt-5 flex items-center justify-between border-t border-line pt-4 text-[12px] font-bold text-flame">
-                <span>{peso(rates.morning)}/hr · 6AM–6PM</span>
-                <span>{peso(rates.evening)}/hr · 6PM–3AM</span>
+              <p className="mt-5 border-t border-line pt-4 text-[12px] font-bold text-flame">
+                Rates follow each court&apos;s configured hours
               </p>
             </li>
 
@@ -194,8 +193,7 @@ export default async function HowItWorksPage() {
                 Ready to hit the court?
               </h2>
               <p className="max-w-md text-sm leading-6 text-white/80">
-                Live availability, honest hourly rates, and a QR that walks you straight in. Morning{" "}
-                {peso(rates.morning)}/hr · Night {peso(rates.evening)}/hr.
+                Live availability, configured hourly rates, and a QR that walks you straight in.
               </p>
               <a
                 href="/book"

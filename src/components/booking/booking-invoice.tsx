@@ -10,10 +10,12 @@ import {
   User,
 } from "lucide-react";
 import { formatManilaLong, formatSlotRanges, formatCourtSlotGroups, type CourtSlotGroup } from "@/lib/courts";
-import { slotSelectionDateStr, timeBandFor } from "@/lib/booking/slots";
+import { slotSelectionDateStr } from "@/lib/booking/slots";
 import { googleCalendarUrl } from "@/lib/booking/calendar";
 import {
   calculatePaddleRentalTotal,
+  courtRateForSlot,
+  courtRateLabel,
   FALLBACK_RATES,
   peso,
   type DisplayRates,
@@ -69,26 +71,38 @@ export default function BookingInvoice({
     return day ? formatManilaLong(day) : "Upcoming";
   })();
 
-  // Built from the server total's composition (or a rate-based estimate): day vs evening hours.
-  let dayCount = 0;
-  let nightCount = 0;
-  for (const iso of sortedSlots) {
-    if (timeBandFor(new Date(iso)) === "evening") nightCount++;
-    else dayCount++;
-  }
   const n = courtNames.length || 1;
   const paddleHours = equipment.paddleHours ?? sortedSlots.length;
   const invoiceLines: { label: string; amount: number }[] = [];
-  if (dayCount > 0)
+  const pricedGroups = (slotGroups ?? []).filter((group) => group.slotStarts.length > 0);
+  if (pricedGroups.length > 0) {
+    for (const group of pricedGroups) {
+      const grouped = new Map<string, { hours: number; amount: number; label: string }>();
+      for (const iso of group.slotStarts) {
+        const rate = courtRateForSlot(rates, group.courtId, new Date(iso));
+        const amount = rate?.amount ?? rates.morning;
+        const label = rate ? `${peso(amount)}/hr (${courtRateLabel(rate)})` : `${peso(amount)}/hr`;
+        const existing = grouped.get(label);
+        if (existing) {
+          existing.hours += 1;
+          existing.amount += amount;
+        } else {
+          grouped.set(label, { hours: 1, amount, label });
+        }
+      }
+      for (const item of grouped.values()) {
+        invoiceLines.push({
+          label: `${group.courtName} (${item.hours} hr${item.hours === 1 ? "" : "s"} @ ${item.label})`,
+          amount: item.amount,
+        });
+      }
+    }
+  } else if (sortedSlots.length > 0) {
     invoiceLines.push({
-      label: `Morning court (${dayCount} hr${dayCount === 1 ? "" : "s"} × ${n > 1 ? `${n} courts` : "1 court"})`,
-      amount: dayCount * rates.morning * n,
+      label: `Court time (${sortedSlots.length} hr${sortedSlots.length === 1 ? "" : "s"})`,
+      amount: sortedSlots.length * rates.morning * n,
     });
-  if (nightCount > 0)
-    invoiceLines.push({
-      label: `Evening court (${nightCount} hr${nightCount === 1 ? "" : "s"} × ${n > 1 ? `${n} courts` : "1 court"})`,
-      amount: nightCount * rates.evening * n,
-    });
+  }
   if (equipment.paddleQty > 0)
     invoiceLines.push({
       label: `Paddle rental (${equipment.paddleQty} × ${paddleHours}h @ ${peso(rates.paddle)}/hr)`,

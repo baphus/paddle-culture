@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 import { LoadingAnimation } from "@/components/ui/loading-animation";
 import { MAX_SLOTS_PER_BOOKING } from "@/lib/booking/constants";
 import { clearDraft } from "@/lib/booking/draft";
-import { slotsForDate, timeBandFor } from "@/lib/booking/slots";
+import { slotsForDate } from "@/lib/booking/slots";
 import {
   addDaysManilaStr,
   daysInManilaMonth,
@@ -29,7 +29,7 @@ import {
   type CourtOption,
   type CourtSlotGroup,
 } from "@/lib/courts";
-import { FALLBACK_RATES, peso, type DisplayRates } from "@/lib/pricing-display";
+import { courtRateForSlot, courtRateLabel, FALLBACK_RATES, peso, type DisplayRates } from "@/lib/pricing-display";
 import Image from "next/image";
 import LandingImage from "@/components/landing/landing-image";
 import {
@@ -280,6 +280,7 @@ export default function Step1DateTime({
       else byCourt.set(courtId, [iso]);
     }
     return [...byCourt].map(([courtId, isos]) => ({
+      courtId,
       courtName: courts.find((c) => c.id === courtId)?.name ?? "Court",
       slotStarts: isos.sort(),
     }));
@@ -810,13 +811,13 @@ export default function Step1DateTime({
                   Covered
                 </span>
                 <span className="absolute right-3 bottom-3 inline-flex items-center rounded-full bg-flame px-3 py-1 text-[11px] font-bold whitespace-nowrap text-white shadow">
-                  Starts from {peso(rates.morning)}/hr
+                  Starts from {peso(Math.min(...rates.courtRates.filter((r) => r.courtId === previewCourt.id).map((r) => r.amount), rates.morning))}/hr
                 </span>
               </div>
               <div className="p-5">
                 <DialogTitle className="text-lg font-extrabold text-ink">{previewCourt.name}</DialogTitle>
                 <p className="mt-1 text-sm font-semibold text-warm-muted">
-                  {peso(rates.morning)}/hr morning · {peso(rates.evening)}/hr evening
+                  Rates follow this court&apos;s configured hours.
                 </p>
               </div>
             </DialogContent>
@@ -982,11 +983,6 @@ export default function Step1DateTime({
               </thead>
               <tbody>
                 {gridSlots.map((iso, idx) => {
-                  const isEvening = timeBandFor(new Date(iso)) === "evening";
-                  const showBand =
-                    idx === 0 ||
-                    (isEvening &&
-                      timeBandFor(new Date(gridSlots[idx - 1] as string)) !== "evening");
                   const rowHasSelection = courtIds.some((id) => isCellSelected(iso, id));
                   const allClosed = courtIds.every((id) => {
                     const cs = slotStateForCourt(iso, id);
@@ -995,16 +991,6 @@ export default function Step1DateTime({
 
                   return (
                     <Fragment key={iso}>
-                      {showBand && (
-                        <tr className="bg-oat/60">
-                          <td
-                            colSpan={courtIds.length + 1}
-                            className="px-4 py-1.5 text-[10px] font-extrabold uppercase tracking-widest text-warm-muted"
-                          >
-                            {isEvening ? "Evening · ₱200/hr" : "Morning · ₱150/hr"}
-                          </td>
-                        </tr>
-                      )}
                       <tr
                         className={cn(
                           "border-b border-line-warm/30 transition-colors",
@@ -1026,7 +1012,11 @@ export default function Step1DateTime({
                         {courts.map((court) => {
                           const cs = slotStateForCourt(iso, court.id);
                             const isSel = isCellSelected(iso, court.id);
-                            return (
+                          const configuredRate = courtRateForSlot(rates, court.id, new Date(iso));
+                          const rateLabel = configuredRate
+                            ? `${peso(configuredRate.amount)}/hr, ${courtRateLabel(configuredRate)}`
+                            : "Rate unavailable";
+                          return (
                               <td key={court.id} className="py-2 px-2 text-center">
                                 {cs === "past" || cs === "closed" ? (
                                   <div className="flex items-center justify-center" aria-label="Unavailable">
@@ -1046,7 +1036,8 @@ export default function Step1DateTime({
                                     disabled={!!hold || holding}
                                     onClick={() => toggleCell(iso, court.id)}
                                     aria-pressed={isSel}
-                                    aria-label={`${formatSlotRange(iso)} — ${isSel ? "Selected" : "Available"}`}
+                                    aria-label={`${formatSlotRange(iso)} - ${rateLabel} - ${isSel ? "Selected" : "Available"}`}
+                                    title={rateLabel}
                                     className={cn(
                                       "flex items-center justify-center mx-auto rounded-full border-2 size-8 transition-all",
                                       isSel
