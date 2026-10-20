@@ -1,6 +1,7 @@
 import { listAdminUsers } from "@/lib/admin/users";
 import { requireAdmin } from "@/lib/admin/session";
 import InviteManager from "../invite-manager";
+import AddUserDialog from "./add-user-dialog";
 import UsersTable from "./users-table";
 
 export const dynamic = "force-dynamic";
@@ -38,7 +39,12 @@ export default async function UsersPage() {
           <UsersTable
             users={users}
             currentUserId={session.userId}
-            actions={<InviteManager />}
+            actions={
+              <div className="flex flex-wrap gap-2">
+                <AddUserDialog />
+                <InviteManager />
+              </div>
+            }
           />
         )}
       </section>

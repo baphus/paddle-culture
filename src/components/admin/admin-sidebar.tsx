@@ -27,6 +27,7 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
+import ProfileDialog from "./profile-dialog";
 
 const NAV_ITEMS = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
@@ -161,6 +162,7 @@ export default function AdminSidebar({ email, name }: Props) {
               {email}
             </span>
           </div>
+          <ProfileDialog email={email} name={name} />
         </div>
         <SidebarMenu>
           <SidebarMenuItem>

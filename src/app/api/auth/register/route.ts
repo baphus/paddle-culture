@@ -27,13 +27,20 @@ export async function POST(request: Request) {
     const email = parsed.data.email.toLowerCase();
     const tokenHash = hashInviteToken(token);
 
-    const { data: existingRow, error: fetchError } = await db
+    // Claim before creating the auth user so two concurrent redemptions cannot
+    // both create accounts. If Auth fails, release the claim for a retry.
+    const claimedAt = new Date().toISOString();
+    const { data: claimed, error: claimError } = await db
       .from("admin_invites")
-      .select("used_at")
+      .update({ used_at: claimedAt })
       .eq("token_hash", tokenHash)
-      .single();
+      .is("used_at", null)
+      .select("token_hash");
 
-    if (fetchError || !existingRow || (existingRow as { used_at: string | null }).used_at !== null) {
+    if (claimError) {
+      return err("INTERNAL", "Could not redeem invite.", 500);
+    }
+    if (!claimed || claimed.length === 0) {
       return err("INVITE_INVALID", "This invite link is invalid or already used.", 404);
     }
 
@@ -44,6 +51,11 @@ export async function POST(request: Request) {
       options: { data: { full_name: name } },
     });
     if (signUpError || !signUp.user) {
+      await db
+        .from("admin_invites")
+        .update({ used_at: null })
+        .eq("token_hash", tokenHash)
+        .eq("used_at", claimedAt);
       const taken = /already|registered|exists/i.test(signUpError?.message ?? "");
       return err(
         taken ? "EMAIL_TAKEN" : "REGISTER_FAILED",
@@ -54,26 +66,17 @@ export async function POST(request: Request) {
     const userId = signUp.user.id;
 
     const admin = getSupabaseAdmin();
-    const { error: flagError } = await admin.auth.admin.updateUserById(userId, {
+    const { error: roleError } = await admin.auth.admin.updateUserById(userId, {
       app_metadata: { role: "admin" },
-      user_metadata: { full_name: name },
     });
-    if (flagError) {
+    if (roleError) {
       await admin.auth.admin.deleteUser(userId);
+      await db
+        .from("admin_invites")
+        .update({ used_at: null })
+        .eq("token_hash", tokenHash)
+        .eq("used_at", claimedAt);
       return err("REGISTER_FAILED", "Registration failed.", 500);
-    }
-
-    // Atomic single-use claim; on lost race, roll back auth user
-    const { data: claimed, error: claimError } = await db
-      .from("admin_invites")
-      .update({ used_at: new Date().toISOString() })
-      .eq("token_hash", tokenHash)
-      .is("used_at", null)
-      .select("token_hash");
-
-    if (claimError || !claimed || (claimed as { token_hash: string }[]).length === 0) {
-      await admin.auth.admin.deleteUser(userId);
-      return err("INVITE_ALREADY_USED", "This invite link was just used.", 409);
     }
 
     await db.from("audit_log").insert({
@@ -85,8 +88,7 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json(
-      // The sign-up session predates the admin role update, so it cannot be
-      // used to enter the admin area until a fresh sign-in issues new claims.
+      // Require a fresh sign-in to receive claims with the admin role.
       { ok: true, email },
       { status: 201 },
     );

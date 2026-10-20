@@ -9,6 +9,12 @@ import {
   type AdminSession,
 } from "./session";
 
+export interface CreateAdminInput {
+  name: string;
+  email: string;
+  password: string;
+}
+
 /** Shape returned by GET /api/admin/users and consumed by the Users page. */
 export interface AdminUserRecord {
   id: string;
@@ -39,6 +45,52 @@ export async function listAdminUsers(): Promise<AdminUserRecord[]> {
     status: isDeactivated(user) ? "deactivated" : "active",
     createdAt: user.created_at ?? "",
   }));
+}
+
+/** Create an active, confirmed administrator and record who added them. */
+export async function createAdminUser(
+  actor: AdminSession,
+  input: CreateAdminInput,
+): Promise<AdminUserRecord> {
+  const admin = getSupabaseAdmin();
+  const email = input.email.toLowerCase();
+  const { data, error } = await admin.auth.admin.createUser({
+    email,
+    password: input.password,
+    email_confirm: true,
+    app_metadata: { role: "admin" },
+    user_metadata: { full_name: input.name },
+  });
+
+  if (error || !data.user) {
+    const duplicate = /already|registered|exists|duplicate/i.test(error?.message ?? "");
+    throw new LaneError(
+      duplicate ? "EMAIL_TAKEN" : "CREATE_ADMIN_FAILED",
+      duplicate ? "This email is already registered." : "Could not create user.",
+      duplicate ? 409 : 500,
+    );
+  }
+
+  try {
+    const { error: auditError } = await getDb().from("audit_log").insert({
+      actor: actor.email,
+      action: "admin_user.create",
+      entity: "auth.users",
+      entity_id: data.user.id,
+      after: { email, name: input.name },
+    });
+    if (auditError) throw auditError;
+  } catch (error) {
+    console.error("audit_log insert failed for admin_user.create", error);
+  }
+
+  return {
+    id: data.user.id,
+    email,
+    name: input.name,
+    status: "active",
+    createdAt: data.user.created_at ?? new Date().toISOString(),
+  };
 }
 
 /**

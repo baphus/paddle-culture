@@ -28,6 +28,16 @@ export const registerBodySchema = z.object({
   password: z.string().min(8).max(256),
 });
 
+/** Payload accepted from the authenticated Admin → Users add-user form. */
+export const createAdminBodySchema = z.object({
+  name: z.string().trim().min(1, "Name is required.").max(100),
+  email: z.string().trim().email("Enter a valid email address.").max(254),
+  password: z
+    .string()
+    .min(8, "Password must be at least 8 characters.")
+    .max(256),
+});
+
 export const profilePatchSchema = z.object({
   name: z.string().trim().min(1).max(100),
 });

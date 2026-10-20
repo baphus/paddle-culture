@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   PlusCircle,
+  Pencil,
   Trash2,
   CalendarX,
   ChevronDown,
@@ -38,6 +39,7 @@ import {
   type CourtRow,
   type PricingRuleRow,
 } from "@/lib/admin/config";
+import { windowOverlaps } from "@/lib/booking/windows";
 import {
   fmtDay,
   groupRuns,
@@ -215,20 +217,23 @@ function useHoursActions() {
     }
   }
 
-  async function updateAmount(id: string, amount: string): Promise<boolean> {
+  async function updateRow(
+    id: string,
+    input: { openTime: string; closeTime: string; amount: string },
+  ): Promise<boolean> {
     setBusy(id);
     try {
       const res = await fetch(`/api/admin/hours/${id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ amount }),
+        body: JSON.stringify(input),
       });
       const data = (await res.json().catch(() => null)) as unknown;
       if (!res.ok) {
         toast.error(readError(data, "Request failed."));
         return false;
       }
-      toast.success("Rate updated.");
+      toast.success("Hours updated.");
       router.refresh();
       return true;
     } catch {
@@ -257,7 +262,7 @@ function useHoursActions() {
     }
   }
 
-  return { busy, addRow, updateAmount, deleteRow };
+  return { busy, addRow, updateRow, deleteRow };
 }
 
 // ── pricing vocabulary / ordering ─────────────────────────────────────────
@@ -287,6 +292,44 @@ function fmtHour(hour: number) {
   return `${h % 12 === 0 ? 12 : h % 12}:00 ${h < 12 ? "AM" : "PM"}`;
 }
 
+function hourOf(time: string): number {
+  return Number(time.slice(0, 2));
+}
+
+/** Whether a proposed range has no overlap with this day's existing rows. */
+function isAvailableHoursRange(from: string, until: string, existing: HourRow[]): boolean {
+  if (!from || !until || from === until) return false;
+  const proposed = { start: hourOf(from), end: hourOf(until) };
+  return !existing.some((row) =>
+    windowOverlaps(proposed, { start: hourOf(row.openTime), end: hourOf(row.closeTime) }),
+  );
+}
+
+/**
+ * Keep only times that can form a non-overlapping range. A selected opposite
+ * endpoint narrows the list further, so previously configured hours cannot be
+ * selected again.
+ */
+function availableHourOptions(
+  role: "from" | "until",
+  oppositeValue: string,
+  existing: HourRow[],
+): string[] {
+  return HOUR_OPTIONS.map((hour) => `${hour}:00`).filter((candidate) => {
+    if (oppositeValue) {
+      return role === "from"
+        ? isAvailableHoursRange(candidate, oppositeValue, existing)
+        : isAvailableHoursRange(oppositeValue, candidate, existing);
+    }
+    return HOUR_OPTIONS.some((other) => {
+      const otherTime = `${other}:00`;
+      return role === "from"
+        ? isAvailableHoursRange(candidate, otherTime, existing)
+        : isAvailableHoursRange(otherTime, candidate, existing);
+    });
+  });
+}
+
 const selectClass =
   "h-8 w-full rounded-md border bg-background px-1.5 text-xs tabular-nums disabled:opacity-40";
 
@@ -296,11 +339,13 @@ function HourSelect({
   value,
   onChange,
   disabled,
+  options = HOUR_OPTIONS.map((hour) => `${hour}:00`),
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
+  options?: string[];
 }) {
   return (
     <select
@@ -311,9 +356,9 @@ function HourSelect({
       className={selectClass}
     >
       <option value="">—</option>
-      {HOUR_OPTIONS.map((h) => (
-        <option key={h} value={`${h}:00`}>
-          {fmtHour(Number(h))}
+      {options.map((time) => (
+        <option key={time} value={time}>
+          {fmtHour(hourOf(time))}
         </option>
       ))}
     </select>
@@ -382,19 +427,32 @@ function EditableHourRow({
   row,
   busy,
   onDelete,
-  onSaveAmount,
+  onEdit,
 }: {
   row: HourRow;
   busy: string | null;
   onDelete: (id: string) => void;
-  onSaveAmount: (id: string, amount: string) => Promise<boolean>;
+  onEdit: (row: HourRow) => void;
 }) {
-  const [draft, setDraft] = useState<string | undefined>(undefined);
-  const amount = row.amount ?? "";
-
   return (
     <div className="space-y-1 rounded-md bg-muted px-2 py-1.5">
       <div className="flex items-center justify-between gap-1">
+        {false ? (
+          <div className="grid min-w-0 flex-1 grid-cols-[1fr_auto_1fr_auto_4rem] items-center gap-1.5">
+            <HourSelect label="Start time" value={row.openTime} onChange={() => undefined} />
+            <span className="text-xs text-muted-foreground">to</span>
+            <HourSelect label="End time" value={row.closeTime} onChange={() => undefined} />
+            <span className="text-xs text-muted-foreground">₱</span>
+            <Input
+              aria-label="Hourly rate"
+              value={row.amount ?? ""}
+              inputMode="decimal"
+              placeholder="150"
+              onChange={() => undefined}
+              className="h-8 min-w-0 px-1.5 text-right text-xs font-semibold tabular-nums"
+            />
+          </div>
+        ) : (
         <p className="min-w-0 truncate text-[11px] tabular-nums">
           {fmt12(row.openTime)} – {fmt12(row.closeTime)}
           {" · "}
@@ -404,6 +462,19 @@ function EditableHourRow({
             <span className="font-semibold">₱{row.amount}</span>
           )}
         </p>
+        )}
+        <div className="flex shrink-0 items-center gap-0.5">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          disabled={busy !== null}
+          onClick={() => onEdit(row)}
+          title="Edit hours"
+          aria-label="Edit hours"
+        >
+          <Pencil />
+        </Button>
         <Button
           type="button"
           variant="ghost"
@@ -412,27 +483,12 @@ function EditableHourRow({
           onClick={() => onDelete(row.id)}
           title="Remove this hours row"
           aria-label="Remove this hours row"
-          className="shrink-0 text-muted-foreground hover:text-destructive"
+          className="text-muted-foreground hover:text-destructive"
         >
           {busy === row.id ? <span className="text-[10px]">…</span> : <Trash2 />}
         </Button>
+        </div>
       </div>
-      <AmountField
-        label=""
-        amount={amount}
-        draft={draft}
-        busy={busy === row.id}
-        placeholder="Set a rate"
-        onChange={setDraft}
-        onSave={() => {
-          const value = (draft ?? amount).trim();
-          if (!value) {
-            toast.error("Set a rate — hours without a price can't be booked.");
-            return;
-          }
-          void onSaveAmount(row.id, value);
-        }}
-      />
     </div>
   );
 }
@@ -442,12 +498,16 @@ function EditableHourRow({
 function AddHoursModal({
   dayIndex,
   dayLabel,
+  existingHours,
+  initialRow,
   busy,
   onAdd,
   onClose,
 }: {
   dayIndex: number;
   dayLabel: string;
+  existingHours: HourRow[];
+  initialRow?: HourRow;
   busy: string | null;
   onAdd: (
     dayOfWeek: number,
@@ -457,16 +517,29 @@ function AddHoursModal({
   ) => Promise<boolean>;
   onClose: () => void;
 }) {
-  const [from, setFrom] = useState("");
-  const [until, setUntil] = useState("");
-  const [amount, setAmount] = useState("");
+  const [from, setFrom] = useState(initialRow?.openTime ?? "");
+  const [until, setUntil] = useState(initialRow?.closeTime ?? "");
+  const [amount, setAmount] = useState(initialRow?.amount ?? "");
   const [saving, setSaving] = useState(false);
 
+  const fromOptions = availableHourOptions("from", until, existingHours);
+  const untilOptions = availableHourOptions("until", from, existingHours);
   const hasTimes = from !== "" && until !== "";
   const sameTime = hasTimes && from === until;
   const overnight = hasTimes && until < from;
   const hasRate = amount.trim() !== "";
-  const canSave = hasTimes && hasRate && !sameTime;
+  const rangeAvailable = isAvailableHoursRange(from, until, existingHours);
+  const canSave = hasTimes && hasRate && !sameTime && rangeAvailable;
+
+  function changeFrom(value: string) {
+    setFrom(value);
+    if (until && !isAvailableHoursRange(value, until, existingHours)) setUntil("");
+  }
+
+  function changeUntil(value: string) {
+    setUntil(value);
+    if (from && !isAvailableHoursRange(from, value, existingHours)) setFrom("");
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -493,7 +566,7 @@ function AddHoursModal({
       <div className="relative flex w-full max-w-md flex-col overflow-hidden rounded-xl border bg-card text-card-foreground shadow-lg">
         <div className="flex items-center justify-between gap-3 border-b px-5 py-4">
           <h2 id="add-hours-modal-title" className="min-w-0 truncate text-sm font-medium">
-            Add hours &amp; rate — {dayLabel}
+            {initialRow ? "Edit hours & rate" : "Add hours & rate"} — {dayLabel}
           </h2>
           <Button
             size="icon"
@@ -509,9 +582,19 @@ function AddHoursModal({
         <form onSubmit={(e) => void submit(e)} className="space-y-4 p-5">
           <div className="space-y-1.5">
             <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-              <HourSelect label={`${dayLabel} from`} value={from} onChange={setFrom} />
+              <HourSelect
+                label={`${dayLabel} from`}
+                value={from}
+                onChange={changeFrom}
+                options={fromOptions}
+              />
               <span className="text-xs text-muted-foreground">to</span>
-              <HourSelect label={`${dayLabel} until`} value={until} onChange={setUntil} />
+              <HourSelect
+                label={`${dayLabel} until`}
+                value={until}
+                onChange={changeUntil}
+                options={untilOptions}
+              />
             </div>
             {overnight ? (
               <p className="text-xs text-muted-foreground">
@@ -537,6 +620,10 @@ function AddHoursModal({
             <p className="text-xs text-muted-foreground">
               Open and close times must differ.
             </p>
+          ) : hasTimes && !rangeAvailable ? (
+            <p className="text-xs text-muted-foreground">
+              That period is already configured. Pick from the remaining hours.
+            </p>
           ) : !hasRate ? (
             <p className="text-xs text-muted-foreground">
               Set a rate — hours without a price can&apos;t be booked.
@@ -548,7 +635,7 @@ function AddHoursModal({
               Cancel
             </Button>
             <Button type="submit" disabled={!canSave || saving || busy !== null}>
-              {saving ? "Saving…" : "Save"}
+              {saving ? "Saving…" : initialRow ? "Save changes" : "Save"}
             </Button>
           </div>
         </form>
@@ -731,8 +818,9 @@ function EditCourtModal({
   hours: HourRow[];
   onClose: () => void;
 }) {
-  const { busy, addRow, updateAmount, deleteRow } = useHoursActions();
+  const { busy, addRow, updateRow, deleteRow } = useHoursActions();
   const [addDay, setAddDay] = useState<number | null>(null);
+  const [editingHour, setEditingHour] = useState<HourRow | null>(null);
 
   return (
     <div
@@ -745,7 +833,7 @@ function EditCourtModal({
       }}
     >
       <div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden />
-      <div className="relative flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border bg-card text-card-foreground shadow-lg">
+      <div className="relative flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl border bg-card text-card-foreground shadow-lg">
         <div className="flex items-center justify-between gap-3 border-b px-5 py-4">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <h2 id="edit-court-modal-title" className="min-w-0 truncate text-sm font-medium">
@@ -805,7 +893,7 @@ function EditCourtModal({
                         row={row}
                         busy={busy}
                         onDelete={deleteRow}
-                        onSaveAmount={updateAmount}
+                        onEdit={setEditingHour}
                       />
                     ))
                   )}
@@ -831,6 +919,7 @@ function EditCourtModal({
         <AddHoursModal
           dayIndex={addDay}
           dayLabel={DAY_NAMES[addDay] ?? ""}
+          existingHours={hours.filter((h) => h.courtId === court.id && h.dayOfWeek === addDay)}
           busy={busy}
           onAdd={(dayOfWeek, openTime, closeTime, amount) =>
             addRow(dayOfWeek, court.id, openTime, closeTime, amount, {
@@ -838,6 +927,24 @@ function EditCourtModal({
             })
           }
           onClose={() => setAddDay(null)}
+        />
+      ) : null}
+      {editingHour ? (
+        <AddHoursModal
+          dayIndex={editingHour.dayOfWeek}
+          dayLabel={DAY_NAMES[editingHour.dayOfWeek] ?? ""}
+          existingHours={hours.filter(
+            (h) =>
+              h.courtId === court.id &&
+              h.dayOfWeek === editingHour.dayOfWeek &&
+              h.id !== editingHour.id,
+          )}
+          initialRow={editingHour}
+          busy={busy}
+          onAdd={(_dayOfWeek, openTime, closeTime, amount) =>
+            updateRow(editingHour.id, { openTime, closeTime, amount })
+          }
+          onClose={() => setEditingHour(null)}
         />
       ) : null}
     </div>
@@ -1267,35 +1374,28 @@ function RateCard({
   title: string;
   image?: { src: string; alt: string };
   headerExtra?: ReactNode;
-  summary: ReactNode;
+  summary?: ReactNode;
   footer?: ReactNode;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(true);
-
   return (
     <div className="flex flex-col overflow-hidden rounded-xl border bg-card text-card-foreground">
       {image ? (
         <LandingImage src={image.src} alt={image.alt} className="h-32 w-full shrink-0" />
       ) : null}
 
-      <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
         <p className="min-w-0 truncate text-sm font-medium">{title}</p>
         {headerExtra}
       </div>
 
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="mt-3 flex items-center justify-between border-t px-5 py-3 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50"
-        aria-expanded={open}
-      >
-        {summary}
-        {open ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
-      </button>
-
-      {open ? children : null}
-      {open && footer ? (
+      {summary ? (
+        <div className="mt-3 border-t px-5 py-3 text-xs font-medium text-muted-foreground">
+          {summary}
+        </div>
+      ) : null}
+      {children}
+      {footer ? (
         <p className="border-t px-5 py-3 text-xs text-muted-foreground">{footer}</p>
       ) : null}
     </div>
@@ -1312,7 +1412,7 @@ function courtHourLines(hours: HourRow[], courtId: string): HourLine[] {
     const rows = hours
       .filter((h) => h.courtId === courtId && h.dayOfWeek === day)
       .sort((a, b) => a.openTime.localeCompare(b.openTime));
-    return rows
+    const text = rows
       .map(
         (r) =>
           `${fmt12(r.openTime)}–${fmt12(r.closeTime)} · ${
@@ -1320,24 +1420,12 @@ function courtHourLines(hours: HourRow[], courtId: string): HourLine[] {
           }`,
       )
       .join(", ");
+    return text || "Closed";
   });
 
-  const runs: { first: number; last: number; text: string; at: number }[] = [];
-  perDay.forEach((text, i) => {
-    if (text === "") return;
-    const day = MON_SUN[i] as number;
-    const last = runs[runs.length - 1];
-    if (last && last.text === text && last.at === i - 1) {
-      last.last = day;
-      last.at = i;
-    } else {
-      runs.push({ first: day, last: day, text, at: i });
-    }
-  });
-
-  return runs.map((r) => ({
-    days: r.first === r.last ? dayShort(r.first) : `${dayShort(r.first)}–${dayShort(r.last)}`,
-    text: r.text,
+  return perDay.map((text, index) => ({
+    days: dayShort(MON_SUN[index] as number),
+    text,
   }));
 }
 
@@ -1371,10 +1459,18 @@ function CardsView({
   const changeAmount = (draftKey: string, val: string) =>
     setAmounts((m) => ({ ...m, [draftKey]: val }));
 
-  const rentalDirty = rentalRules.filter((r) => {
-    const draft = amounts[`global|${r.id}`];
-    return draft !== undefined && draft.trim() !== r.amount;
-  }).length;
+  const rentalItems = [
+    {
+      itemType: "paddle",
+      title: "Paddle rental",
+      image: { src: "/images/paddle.jpg", alt: "Pickleball paddles on a court" },
+    },
+    {
+      itemType: "ball",
+      title: "Ball rental",
+      image: { src: "/images/Pickleball.jpg", alt: "Pickleball on a court" },
+    },
+  ] as const;
 
   async function saveRental(rule: PricingRuleRow, draftKey: string) {
     const amount = (amounts[draftKey] ?? rule.amount).trim();
@@ -1437,10 +1533,6 @@ function CardsView({
       <section className="space-y-4">
         <div>
           <h2 className="text-sm font-medium">Courts</h2>
-          <p className="text-xs text-muted-foreground">
-            Each row sets a court's hours and rate for one day. Inactive courts
-            are hidden from booking but retain all history.
-          </p>
         </div>
 
         {courts.length > 0 ? (
@@ -1468,8 +1560,31 @@ function CardsView({
                         <Zap />
                         Quick Setup
                       </Button>
+
+                    </>
+                  }
+                >
+                  <div className="space-y-2 border-t px-5 py-4">
+                    {lines.length > 0 ? (
+                      <div className="divide-y overflow-hidden rounded-lg border text-xs">
+                        {lines.map((line, j) => (
+                          <p key={`${line.days}-${j}`} className="grid grid-cols-[3.5rem_1fr] gap-2 px-3 py-2">
+                            <span className="font-medium">{line.days}</span>
+                            <span className={line.text === "Closed" ? "italic text-muted-foreground" : "text-muted-foreground"}>
+                              {line.text}
+                            </span>
+                          </p>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        No open hours yet — click Edit to add.
+                      </p>
+                    )}
+
+                    <div className="flex justify-end gap-2">
                       <Button
-                        variant="outline"
+                        variant={court.status === "active" ? "destructive" : "outline"}
                         size="sm"
                         disabled={busy !== null}
                         onClick={() => flip(court)}
@@ -1480,33 +1595,6 @@ function CardsView({
                             ? "Deactivate"
                             : "Activate"}
                       </Button>
-                    </>
-                  }
-                  summary={
-                    <span className="line-clamp-2">
-                      {lines.length > 0
-                        ? lines.map((l) => `${l.days} ${l.text}`).join(" · ")
-                        : "No open hours yet"}
-                    </span>
-                  }
-                >
-                  <div className="space-y-2 border-t px-5 py-4">
-                    {lines.length > 0 ? (
-                      <div className="space-y-1.5">
-                        {lines.map((line, j) => (
-                          <p key={`${line.days}-${j}`} className="text-sm">
-                            <span className="font-medium">{line.days}</span>
-                            <span className="text-muted-foreground"> {line.text}</span>
-                          </p>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">
-                        No open hours yet — click Edit to add.
-                      </p>
-                    )}
-
-                    <div className="flex justify-end">
                       <Button variant="outline" size="sm" onClick={() => setEditing(court)}>
                         Edit
                       </Button>
@@ -1532,22 +1620,32 @@ function CardsView({
         </div>
 
         <div className="grid items-start gap-4 lg:grid-cols-2">
-          <RateCard
-            title="Paddle & ball"
-            summary={
-              <span>
-                {rentalRules.length} rate{rentalRules.length !== 1 ? "s" : ""}
-                {rentalDirty > 0 ? (
-                  <span className="ml-2 font-medium text-foreground">
-                    {rentalDirty} unsaved
+          {rentalItems.map((item) => {
+            const itemRules = rentalRules.filter((rule) => rule.itemType === item.itemType);
+            const dirtyCount = itemRules.filter((rule) => {
+              const draft = amounts[`global|${rule.id}`];
+              return draft !== undefined && draft.trim() !== rule.amount;
+            }).length;
+
+            return (
+              <RateCard
+                key={item.itemType}
+                title={item.title}
+                image={item.image}
+                summary={
+                  <span>
+                    {itemRules.length} rate{itemRules.length !== 1 ? "s" : ""}
+                    {dirtyCount > 0 ? (
+                      <span className="ml-2 font-medium text-foreground">
+                        {dirtyCount} unsaved
+                      </span>
+                    ) : null}
                   </span>
-                ) : null}
-              </span>
-            }
-          >
-            {rentalRules.length > 0 ? (
+                }
+              >
+            {itemRules.length > 0 ? (
               <div className="space-y-2 px-5 pb-5">
-                {rentalRules.map((rule) => {
+                {itemRules.map((rule) => {
                   const draftKey = `global|${rule.id}`;
                   const scoped = rule.dayType !== "all" || rule.timeBand !== "all";
                   return (
@@ -1578,10 +1676,12 @@ function CardsView({
               </div>
             ) : (
               <p className="px-5 pb-5 text-xs text-muted-foreground">
-                No paddle or ball rates found.
+                No {item.itemType} rates found.
               </p>
             )}
-          </RateCard>
+              </RateCard>
+            );
+          })}
         </div>
       </section>
 

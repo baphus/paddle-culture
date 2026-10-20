@@ -1,10 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import Link from "next/link";
+import { SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { EXPENSE_CATEGORIES, type ExpenseInput } from "@/lib/admin/expenses";
 import { buildFinanceCsv } from "@/lib/admin/finance-export";
 
@@ -13,16 +16,70 @@ export interface FinanceExpenseRow {
   description: string | null; vendor: string | null; notes: string | null;
 }
 
-export function FinanceFilters({ from, to, category, q }: { from: string; to: string; category: string; q: string }) {
+export function FinanceFilters({ from, to, category, q, today }: { from: string; to: string; category: string; q: string; today: string }) {
   const router = useRouter();
-  return <form className="flex flex-wrap items-end gap-2" action="/admin/finance">
-    <label className="grid gap-1 text-xs text-muted-foreground">From<Input name="from" type="date" defaultValue={from} /></label>
-    <label className="grid gap-1 text-xs text-muted-foreground">To<Input name="to" type="date" defaultValue={to} /></label>
-    <label className="grid gap-1 text-xs text-muted-foreground">Category<select className="h-8 rounded-lg border bg-background px-2 text-sm" name="category" defaultValue={category}><option value="">All categories</option>{EXPENSE_CATEGORIES.map((value) => <option key={value}>{value}</option>)}</select></label>
-    <label className="grid gap-1 text-xs text-muted-foreground">Title search<Input name="q" defaultValue={q} placeholder="Search expenses" /></label>
-    <Button type="submit" variant="outline">Apply</Button>
-    <Button type="button" variant="ghost" onClick={() => router.push("/admin/finance")}>Reset</Button>
-  </form>;
+  const [open, setOpen] = useState(false);
+  const [filterFrom, setFilterFrom] = useState(from);
+  const [filterTo, setFilterTo] = useState(to);
+  const [filterCategory, setFilterCategory] = useState(category);
+  const [filterQuery, setFilterQuery] = useState(q);
+
+  useEffect(() => {
+    setOpen(false);
+    setFilterFrom(from);
+    setFilterTo(to);
+    setFilterCategory(category);
+    setFilterQuery(q);
+  }, [from, to, category, q]);
+
+  const presetDays = [7, 30, 90] as const;
+  const isPresetRange = presetDays.some((days) => filterFrom === shiftDate(today, -(days - 1)) && filterTo === today);
+  const activeCount = Number(!isPresetRange) + Number(Boolean(category)) + Number(Boolean(q));
+
+  return <Sheet open={open} onOpenChange={setOpen}>
+    <SheetTrigger render={<Button type="button" variant="outline" aria-expanded={open}>
+      <SlidersHorizontal aria-hidden="true" />
+      Filters
+      {activeCount > 0 && <span className="ml-0.5 inline-flex size-5 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground" aria-label={`${activeCount} active filters`}>{activeCount}</span>}
+    </Button>} />
+    <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-md">
+      <SheetHeader className="border-b px-5 py-4">
+        <SheetTitle>Filters</SheetTitle>
+        <SheetDescription>Choose a reporting period or narrow expenses by category and title.</SheetDescription>
+      </SheetHeader>
+      <form action="/admin/finance" onSubmit={() => setOpen(false)} className="flex min-h-0 flex-1 flex-col">
+        <div className="flex-1 space-y-6 overflow-y-auto p-5">
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium">Quick date range</legend>
+            <div className="flex flex-wrap gap-2">
+              {presetDays.map((days) => {
+                const start = shiftDate(today, -(days - 1));
+                const selected = from === start && to === today;
+                return <Button key={days} size="sm" variant={selected ? "secondary" : "outline"} nativeButton={false} render={<Link href={`/admin/finance?from=${start}&to=${today}`} />}>{`Last ${days} days`}</Button>;
+              })}
+            </div>
+          </fieldset>
+          <fieldset className="grid gap-4">
+            <legend className="mb-2 text-sm font-medium">Custom range and expenses</legend>
+            <label className="grid gap-1.5 text-xs text-muted-foreground">From<Input name="from" type="date" value={filterFrom} onChange={(event) => setFilterFrom(event.target.value)} /></label>
+            <label className="grid gap-1.5 text-xs text-muted-foreground">To<Input name="to" type="date" value={filterTo} onChange={(event) => setFilterTo(event.target.value)} /></label>
+            <label className="grid gap-1.5 text-xs text-muted-foreground">Category<select className="h-9 rounded-lg border bg-background px-2 text-sm text-foreground" name="category" value={filterCategory} onChange={(event) => setFilterCategory(event.target.value)}><option value="">All categories</option>{EXPENSE_CATEGORIES.map((value) => <option key={value}>{value}</option>)}</select></label>
+            <label className="grid gap-1.5 text-xs text-muted-foreground">Title search<Input name="q" value={filterQuery} onChange={(event) => setFilterQuery(event.target.value)} placeholder="Search expenses" /></label>
+          </fieldset>
+        </div>
+        <SheetFooter className="flex-row justify-between border-t p-4">
+          <Button type="button" variant="ghost" onClick={() => { setFilterFrom(shiftDate(today, -29)); setFilterTo(today); setFilterCategory(""); setFilterQuery(""); setOpen(false); router.push("/admin/finance"); }}>Reset</Button>
+          <Button type="submit">Apply filters</Button>
+        </SheetFooter>
+      </form>
+    </SheetContent>
+  </Sheet>;
+}
+
+function shiftDate(date: string, delta: number) {
+  const [year, month, day] = date.split("-").map(Number);
+  const result = new Date(Date.UTC(year!, month! - 1, day! + delta));
+  return `${result.getUTCFullYear()}-${String(result.getUTCMonth() + 1).padStart(2, "0")}-${String(result.getUTCDate()).padStart(2, "0")}`;
 }
 
 export function ExpenseActions({ expense, today }: { expense?: FinanceExpenseRow; today: string }) {

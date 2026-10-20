@@ -335,6 +335,16 @@ export const hoursAmountSchema = z.object({
   amount: pricingAmountSchema.shape.amount,
 });
 
+export const hoursUpdateSchema = z
+  .object({
+    openTime: hhmm,
+    closeTime: hhmm,
+    amount: pricingAmountSchema.shape.amount,
+  })
+  .refine((d) => d.openTime !== d.closeTime, {
+    message: "Open and close times must differ (use overnight close<=open for late nights).",
+  });
+
 export interface HoursRow {
   id: string;
   courtId: string;
@@ -416,15 +426,16 @@ async function findHoursConflict(
   dayOfWeek: number,
   openTime: string,
   closeTime: string,
+  excludeId?: string,
 ): Promise<{ day_of_week: number; open_time: string; close_time: string } | undefined> {
   const { data } = await db
     .from("operating_hours")
-    .select("day_of_week,open_time,close_time")
+    .select("id,day_of_week,open_time,close_time")
     .eq("court_id", courtId)
     .eq("day_of_week", dayOfWeek);
   const wanted = minuteSpan(openTime, closeTime);
-  return (data ?? []).find((r: { open_time: string; close_time: string }) =>
-    spansOverlap(wanted, minuteSpan(r.open_time, r.close_time)),
+  return (data ?? []).find((r: { id?: string; open_time: string; close_time: string }) =>
+    (!excludeId || r.id !== excludeId) && spansOverlap(wanted, minuteSpan(r.open_time, r.close_time)),
   );
 }
 
@@ -517,6 +528,52 @@ export async function updateHoursAmount(
       audit(admin, "hours.amount", "operating_hours", id, { amount: before.amount }, { amount }),
     ]);
   }
+
+  const rows = await listHours(db);
+  const row = rows.find((r) => r.id === id);
+  if (!row) throw new LaneError("INTERNAL", "Hours row unreadable.", 500);
+  return row;
+}
+
+/** Updates a row's time range and rate without allowing overlap on its day. */
+export async function updateHours(
+  db: Db,
+  admin: AdminSession,
+  id: string,
+  input: z.infer<typeof hoursUpdateSchema>,
+): Promise<HoursRow> {
+  const { data: existing, error: fetchError } = await db
+    .from("operating_hours")
+    .select("id,court_id,day_of_week,open_time,close_time,amount")
+    .eq("id", id)
+    .maybeSingle();
+  if (fetchError || !existing) throw new LaneError("NOT_FOUND", "Hours row not found.", 404);
+
+  const before = existing as HoursRowRaw;
+  const conflict = await findHoursConflict(
+    db,
+    before.court_id as string,
+    before.day_of_week,
+    input.openTime,
+    input.closeTime,
+    id,
+  );
+  if (conflict) throw new LaneError("HOURS_OVERLAP", overlapMessage(conflict), 409);
+
+  const { error: updateError } = await db
+    .from("operating_hours")
+    .update({ open_time: toDbTime(input.openTime), close_time: toDbTime(input.closeTime), amount: input.amount })
+    .eq("id", id);
+  if (updateError) {
+    if (updateError.code === "23P01") {
+      throw new LaneError("HOURS_OVERLAP", "This overlaps an existing hours row — pick a different time.", 409);
+    }
+    throw new LaneError("DB_ERROR", updateError.message, 500);
+  }
+
+  await db.from("audit_log").insert([
+    audit(admin, "hours.update", "operating_hours", id, toHoursRow(before), input),
+  ]);
 
   const rows = await listHours(db);
   const row = rows.find((r) => r.id === id);
