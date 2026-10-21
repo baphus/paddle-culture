@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { slotSelectionDateStr, slotsForDate } from "../src/lib/booking/slots.ts";
-import { formatManilaLong } from "../src/lib/courts.ts";
+import { formatSummaryDateRange, formatManilaLong } from "../src/lib/courts.ts";
 
 // Regression for the production report: a customer booked Sun Oct 19, 2026
 // (6:00–2:00 PM, 3:00–6:00 PM, 10:00–11:00 PM) and the admin showed Oct 19
@@ -93,4 +93,26 @@ test("slotSelectionDateStr handles unsorted and Date input", () => {
 test("slotSelectionDateStr returns null with no usable slots", () => {
   assert.equal(slotSelectionDateStr([]), null);
   assert.equal(slotSelectionDateStr(["not-a-date"]), null);
+});
+
+test("formatSummaryDateRange shows both dates when a selection crosses midnight", () => {
+  assert.equal(formatSummaryDateRange(null, []), "—");
+  assert.equal(formatSummaryDateRange("2026-10-28", []), "Wed, Oct 28, 2026");
+  // 3 PM Oct 28 + 12–3 AM Manila Oct 29 slots, picker date Oct 28.
+  const overnight = [
+    "2026-10-28T07:00:00.000Z",
+    "2026-10-28T16:00:00.000Z",
+    "2026-10-28T17:00:00.000Z",
+    "2026-10-28T18:00:00.000Z",
+    "2026-10-28T19:00:00.000Z",
+  ];
+  assert.equal(
+    formatSummaryDateRange("2026-10-28", overnight),
+    "Wed, Oct 28, 2026 – Thu, Oct 29, 2026",
+  );
+  // Overnight-only selection still names both the picker date and the slot date.
+  assert.equal(
+    formatSummaryDateRange("2026-10-28", overnight.slice(1)),
+    "Wed, Oct 28, 2026 – Thu, Oct 29, 2026",
+  );
 });

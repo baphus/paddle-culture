@@ -102,6 +102,22 @@ export function formatManilaLong(dateStr: string): string {
   return manilaLongFmt.format(new Date(Date.UTC(y, m - 1, d, 12)));
 }
 
+/**
+ * Summary "Date" line: "Wed, Oct 28, 2026" normally; an overnight selection
+ * that crosses midnight shows both calendar dates —
+ * "Wed, Oct 28, 2026 – Thu, Oct 29, 2026".
+ */
+export function formatSummaryDateRange(
+  selectedDate: string | null,
+  slotStarts: string[],
+): string {
+  const dates = new Set<string>(slotStarts.map((iso) => manilaDateStr(new Date(iso))));
+  if (selectedDate) dates.add(selectedDate);
+  const sorted = [...dates].sort();
+  if (sorted.length === 0) return "—";
+  return sorted.map(formatManilaLong).join(" – ");
+}
+
 /** Manila weekday of the 1st of a 0-indexed month (0 = Sunday .. 6 = Saturday). */
 export function firstWeekdayManila(year: number, monthIndex: number): number {
   // UTC noon == 20:00 Manila on the same civil date, so getUTCDay is exact.

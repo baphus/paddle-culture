@@ -12,7 +12,7 @@ import {
   User,
 } from "lucide-react";
 import { toast } from "sonner";
-import { formatCountdown, formatManilaLong, formatSlotRangesWithDates, type CourtOption, type CourtSlotGroup } from "@/lib/courts";
+import { formatCountdown, formatSummaryDateRange, formatSlotRangesWithDates, type CourtOption, type CourtSlotGroup } from "@/lib/courts";
 import { calculatePaddleRentalTotal, courtRateForSlot, FALLBACK_RATES, peso, type DisplayRates } from "@/lib/pricing-display";
 import { cn } from "@/lib/utils";
 import { clearDraft, loadDraft, newOwnerToken, saveDraft, type BookingDraft } from "@/lib/booking/draft";
@@ -861,7 +861,7 @@ export default function BookingFlow({
                 <div className="mt-8 border-y border-line-warm py-5">
                   <h3 className="text-xs font-bold uppercase tracking-wide text-warm-muted">Booking</h3>
                   <dl className="mt-3 grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
-                    <div><dt className="text-warm-muted">Date</dt><dd className="font-medium text-ink">{selectedDate ? formatManilaLong(selectedDate) : "—"}</dd></div>
+                    <div><dt className="text-warm-muted">Date</dt><dd className="font-medium text-ink">{formatSummaryDateRange(selectedDate, selectedSlots)}</dd></div>
                     <div><dt className="text-warm-muted">Court{courtNames.length === 1 ? "" : "s"}</dt><dd className="font-medium text-ink">{courtNames.join(", ") || "—"}</dd></div>
                   </dl>
                 </div>

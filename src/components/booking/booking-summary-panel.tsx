@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { ArrowRight, Timer, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  formatManilaLong,
+  formatSummaryDateRange,
   formatSlotRangesWithDates,
   formatCountdown,
   type CourtSlotGroup,
@@ -209,7 +209,7 @@ function HoldCountdown({ deadlineMs, urgent, label }: {
 
 function SummaryLines({ data, compact = false }: { data: SummaryData; compact?: boolean }) {
   const summary = useSummary(data);
-  const dateLabel = data.selectedDate ? formatManilaLong(data.selectedDate) : "—";
+  const dateLabel = formatSummaryDateRange(data.selectedDate, data.selectedSlots);
   const courtLabel = data.courtNames.length > 0 ? data.courtNames.join(", ") : "—";
 
   return (
