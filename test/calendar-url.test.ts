@@ -96,7 +96,8 @@ test("googleCalendarUrlForRange: rejects a non-positive range", () => {
 // ------------------------------------------------- multi-session bookings
 
 test("per-session links stay separate for courts on different days", () => {
-  // Two sessions a week apart — the merged link would span the whole gap.
+  // Direct googleCalendarUrlForRange calls are per-range; the email layer
+  // merges a booking's sessions into one event (see templates.ts).
   const a = googleCalendarUrlForRange({
     title: "CK Grounds — Court A",
     startIso: "2026-10-06T07:00:00+08:00",

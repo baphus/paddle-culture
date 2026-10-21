@@ -25,9 +25,8 @@ function stamp(d: Date): string {
 /**
  * "Add to Google Calendar" link for ONE explicit time range.
  *
- * Multi-session bookings (two courts, or two different days) need one accurate
- * event each; `googleCalendarUrl` merges everything into a single span that can
- * straddle unrelated days. Used by the customer emails.
+ * Customer emails merge all of a booking's sessions into a single event:
+ * earliest start → latest end (see templates.ts mergedCalendarUrl).
  * Returns "" when either bound is unparseable or the range is not positive.
  */
 export function googleCalendarUrlForRange({

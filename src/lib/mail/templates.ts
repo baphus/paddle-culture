@@ -99,20 +99,6 @@ interface CourtSession {
   endIso: string;
 }
 
-/** Short label for a calendar button: "Tue, Oct 6" in Manila time. */
-const shortDateFmt = new Intl.DateTimeFormat("en-PH", {
-  timeZone: "Asia/Manila",
-  weekday: "short",
-  month: "short",
-  day: "numeric",
-});
-
-function shortDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return shortDateFmt.format(d);
-}
-
 function collapseSlots(p: Payload): CourtSession[] {
   const raw = Array.isArray(p.slots) ? (p.slots as SlotSummary[]) : [];
   if (!raw.length) return [];
@@ -581,51 +567,50 @@ function outlineButton(label: string, url: string): string {
 }
 
 /**
- * One "Add to Google Calendar" button per court session.
- *
- * A booking can span several courts or days; merging them into a single event
- * would put the wrong times on the customer's calendar, so each session gets
- * its own accurate link (see googleCalendarUrlForRange).
+ * One "Add to Google Calendar" event for the whole booking: earliest session
+ * start → latest end, each court listed in the event details.
  */
+function mergedCalendarUrl(
+  sessions: CourtSession[],
+  trackingToken: string,
+): string {
+  const times = sessions
+    .flatMap((s) => [new Date(s.startIso).getTime(), new Date(s.endIso).getTime()])
+    .filter((t) => Number.isFinite(t));
+  if (times.length < 2) return "";
+  const ref = trackingToken ? `#${trackingToken.slice(0, 8).toUpperCase()}` : "";
+  const trackingUrl = trackingToken ? bookingUrl(trackingToken) : null;
+  return googleCalendarUrlForRange({
+    title:
+      sessions.length === 1 && sessions[0]
+        ? `CK Grounds — ${sessions[0].court}`
+        : `CK Grounds — ${sessions.length} courts`,
+    startIso: new Date(Math.min(...times)).toISOString(),
+    endIso: new Date(Math.max(...times)).toISOString(),
+    location: VENUE_ADDRESS,
+    details: [
+      ref ? `Booking ref: ${ref}` : "",
+      ...sessions.map((s) => `${s.court} — ${s.date}, ${s.timeRange}`),
+      trackingUrl ? `View your booking: ${trackingUrl}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  });
+}
+
 function calendarBlock(
   sessions: CourtSession[],
   trackingToken: string,
   note = "",
 ): string {
-  const ref = trackingToken ? `#${trackingToken.slice(0, 8).toUpperCase()}` : "";
-  const trackingUrl = trackingToken ? bookingUrl(trackingToken) : null;
-  const many = sessions.length > 1;
-
-  const buttons = sessions
-    .map((s) => {
-      const href = googleCalendarUrlForRange({
-        title: `CK Grounds — ${s.court}`,
-        startIso: s.startIso,
-        endIso: s.endIso,
-        location: VENUE_ADDRESS,
-        details: [
-          ref ? `Booking ref: ${ref}` : "",
-          `${s.court} — ${s.date}, ${s.timeRange}`,
-          trackingUrl ? `View your booking: ${trackingUrl}` : "",
-        ]
-          .filter(Boolean)
-          .join("\n"),
-      });
-      if (!href) return "";
-      const label = many
-        ? `Add to Google Calendar — ${s.court}, ${shortDate(s.startIso)}`
-        : "Add to Google Calendar";
-      return outlineButton(label, href);
-    })
-    .join("");
-
-  if (!buttons) return "";
+  const href = mergedCalendarUrl(sessions, trackingToken);
+  if (!href) return "";
   const noteHtml = note
     ? `<p style="margin:0 0 8px;font-size:12px;line-height:1.5;color:${BRAND.muted};">
          ${escapeHtml(note)}
        </p>`
     : "";
-  return `${sectionLabel("Add to your calendar")}${noteHtml}${buttons}`;
+  return `${sectionLabel("Add to your calendar")}${noteHtml}${outlineButton("Add to Google Calendar", href)}`;
 }
 
 // Plain-text counterpart: raw calendar URLs are very long, so they go on their
@@ -635,31 +620,10 @@ function textCalendar(
   trackingToken: string,
   note = "",
 ): string[] {
-  const ref = trackingToken ? `#${trackingToken.slice(0, 8).toUpperCase()}` : "";
-  const trackingUrl = trackingToken ? bookingUrl(trackingToken) : null;
-
-  const rows: string[] = [];
-  for (const s of sessions) {
-    const href = googleCalendarUrlForRange({
-      title: `CK Grounds — ${s.court}`,
-      startIso: s.startIso,
-      endIso: s.endIso,
-      location: VENUE_ADDRESS,
-      details: [
-        ref ? `Booking ref: ${ref}` : "",
-        `${s.court} — ${s.date}, ${s.timeRange}`,
-        trackingUrl ? `View your booking: ${trackingUrl}` : "",
-      ]
-        .filter(Boolean)
-        .join("\n"),
-    });
-    if (!href) continue;
-    rows.push(`  ${s.court} — ${shortDate(s.startIso)}, ${s.timeRange}`, `  ${href}`, "");
-  }
-
-  if (!rows.length) return [];
+  const href = mergedCalendarUrl(sessions, trackingToken);
+  if (!href) return [];
   const head = note ? ["", "ADD TO GOOGLE CALENDAR", `  ${note}`] : ["", "ADD TO GOOGLE CALENDAR"];
-  return [...head, ...rows.slice(0, -1)];
+  return [...head, `  ${href}`];
 }
 
 function statusBadge(text: string, bg: string, fg: string): string {
