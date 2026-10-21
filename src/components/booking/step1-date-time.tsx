@@ -274,12 +274,14 @@ export default function Step1DateTime({
     [],
   );
 
-  // Availability: one request per month. Switching days inside the month is a
-  // pure cache read, so the day arrows cost zero requests.
+  // Availability: one request per month. Load the visible date-picker month too,
+  // so fully closed days can be disabled before a date is selected.
+  const calendarMonth = selectedMonth ?? `${view.y}-${pad2(view.m + 1)}`;
+  const calendarCacheKey = `${courtsKey}|${calendarMonth}`;
   useEffect(() => {
-    if (courtIds.length === 0 || !selectedMonth || !cacheKey) return;
+    if (courtIds.length === 0) return;
     const ids = [...courtIds].sort();
-    if (monthCache.has(cacheKey)) {
+    if (monthCache.has(calendarCacheKey)) {
       // Already cached (or fresh from prefetch) — nothing to do.
       setAvailFailed(false);
       return;
@@ -287,9 +289,9 @@ export default function Step1DateTime({
     const ctrl = new AbortController();
     setLoadingAvail(true);
     setAvailFailed(false);
-    fetchMonth(selectedMonth, ids, ctrl.signal)
+    fetchMonth(calendarMonth, ids, ctrl.signal)
       .then((days) => {
-        setMonthCache((prev) => new Map(prev).set(cacheKey, days));
+        setMonthCache((prev) => new Map(prev).set(calendarCacheKey, days));
       })
       .catch((e: unknown) => {
         if (e instanceof DOMException && e.name === "AbortError") return;
@@ -299,7 +301,7 @@ export default function Step1DateTime({
       .finally(() => setLoadingAvail(false));
     return () => ctrl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedMonth, courtsKey, retryKey]);
+  }, [calendarMonth, courtsKey, retryKey]);
 
   // Warm the neighbouring months once the current one lands, so crossing a
   // month boundary is instant. Failures are silent — the visible month wins.
@@ -567,6 +569,10 @@ export default function Step1DateTime({
   function dayKind(dateStr: string): DayKind {
     if (dateStr > maxStr) return "beyond";
     if (dateStr < earliestStr) return "past";
+    const days = monthCache.get(`${courtsKey}|${dateStr.slice(0, 7)}`)?.[dateStr];
+    if (days && courtIds.length > 0 && courtIds.every((id) =>
+      !(days[id] ?? []).some((slot) => slot.bookable),
+    )) return "past";
     return "open";
   }
 
