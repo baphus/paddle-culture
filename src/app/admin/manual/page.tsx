@@ -171,8 +171,8 @@ export default function AdminManualPage() {
               <li>Choose Activate or Deactivate to make a court available or unavailable for new bookings.</li>
               <li>Choose Edit to add, change, or remove the court&apos;s hours and prices for each day.</li>
               <li>
-                Quick Setup applies one opening time, closing time, and price to the days you select. It replaces the
-                current hours on those days, so check your selections before saving.
+                Quick Setup adds one time range and price to selected days, keeping existing non-overlapping hours. If
+                the range overlaps existing hours, confirm the listed replacements before saving.
               </li>
               <li>Change the Paddle or Ball price and save it to update rental prices.</li>
             </ul>

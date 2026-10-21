@@ -335,6 +335,7 @@ export const quickHoursSetupSchema = z
     openTime: hhmm,
     closeTime: hhmm,
     amount: pricingAmountSchema.shape.amount,
+    confirmOverwrite: z.boolean().optional().default(false),
   })
   .refine((d) => new Set(d.days).size === d.days.length, {
     message: "Days must not be repeated.",
@@ -345,17 +346,20 @@ export async function replaceCourtHours(
   admin: AdminSession,
   input: z.infer<typeof quickHoursSetupSchema>,
 ): Promise<number> {
-  const { data, error } = await db.rpc("rpc_replace_court_hours", {
+  const { data, error } = await db.rpc("rpc_add_court_hours", {
     p_court_id: input.courtId,
     p_days: input.days,
     p_open_time: `${input.openTime}:00`,
     p_close_time: `${input.closeTime}:00`,
     p_amount: input.amount,
+    p_confirm_overwrite: input.confirmOverwrite,
     p_actor_email: admin.email,
   });
   if (error) {
-    if (error.code === "23503" || error.code === "P0002") {
-      throw new LaneError("UNKNOWN_COURT", "Court does not exist.", 404);
+    if (error.code === "P0002") throw new LaneError("UNKNOWN_COURT", "Court does not exist.", 404);
+    if (error.code === "P0001" && error.message.startsWith("HOURS_OVERLAP:")) {
+      const conflicts = JSON.parse(error.message.slice("HOURS_OVERLAP:".length)) as string[];
+      throw new LaneError("HOURS_OVERLAP", JSON.stringify(conflicts), 409);
     }
     throw new LaneError("DB_ERROR", error.message, 500);
   }

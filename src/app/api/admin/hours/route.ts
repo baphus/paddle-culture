@@ -41,6 +41,9 @@ export async function PUT(request: Request) {
     const count = await replaceCourtHours(getDbOrThrow(), admin, parsed.data);
     return NextResponse.json({ count });
   } catch (e) {
+    if (e instanceof LaneError && e.code === "HOURS_OVERLAP") {
+      return NextResponse.json({ error: { message: e.message }, conflicts: JSON.parse(e.message) }, { status: 409 });
+    }
     if (e instanceof LaneError) return err(e.code, e.message, e.status);
     console.error("admin quick hours setup failed", e);
     return err("INTERNAL", "Quick setup failed.", 500);

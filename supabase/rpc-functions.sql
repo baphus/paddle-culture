@@ -77,6 +77,76 @@ REVOKE ALL ON FUNCTION rpc_replace_court_hours(uuid, int[], time, time, numeric,
 GRANT EXECUTE ON FUNCTION rpc_replace_court_hours(uuid, int[], time, time, numeric, text) TO service_role;
 
 -- ===========================================================================
+-- rpc_add_court_hours
+--    Adds ranges to selected weekdays, replacing overlaps only after confirmation.
+-- ===========================================================================
+CREATE OR REPLACE FUNCTION rpc_add_court_hours(
+  p_court_id uuid,
+  p_days int[],
+  p_open_time time,
+  p_close_time time,
+  p_amount numeric,
+  p_confirm_overwrite boolean,
+  p_actor_email text
+)
+RETURNS int
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public
+SET datestyle = 'ISO, MDY'
+AS $$
+DECLARE
+  v_conflicts jsonb;
+  v_before jsonb;
+  v_span int4range;
+  v_count int;
+BEGIN
+  v_span := int4range(
+    (extract(epoch FROM p_open_time) / 60)::int,
+    (extract(epoch FROM p_close_time) / 60)::int
+      + CASE WHEN p_close_time > p_open_time THEN 0 ELSE 1440 END
+  );
+  PERFORM 1 FROM courts WHERE id = p_court_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Court not found' USING ERRCODE = 'P0002'; END IF;
+  IF p_days IS NULL OR cardinality(p_days) < 1 OR cardinality(p_days) > 7
+     OR EXISTS (SELECT 1 FROM unnest(p_days) d(day) WHERE day < 0 OR day > 6)
+     OR (SELECT count(*) FROM unnest(p_days)) <> (SELECT count(DISTINCT day) FROM unnest(p_days) d(day))
+     OR p_amount <= 0 THEN
+    RAISE EXCEPTION 'Invalid court hours setup' USING ERRCODE = '22023';
+  END IF;
+
+  SELECT COALESCE(jsonb_agg(format('%s %s–%s (₱%s)',
+    CASE day_of_week WHEN 0 THEN 'Sunday' WHEN 1 THEN 'Monday' WHEN 2 THEN 'Tuesday'
+      WHEN 3 THEN 'Wednesday' WHEN 4 THEN 'Thursday' WHEN 5 THEN 'Friday' ELSE 'Saturday' END,
+    to_char(open_time, 'HH12:MI AM'), to_char(close_time, 'HH12:MI AM'), amount
+  )), '[]'::jsonb)
+  INTO v_conflicts
+  FROM operating_hours existing
+  WHERE court_id = p_court_id AND day_of_week = ANY(p_days)
+    AND existing.span && v_span;
+
+  IF jsonb_array_length(v_conflicts) > 0 AND NOT p_confirm_overwrite THEN
+    RAISE EXCEPTION 'HOURS_OVERLAP:%', v_conflicts::text;
+  END IF;
+
+  SELECT COALESCE(jsonb_agg(to_jsonb(h)), '[]'::jsonb) INTO v_before
+  FROM operating_hours h WHERE court_id = p_court_id AND day_of_week = ANY(p_days)
+    AND h.span && v_span;
+
+  DELETE FROM operating_hours h WHERE court_id = p_court_id AND day_of_week = ANY(p_days)
+    AND h.span && v_span;
+  INSERT INTO operating_hours (court_id, day_of_week, open_time, close_time, amount)
+  SELECT p_court_id, day, p_open_time, p_close_time, p_amount FROM unnest(p_days) d(day);
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  INSERT INTO audit_log (actor, action, entity, entity_id, before, after)
+  VALUES (p_actor_email, 'hours.quick_setup', 'court', p_court_id::text, v_before,
+    jsonb_build_object('days', to_jsonb(p_days), 'openTime', p_open_time, 'closeTime', p_close_time, 'amount', p_amount));
+  RETURN v_count;
+END;
+$$;
+REVOKE ALL ON FUNCTION rpc_add_court_hours(uuid, int[], time, time, numeric, boolean, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION rpc_add_court_hours(uuid, int[], time, time, numeric, boolean, text) TO service_role;
+
+-- ===========================================================================
 -- 1. rpc_claim_outbox_batch
 --    Claims up to p_limit due outbox rows atomically (FOR UPDATE SKIP LOCKED),
 --    bumps attempts + sets status='sending', returns the claimed rows.

@@ -651,17 +651,18 @@ function AddHoursModal({
 function QuickSetupModal({
   courtName,
   busy,
-  onReplace,
+  onSave,
   onClose,
 }: {
   courtName: string;
   busy: string | null;
-  onReplace: (
+  onSave: (
     days: number[],
     openTime: string,
     closeTime: string,
     amount: string,
-  ) => Promise<boolean>;
+    confirmOverwrite: boolean,
+  ) => Promise<{ saved: boolean; conflicts?: string[] }>;
   onClose: () => void;
 }) {
   const [selectedDays, setSelectedDays] = useState<number[]>([1, 2, 3, 4, 5]);
@@ -669,6 +670,7 @@ function QuickSetupModal({
   const [until, setUntil] = useState("22:00");
   const [amount, setAmount] = useState("");
   const [saving, setSaving] = useState(false);
+  const [conflicts, setConflicts] = useState<string[] | null>(null);
 
   const hasTimes = from !== "" && until !== "";
   const hasRate = amount.trim() !== "";
@@ -682,16 +684,20 @@ function QuickSetupModal({
     );
   }
 
-  async function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent, confirmOverwrite = false) {
     e.preventDefault();
     if (!canSave || saving) return;
 
     setSaving(true);
-    const replaced = await onReplace(selectedDays, from, until, amount.trim());
+    const result = await onSave(selectedDays, from, until, amount.trim(), confirmOverwrite);
     setSaving(false);
 
-    if (replaced) {
-      toast.success("Court hours replaced with this quick setup.");
+    if (result.conflicts) {
+      setConflicts(result.conflicts);
+      return;
+    }
+    if (result.saved) {
+      toast.success("Quick setup saved.");
       onClose();
     }
   }
@@ -728,9 +734,19 @@ function QuickSetupModal({
         </div>
 
         <form onSubmit={(e) => void submit(e)} className="space-y-5 p-5">
-          <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-muted-foreground">
-            Applying this setup replaces <strong>all existing hours and rates</strong> for {courtName}. Only selected days stay open; every unselected day will be closed.
+          <p className="rounded-lg border px-3 py-2 text-xs text-muted-foreground">
+            Adds this time and rate to selected days. Existing non-overlapping hours and rates stay unchanged.
           </p>
+          {conflicts ? (
+            <div role="alert" className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
+              <p>This range overlaps existing hours that will be replaced:</p>
+              <ul className="list-disc pl-5 text-xs">{conflicts.map((conflict) => <li key={conflict}>{conflict}</li>)}</ul>
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="outline" onClick={() => setConflicts(null)}>Keep existing hours</Button>
+                <Button type="button" onClick={(e) => { setConflicts(null); void submit(e, true); }}>Replace listed hours</Button>
+              </div>
+            </div>
+          ) : null}
           <div className="space-y-2">
             <Label>Days</Label>
             <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-4">
@@ -795,7 +811,7 @@ function QuickSetupModal({
               Cancel
             </Button>
             <Button type="submit" disabled={!canSave || saving || busy !== null}>
-              {saving ? "Replacing hours..." : "Replace court hours"}
+              {saving ? "Saving..." : "Add hours and rate"}
             </Button>
           </div>
         </form>
@@ -1693,23 +1709,24 @@ function CardsView({
         <QuickSetupModal
           courtName={quickSetupCourt.name}
           busy={hoursBusy}
-          onReplace={async (days, openTime, closeTime, amount) => {
+          onSave={async (days, openTime, closeTime, amount, confirmOverwrite) => {
             try {
               const res = await fetch("/api/admin/hours", {
                 method: "PUT",
                 headers: { "content-type": "application/json" },
-                body: JSON.stringify({ courtId: quickSetupCourt.id, days, openTime, closeTime, amount }),
+                body: JSON.stringify({ courtId: quickSetupCourt.id, days, openTime, closeTime, amount, confirmOverwrite }),
               });
-              const data = (await res.json().catch(() => null)) as unknown;
+              const data = (await res.json().catch(() => null)) as { conflicts?: string[] } | null;
+              if (res.status === 409 && data?.conflicts) return { saved: false, conflicts: data.conflicts };
               if (!res.ok) {
                 toast.error(readError(data, "Quick setup failed."));
-                return false;
+                return { saved: false };
               }
               router.refresh();
-              return true;
+              return { saved: true };
             } catch {
               toast.error("Request failed.");
-              return false;
+              return { saved: false };
             }
           }}
           onClose={() => setQuickSetupCourt(null)}
