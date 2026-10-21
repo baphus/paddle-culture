@@ -653,6 +653,10 @@ export interface ClosureRow {
 }
 
 export async function listClosures(db: Db): Promise<ClosureRow[]> {
+  // Closures self-clear once passed: purge rows whose end_at is behind us.
+  // Best effort — a failed purge only leaves stale rows for next time.
+  await db.from("closures").delete().lt("end_at", new Date().toISOString());
+
   const { data: rows, error: rowsError } = await db
     .from("closures")
     .select("id,scope,court_id,start_at,end_at,reason,by")

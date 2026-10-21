@@ -1,7 +1,16 @@
+import Image, { type StaticImageData } from "next/image";
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import PageHeader from "@/components/admin/page-header";
 import ManualContents from "./manual-contents";
+import activityImg from "../../../../public/manual/activity.png";
+import bookingsImg from "../../../../public/manual/bookings.png";
+import calendarImg from "../../../../public/manual/calendar.png";
+import courtSetupImg from "../../../../public/manual/court-setup.png";
+import dashboardImg from "../../../../public/manual/dashboard.png";
+import financeImg from "../../../../public/manual/finance.png";
+import newBookingImg from "../../../../public/manual/new-booking-form.png";
+import usersImg from "../../../../public/manual/users.png";
 
 export const dynamic = "force-dynamic";
 
@@ -20,22 +29,15 @@ const chapters = [
   { id: "help", title: "When something looks wrong" },
 ] as const;
 
-function ScreenshotPlaceholder({ title }: { title: string }) {
+function Screenshot({ image, title }: { image: StaticImageData; title: string }) {
   return (
     <figure className="my-5">
-      <div
-        role="img"
-        aria-label={`Screenshot placeholder: ${title}`}
-        className="grid aspect-[16/8] w-full place-items-center overflow-hidden rounded-lg border border-dashed border-border bg-muted/40 p-4 text-center"
-      >
-        <div className="space-y-1.5">
-          <p className="text-sm font-medium text-foreground">Screenshot goes here</p>
-          <p className="text-xs text-muted-foreground">{title}</p>
-        </div>
-      </div>
-      <figcaption className="mt-2 text-xs text-muted-foreground">
-        Image placeholder · replace with a screenshot of {title.toLowerCase()}.
-      </figcaption>
+      <Image
+        src={image}
+        alt={title}
+        className="h-auto w-full rounded-lg border bg-background"
+      />
+      <figcaption className="mt-2 text-xs text-muted-foreground">{title}</figcaption>
     </figure>
   );
 }
@@ -106,7 +108,7 @@ export default function AdminManualPage() {
               and this month&apos;s income and expenses. Select a number or shortcut to open the related page.
             </p>
             <p>Some booking numbers compare the last 15 days with the 15 days before them.</p>
-            <ScreenshotPlaceholder title="the admin dashboard" />
+            <Screenshot image={dashboardImg} title="The admin dashboard" />
           </Chapter>
 
           <Chapter id="bookings" title="Bookings">
@@ -126,7 +128,7 @@ export default function AdminManualPage() {
               Open the booking details before deciding if you need to check the payment image. The quick Approve button
               on a booking row opens the approval step directly, where you can confirm your choice.
             </Tip>
-            <ScreenshotPlaceholder title="the booking list and booking details" />
+            <Screenshot image={bookingsImg} title="The booking list and booking details" />
           </Chapter>
 
           <Chapter id="new-booking" title="Add a booking">
@@ -148,7 +150,7 @@ export default function AdminManualPage() {
               Staff bookings are approved right away. Check the date and times before saving. If a time is no longer
               open, refresh the page and choose another.
             </Tip>
-            <ScreenshotPlaceholder title="the new booking form" />
+            <Screenshot image={newBookingImg} title="The new booking form" />
           </Chapter>
 
           <Chapter id="calendar" title="Calendar">
@@ -157,7 +159,7 @@ export default function AdminManualPage() {
               view the dates. Use the arrows to move through dates, or choose Today to return to the current date.
             </p>
             <p>Select a booking to view its details. You can decide a pending booking from its detail window.</p>
-            <ScreenshotPlaceholder title="the booking calendar" />
+            <Screenshot image={calendarImg} title="The booking calendar" />
           </Chapter>
 
           <Chapter id="court-setup" title="Courts, hours, and prices">
@@ -175,7 +177,7 @@ export default function AdminManualPage() {
               <li>Change the Paddle or Ball price and save it to update rental prices.</li>
             </ul>
             <Tip>Changes to hours and prices affect what customers can book and what they pay.</Tip>
-            <ScreenshotPlaceholder title="court hours and prices" />
+            <Screenshot image={courtSetupImg} title="Court hours and prices" />
           </Chapter>
 
           <Chapter id="closures" title="Closures">
@@ -204,7 +206,7 @@ export default function AdminManualPage() {
               <li>Choose Export CSV to download the report as a file you can open in a spreadsheet.</li>
             </Steps>
             <Tip>This page is a helpful summary. It is not a bank statement or a full accounting record.</Tip>
-            <ScreenshotPlaceholder title="the finance page and expense form" />
+            <Screenshot image={financeImg} title="The finance page and expense form" />
           </Chapter>
 
           <Chapter id="users" title="Staff accounts">
@@ -222,7 +224,7 @@ export default function AdminManualPage() {
               the profile button by your name to change the name shown to other staff; the email cannot be changed
               there.
             </p>
-            <ScreenshotPlaceholder title="admin users and invitations" />
+            <Screenshot image={usersImg} title="Admin users and invitations" />
           </Chapter>
 
           <Chapter id="activity" title="Alerts and activity">
@@ -234,7 +236,7 @@ export default function AdminManualPage() {
               Activity is a record of changes made in Admin. Search by staff member, item, or record number. Filter by
               action and use the page controls to find older entries.
             </p>
-            <ScreenshotPlaceholder title="booking alerts and the activity page" />
+            <Screenshot image={activityImg} title="Booking alerts and the activity page" />
           </Chapter>
 
           <Chapter id="rules" title="Rules to remember">

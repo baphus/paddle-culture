@@ -31,6 +31,15 @@ export async function GET(req: Request) {
     });
 
     if (error) throw error;
+
+    // Past closures self-clear weekly along with the expired holds (an admin
+    // browsing closures purges them sooner — see listClosures).
+    const { error: closuresError } = await db
+      .from("closures")
+      .delete()
+      .lt("end_at", new Date().toISOString());
+    if (closuresError) throw closuresError;
+
     return NextResponse.json({ ok: true, purgedHolds: data ?? 0 });
   } catch (e) {
     console.error("vercel retention cron failed", e);
