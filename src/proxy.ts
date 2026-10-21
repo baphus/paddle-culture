@@ -76,6 +76,18 @@ export default async function proxy(request: NextRequest) {
   }
 
   const path = request.nextUrl.pathname;
+  // Stranded recovery codes: when Supabase's redirect falls back to the Site
+  // URL, /?code=… (or /?error=…) lands on the marketing page. Hand the code to
+  // the exchange route and failures to the error page instead.
+  if (path === "/") {
+    const code = request.nextUrl.searchParams.get("code");
+    const errorCode = request.nextUrl.searchParams.get("error_code");
+    if (code || errorCode) {
+      const url = request.nextUrl.clone();
+      url.pathname = code ? "/auth/callback" : "/auth/error";
+      return NextResponse.redirect(url);
+    }
+  }
   if (path.startsWith("/admin") && !userId) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
@@ -95,6 +107,7 @@ export const config = {
   matcher: [
     "/admin/:path*",
     "/login",
+    "/",
     "/api/holds",
     // Reclaim is a write path that can extend or revive inventory — it gets the
     // same per-IP budget as hold creation.

@@ -11,7 +11,7 @@ export async function GET(request: Request) {
   const base = (process.env.APP_URL || origin).replace(/\/$/, "");
   const next = searchParams.get("next") ?? "";
   const safeNext =
-    next.startsWith("/") && !next.startsWith("//") ? next : "/admin";
+    next.startsWith("/") && !next.startsWith("//") ? next : "/reset-password";
   const code = searchParams.get("code");
   if (code) {
     const supabase = await createClient();
