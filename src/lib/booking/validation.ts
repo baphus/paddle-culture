@@ -93,7 +93,7 @@ export const reclaimHoldsBodySchema = z.object({
 
 // POST /api/submit
 export const submitBodySchema = z.object({
-  holdTokens: z.array(holdToken).min(1).max(12),
+  holdTokens: z.array(holdToken).min(1).max(MAX_SLOTS_PER_BOOKING),
   // Alternative credential: when the browser was away long enough for the
   // hold to expire, the customer can still submit against the pairs their
   // owner token owns inside the grace window. The DB transaction still
@@ -137,7 +137,7 @@ export type SubmitBody = z.infer<typeof submitBodySchema>;
 // hold/submit attempt — while a customer who already paid is never told to
 // re-book just to reach the upload box.
 export const proofUploadUrlBodySchema = z.object({
-  holdTokens: z.array(holdToken).min(1).max(12),
+  holdTokens: z.array(holdToken).min(1).max(MAX_SLOTS_PER_BOOKING),
   ownerToken: ownerToken.optional(),
   mime: z.enum(PROOF_ALLOWED_MIME as unknown as [string, ...string[]]),
   bytes: z.number().int().min(1).max(PROOF_MAX_BYTES),
