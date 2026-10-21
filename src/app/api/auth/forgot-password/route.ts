@@ -13,11 +13,11 @@ export async function POST(request: Request) {
     if (!parsed.success) {
       return err("BAD_REQUEST", parsed.error.issues[0]?.message ?? "Bad request.", 400);
     }
-    const base = (process.env.APP_URL || new URL(request.url).origin).replace(/\/$/, "");
     const supabase = await createClient();
+    // No redirectTo: the "Reset Password" email template links directly to
+    // /reset-password?token_hash=... — not subject to redirect allowlisting.
     const { error } = await supabase.auth.resetPasswordForEmail(
       parsed.data.email.toLowerCase(),
-      { redirectTo: `${base}/auth/callback?next=/reset-password` },
     );
     if (error) {
       console.error("forgot-password failed", error);

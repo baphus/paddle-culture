@@ -27,6 +27,9 @@ export const forgotBodySchema = z.object({
 
 export const resetPasswordBodySchema = z.object({
   password: z.string().min(8, "Password must be at least 8 characters.").max(256),
+  // SHA-256 recovery token_hash from the template email link (optional — a
+  // signed-in user refreshing their password goes without it).
+  token_hash: z.string().min(32).max(128).optional(),
 });
 
 export const registerBodySchema = z.object({

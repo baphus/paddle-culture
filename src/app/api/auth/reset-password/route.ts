@@ -6,9 +6,9 @@ import { resetPasswordBodySchema } from "@/lib/admin/validation";
 
 export const runtime = "nodejs";
 
-// POST /api/auth/reset-password — sets a new password for the session the
-// /auth/callback code exchange just granted. Recovery-link sessions only;
-// a stale session here is just an authenticated password change.
+// POST /api/auth/reset-password — sets a new password. Recovery links carry a
+// token_hash; the verifyOtp call consumes it (single-use) and starts a fresh
+// session. Signed-in users changing their own password skip the token step.
 export async function POST(request: Request) {
   try {
     const parsed = resetPasswordBodySchema.safeParse(await request.json());
@@ -16,13 +16,30 @@ export async function POST(request: Request) {
       return err("BAD_REQUEST", parsed.error.issues[0]?.message ?? "Bad request.", 400);
     }
     const supabase = await createClient();
-    const { data, error: userError } = await supabase.auth.getUser();
-    if (userError || !data.user) {
-      return err(
-        "RESET_EXPIRED",
-        "This reset link expired or was already used. Request a new one.",
-        401,
-      );
+    let userId: string;
+    if (parsed.data.token_hash) {
+      const { data, error: verifyError } = await supabase.auth.verifyOtp({
+        token_hash: parsed.data.token_hash,
+        type: "recovery",
+      });
+      if (verifyError || !data.user) {
+        return err(
+          "RESET_EXPIRED",
+          "This reset link is invalid or has expired. Request a new one.",
+          401,
+        );
+      }
+      userId = data.user.id;
+    } else {
+      const { data, error: userError } = await supabase.auth.getUser();
+      if (userError || !data.user) {
+        return err(
+          "RESET_EXPIRED",
+          "This reset link expired or was already used. Request a new one.",
+          401,
+        );
+      }
+      userId = data.user.id;
     }
     const { error } = await supabase.auth.updateUser({
       password: parsed.data.password,
@@ -37,10 +54,10 @@ export async function POST(request: Request) {
     // Best effort — the reset itself must not fail over audit logging.
     try {
       await getDb().from("audit_log").insert({
-        actor: data.user.id,
+        actor: userId,
         action: "auth.password_reset",
         entity: "auth_users",
-        entity_id: data.user.id,
+        entity_id: userId,
       });
     } catch {
       // audit only

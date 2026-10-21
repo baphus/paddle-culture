@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -11,6 +11,10 @@ import { LoadingAnimation } from "@/components/ui/loading-animation";
 
 export default function ResetPasswordForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Recovery email links carry the SHA-256 token_hash; without it (just a
+  // signed-in admin visiting the page) the update runs on the existing session.
+  const tokenHash = searchParams.get("token_hash");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -28,7 +32,7 @@ export default function ResetPasswordForm() {
       const res = await fetch("/api/auth/reset-password", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ password, token_hash: tokenHash ?? undefined }),
       });
       const body = (await res.json()) as { error?: { code?: string; message?: string } };
       if (!res.ok) {
