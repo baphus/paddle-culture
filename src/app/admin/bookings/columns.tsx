@@ -2,7 +2,7 @@
 
 import type { ColumnDef } from "@tanstack/react-table";
 import { BookingStatusBadge } from "@/components/admin/status-badge";
-import { formatBookingDate, type BookingDetail } from "@/lib/admin/bookings";
+import { formatBookingDateRange, type BookingDetail } from "@/lib/admin/bookings";
 import { formatCourtSlotGroup } from "@/lib/courts";
 import BookingActions from "./booking-actions";
 
@@ -60,7 +60,7 @@ export const columns: ColumnDef<BookingDetail>[] = [
     header: "Date",
     cell: ({ row }) => (
       <span className="text-sm text-muted-foreground">
-        {formatBookingDate(row.original.date)}
+        {formatBookingDateRange(row.original.date, row.original.slots.map((s) => s.slotStart))}
       </span>
     ),
   },

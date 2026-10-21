@@ -1,5 +1,5 @@
 import { CalendarPlus } from "lucide-react";
-import { formatManilaLong, formatSlotRangesWithDates, type CourtSlotGroup } from "@/lib/courts";
+import { formatSummaryDateRange, formatSlotRangesWithDates, type CourtSlotGroup } from "@/lib/courts";
 import { slotSelectionDateStr } from "@/lib/booking/slots";
 import { googleCalendarUrl } from "@/lib/booking/calendar";
 import {
@@ -50,7 +50,10 @@ export default function BookingInvoice({
     (a, b) => new Date(a).getTime() - new Date(b).getTime(),
   );
   const bookingDate = dateStr || slotSelectionDateStr(sortedSlots);
-  const formattedDate = bookingDate ? formatManilaLong(bookingDate) : "Upcoming";
+  const formattedDate =
+    bookingDate || sortedSlots.length > 0
+      ? formatSummaryDateRange(bookingDate, sortedSlots)
+      : "Upcoming";
   const groups = (slotGroups ?? []).filter((group) => group.slotStarts.length > 0);
   // Rentals bill per booked court-hour — every court's hours count, not just
   // the distinct hours on the grid. Matches the server's per-pair pricing.

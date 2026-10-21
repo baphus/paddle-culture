@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   formatBookingDate,
+  formatBookingDateRange,
   formatSlotRanges,
 } from "../src/lib/admin/bookings.ts";
 
@@ -56,4 +57,15 @@ test("formatBookingDate: ISO date renders human-readable", () => {
 
 test("formatBookingDate: non-ISO input (e.g. the em-dash placeholder) passes through", () => {
   assert.equal(formatBookingDate("—"), "—");
+});
+
+test("formatBookingDateRange includes later Manila slot date", () => {
+  assert.equal(
+    formatBookingDateRange("2026-10-28", ["2026-10-28T16:00:00Z", "2026-10-28T17:00:00Z"]),
+    "October 28, 2026 – October 29, 2026",
+  );
+  assert.equal(
+    formatBookingDateRange("2026-10-28", ["2026-10-28T07:00:00Z"]),
+    "October 28, 2026",
+  );
 });

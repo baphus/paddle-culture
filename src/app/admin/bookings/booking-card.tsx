@@ -9,7 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { BookingStatusBadge } from "@/components/admin/status-badge";
-import { formatBookingDate, type BookingDetail } from "@/lib/admin/bookings";
+import { formatBookingDateRange, type BookingDetail } from "@/lib/admin/bookings";
 import { formatCourtSlotGroup } from "@/lib/courts";
 import BookingActions from "./booking-actions";
 
@@ -47,7 +47,7 @@ export default function BookingCard({ booking }: { booking: BookingDetail }) {
         <div className="space-y-1">
           <Field label="Tracking no." value={booking.trackingCode || "—"} />
           <Field label="Courts" value={booking.courts || "—"} />
-          <Field label="Date" value={formatBookingDate(booking.date)} />
+          <Field label="Date" value={formatBookingDateRange(booking.date, booking.slots.map((s) => s.slotStart))} />
           <Field
             label={`${booking.slots.length} slots`}
             value={(() => {

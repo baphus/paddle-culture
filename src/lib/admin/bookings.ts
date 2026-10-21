@@ -111,6 +111,21 @@ export function slotRangeLabel(startIso: string): string {
   return formatSlotRanges([startIso])[0]!;
 }
 
+/**
+ * "October 19, 2026" for a single-day booking; when any slot lands on a later
+ * Manila calendar date (overnight tail), "October 28, 2026 – October 29, 2026".
+ */
+export function formatBookingDateRange(dateStr: string, slotStarts: string[]): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return formatBookingDate(dateStr);
+  const latest = slotStarts
+    .filter((s) => !Number.isNaN(new Date(s).getTime()))
+    .map((s) => manilaDateStr(new Date(s)))
+    .reduce((max, date) => (date > max ? date : max), dateStr);
+  return latest > dateStr
+    ? `${formatBookingDate(dateStr)} – ${formatBookingDate(latest)}`
+    : formatBookingDate(dateStr);
+}
+
 export function formatSlotRanges(slotStarts: string[]): string[] {
   const ts = [...new Set(slotStarts.map((s) => new Date(s).getTime()))].sort(
     (a, b) => a - b,
