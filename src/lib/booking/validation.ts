@@ -148,9 +148,10 @@ export const proofUploadUrlBodySchema = z.object({
 // POST /api/admin/bookings — the admin picks slots straight off the live grid
 // (no holds), so the body carries explicit (courtId, slotStart) pairs instead
 // of hold tokens. It also carries the customer-identity mode:
-//   notify ON  -> real contact details, customer gets the approved email
-//   notify OFF -> fullName = free-text description, email/phone derived
-//                 server-side from the admin session and the venue (Q13)
+//   notify ON  -> customer gets the approved email with their tracking code
+//   notify OFF -> no email; the customer identity, if the form collected one,
+//                 is still stored (walk-in follow-up data) and the booking is
+//                 attributed to the admin session (Q13)
 export const adminCreateBookingBodySchema = z
   .object({
     idempotencyKey: z.string().min(8).max(128),
@@ -168,7 +169,12 @@ export const adminCreateBookingBodySchema = z
     customer: z
       .object({
         fullName: z.string().trim().min(1).max(100),
-        email: z.string().trim().email().max(254),
+        // Accepted empty so the admin can leave it blank for an unnotified
+        // walk-in; the refine below demands a real address when notify is on.
+        email: z.string().trim().max(254).refine(
+          (v) => v === "" || z.email().safeParse(v).success,
+          "Enter a valid email address.",
+        ),
         phone: z
           .string()
           .trim()
@@ -202,6 +208,10 @@ export const adminCreateBookingBodySchema = z
   .refine((d) => !d.notify || d.customer !== undefined, {
     message: "Customer details are required when notifying the customer.",
     path: ["customer"],
+  })
+  .refine((d) => !d.notify || (d.customer?.email.trim().length ?? 0) > 0, {
+    message: "Enter a customer email to notify.",
+    path: ["customer", "email"],
   })
   // One court/hour pair can only be booked once — a duplicated pair would
   // trip booking_slots_no_overlap_idx mid-transaction.

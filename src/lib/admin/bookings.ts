@@ -641,17 +641,16 @@ export async function createBookingAdmin(
     start: new Date(s.slotStart),
   }));
 
-  // Q13: when the customer is not being notified there is no real identity to
-  // collect, so the booking is attributed to the admin and the free-text
-  // description becomes the name. `phone` must still be a non-empty string
-  // only if the schema demands it — it does not, so '' is allowed.
-  const fullName = notify
-    ? (body.customer?.fullName ?? body.description)
-    : body.description;
-  const email = notify
-    ? (body.customer?.email ?? admin.email).toLowerCase()
-    : admin.email.toLowerCase();
-  const phone = notify
+  // Q13 + customer data for every booking: when notify is off the form still
+  // collects real identity, so use it; the admin-attributed defaults only
+  // cover a caller that omits `customer` entirely. `phone` must be a
+  // non-empty string only if the schema demands it — it does not for the
+  // no-customer fallback, so '' is allowed there.
+  const fullName = body.customer?.fullName ?? body.description;
+  const email = (
+    body.customer?.email ?? admin.email
+  ).toLowerCase();
+  const phone = notify || body.customer
     ? normalizePhone(body.customer?.phone ?? "")
     : normalizePhone(VENUE_PHONE_DISPLAY);
 

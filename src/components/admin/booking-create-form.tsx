@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
+  CalendarIcon,
   Check,
   CircleAlert,
   ImagePlus,
@@ -14,6 +15,7 @@ import {
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
 import {
   Card,
   CardContent,
@@ -22,6 +24,11 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
@@ -29,7 +36,7 @@ import { PROOF_CLIENT_ACCEPT, precheckProofFile } from "@/lib/proof-client";
 import { formatSlotRange } from "@/lib/courts";
 import { courtRateForSlot } from "@/lib/pricing-display";
 import { suggestEmailDomain } from "@/lib/booking/email";
-import { slotsForDate } from "@/lib/booking/slots";
+import { maxBookableDateStr, slotsForDate } from "@/lib/booking/slots";
 
 // ── Shapes mirrored from the server (no server-only imports here) ────────────
 
@@ -129,6 +136,30 @@ function slotKey(courtId: string, slotStart: string): string {
   return `${courtId}@${slotStart}`;
 }
 
+// ── shadcn Calendar ↔ "YYYY-MM-DD" (Manila) glue ────────────────────────────
+// react-day-picker works in browser-local Dates. Build the picked day from its
+// own year/month/day parts and read the selected Date's parts back, so the
+// calendar day never round-trips through a timezone (a local-midnight Date
+// formatted in another zone would silently shift a day).
+
+function localMidnight(dateStr: string): Date {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y as number, (m as number) - 1, d as number);
+}
+
+function dateStrOfLocal(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function dateLabel(dateStr: string): string {
+  return localMidnight(dateStr).toLocaleDateString("en-PH", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 // ── Component ───────────────────────────────────────────────────────────────
 
 export default function BookingCreateForm({
@@ -175,6 +206,7 @@ export default function BookingCreateForm({
       : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
   );
   const [submitting, setSubmitting] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
 
   // ── Load courts + display rates once ─────────────────────────────────────
   // The page SSR'd both. Only refetch what came back empty/fallback, so a
@@ -400,8 +432,13 @@ export default function BookingCreateForm({
       toast.error("Pick at least one slot.");
       return;
     }
-    if (!notify && description.trim().length === 0) {
-      toast.error("Add a description for this booking.");
+    // Customer details are recorded for every booking; email only when notifying.
+    if (!fullName.trim() || !phone.trim() || (notify && !email.trim())) {
+      toast.error(
+        notify
+          ? "Enter the customer's name, contact number, and email."
+          : "Enter the customer's name and contact number.",
+      );
       return;
     }
 
@@ -411,16 +448,12 @@ export default function BookingCreateForm({
         idempotencyKey,
         notify,
         slots: picked.map((p) => ({ courtId: p.courtId, slotStart: p.slotStart })),
-        description: description.trim() || fullName.trim() || "Admin booking",
-        ...(notify
-          ? {
-              customer: {
-                fullName: fullName.trim(),
-                email: email.trim(),
-                phone: phone.trim(),
-              },
-            }
-          : {}),
+        description: description.trim() || fullName.trim(),
+        customer: {
+          fullName: fullName.trim(),
+          email: email.trim(),
+          phone: phone.trim(),
+        },
         rentals: { paddleQty, paddleHours: null, ball },
         proof,
       };
@@ -477,17 +510,39 @@ export default function BookingCreateForm({
             <CardHeader>
               <CardTitle>Slots</CardTitle>
               <div className="flex items-center gap-2">
-                <Label htmlFor="booking-date" className="text-xs text-muted-foreground">
-                  Date
-                </Label>
-                <Input
-                  id="booking-date"
-                  type="date"
-                  value={date}
-                  min={manilaToday()}
-                  onChange={(e) => setDate(e.target.value)}
-                  className="h-8 w-[160px]"
-                />
+                <Label htmlFor="booking-date">Date</Label>
+                <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+                  <PopoverTrigger
+                    render={
+                      <Button
+                        id="booking-date"
+                        variant="outline"
+                        className="h-8 w-[170px] justify-between font-normal"
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <CalendarIcon className="size-3.5 text-muted-foreground" />
+                          {dateLabel(date)}
+                        </span>
+                      </Button>
+                    }
+                  />
+                  <PopoverContent className="w-auto p-0" align="end">
+                    <Calendar
+                      mode="single"
+                      selected={localMidnight(date)}
+                      defaultMonth={localMidnight(`${date.slice(0, 7)}-01`)}
+                      onSelect={(d) => {
+                        if (!d) return;
+                        setDate(dateStrOfLocal(d));
+                        setCalendarOpen(false);
+                      }}
+                      disabled={{
+                        before: localMidnight(manilaToday()),
+                        after: localMidnight(maxBookableDateStr()),
+                      }}
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
             </CardHeader>
             <CardContent>
@@ -549,7 +604,7 @@ export default function BookingCreateForm({
                   <p className="text-xs text-muted-foreground">
                     {notify
                       ? "The customer gets the approved-booking email with their tracking code."
-                      : "No email is sent. The booking is recorded against your admin account."}
+                      : `No email is sent. The booking is recorded against ${adminEmail}.`}
                   </p>
                 </div>
                 <Switch
@@ -562,72 +617,75 @@ export default function BookingCreateForm({
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label htmlFor="full-name">
-                    {notify ? "Customer name" : "Description"}
-                  </Label>
+                  <Label htmlFor="full-name">Customer name</Label>
                   <Input
                     id="full-name"
-                    value={notify ? fullName : description}
-                    onChange={(e) =>
-                      notify ? setFullName(e.target.value) : setDescription(e.target.value)
-                    }
-                    placeholder={notify ? "Juan dela Cruz" : "Walk-in, court 1, 2–4pm"}
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="Juan dela Cruz"
                     maxLength={100}
+                    required
                     disabled={busy}
                   />
                 </div>
 
-                {notify ? (
-                  <>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="customer-phone">Contact number</Label>
-                      <Input
-                        id="customer-phone"
-                        value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
-                        placeholder="09123456789"
-                        inputMode="tel"
-                        maxLength={30}
-                        disabled={busy}
-                      />
+                <div className="space-y-1.5">
+                  <Label htmlFor="customer-phone">Contact number</Label>
+                  <Input
+                    id="customer-phone"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="09123456789"
+                    inputMode="tel"
+                    maxLength={30}
+                    required
+                    disabled={busy}
+                  />
+                </div>
+
+                <div className="space-y-1.5 sm:col-span-2">
+                  <Label htmlFor="customer-email">Email</Label>
+                  <Input
+                    id="customer-email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder={notify ? "customer@example.com" : "Optional"}
+                    maxLength={254}
+                    required={notify}
+                    disabled={busy}
+                  />
+                  {emailSuggestion && (
+                    <div
+                      role="status"
+                      className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+                    >
+                      <span>
+                        Did you mean{" "}
+                        <strong className="font-semibold">{emailSuggestion.correctedEmail}</strong>?
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setEmail(emailSuggestion.correctedEmail)}
+                        className="rounded-md bg-amber-200/70 px-2 py-0.5 font-bold text-amber-900 transition-colors hover:bg-amber-200"
+                      >
+                        Fix it
+                      </button>
                     </div>
-                    <div className="space-y-1.5 sm:col-span-2">
-                      <Label htmlFor="customer-email">Email</Label>
-                      <Input
-                        id="customer-email"
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="customer@example.com"
-                        maxLength={254}
-                        disabled={busy}
-                      />
-                      {emailSuggestion && (
-                        <div
-                          role="status"
-                          className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
-                        >
-                          <span>
-                            Did you mean{" "}
-                            <strong className="font-semibold">{emailSuggestion.correctedEmail}</strong>?
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setEmail(emailSuggestion.correctedEmail)}
-                            className="rounded-md bg-amber-200/70 px-2 py-0.5 font-bold text-amber-900 transition-colors hover:bg-amber-200"
-                          >
-                            Fix it
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <div className="space-y-1.5">
-                    <Label>Recorded contact</Label>
-                    <div className="flex h-9 items-center rounded-md border border-border/70 bg-muted/40 px-3 text-xs text-muted-foreground">
-                      {adminEmail}
-                    </div>
+                  )}
+                </div>
+
+                {!notify && (
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label htmlFor="booking-description">Description</Label>
+                    <Input
+                      id="booking-description"
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      placeholder="Walk-in recorded without an email (optional)"
+                      maxLength={100}
+                      disabled={busy}
+                    />
                   </div>
                 )}
               </div>
@@ -652,15 +710,22 @@ export default function BookingCreateForm({
                     Billed per paddle per booked hour.
                   </p>
                 </div>
-                <div className="flex items-end pb-1">
-                  <label className="flex items-center gap-2 text-sm">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="ball-fee">Balls</Label>
                     <Switch
+                      id="ball-fee"
                       checked={ball}
                       onCheckedChange={(v) => setBall(v === true)}
                       disabled={busy}
                     />
-                    Include ball fee
-                  </label>
+                  </div>
+                  <div className="flex h-9 items-center rounded-md border border-input bg-input/20 px-3 text-sm text-muted-foreground">
+                    {rates ? `${pesoOf(rates.ball)} flat fee` : "—"}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    One-time add-on for the whole booking.
+                  </p>
                 </div>
               </div>
 
@@ -835,15 +900,20 @@ function SlotGrid({
   loading: boolean;
 }) {
   return (
-    <div className={cn("overflow-x-auto", loading && "opacity-60")}>
+    <div
+      className={cn(
+        "overflow-x-auto rounded-lg border border-border/70 bg-muted/40 p-2",
+        loading && "opacity-60",
+      )}
+    >
       <table className="w-full border-collapse text-sm">
         <thead>
-          <tr className="border-b border-border/70">
+          <tr className="border-b border-border">
             <th className="w-24 py-2 pr-2 text-left text-xs font-medium text-muted-foreground">
               Time
             </th>
             {courts.map((c) => (
-              <th key={c.id} className="px-1 py-2 text-center text-xs font-medium">
+              <th key={c.id} className="px-1 py-2 text-center text-xs font-semibold">
                 {c.name}
               </th>
             ))}
@@ -873,11 +943,11 @@ function SlotGrid({
                   return (
                     <td key={court.id} className="px-1 py-1 text-center">
                       <div
-                        className="mx-auto flex size-7 items-center justify-center rounded-md bg-muted/60"
+                        className="mx-auto flex size-7 items-center justify-center rounded-md border border-border/50 bg-muted"
                         title={label}
                         aria-label={label}
                       >
-                        <X className="size-3 text-muted-foreground/50" />
+                        <X className="size-3 text-muted-foreground/60" />
                       </div>
                     </td>
                   );
@@ -891,10 +961,10 @@ function SlotGrid({
                       aria-pressed={selected}
                       aria-label={`${court.name} ${formatSlotRange(iso)}`}
                       className={cn(
-                        "mx-auto flex size-7 items-center justify-center rounded-md border transition-colors",
+                        "mx-auto flex size-7 items-center justify-center rounded-md border shadow-xs transition-colors",
                         selected
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "border-border bg-primary/5 hover:border-primary/60 hover:bg-primary/15",
+                          ? "border-primary bg-primary text-primary-foreground shadow-none"
+                          : "border-border bg-background hover:border-primary/60 hover:bg-primary/15",
                       )}
                     >
                       {selected && <Check className="size-3" strokeWidth={3} />}
