@@ -33,7 +33,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { PROOF_CLIENT_ACCEPT, precheckProofFile } from "@/lib/proof-client";
-import { formatSlotRange } from "@/lib/courts";
+import { formatSlotRange, slotDateShort } from "@/lib/courts";
 import { courtRateForSlot } from "@/lib/pricing-display";
 import { suggestEmailDomain } from "@/lib/booking/email";
 import { maxBookableDateStr, slotsForDate, isOvernightSlot } from "@/lib/booking/slots";
@@ -928,7 +928,7 @@ function SlotGrid({
                 {formatSlotRange(iso)}
                 {isOvernightSlot(new Date(iso)) && (
                   <span className="ml-1 text-[9px] font-bold uppercase text-muted-foreground/70">
-                    (next day)
+                    ({slotDateShort(iso)})
                   </span>
                 )}
               </td>

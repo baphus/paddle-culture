@@ -20,7 +20,7 @@ import {
   firstWeekdayManila,
   formatManilaLong,
   formatSlotRange,
-  manilaTodayStr,
+  slotDateShort,  manilaTodayStr,
   manilaEarliestBookableStr,
   maxBookableDateStr,
   monthLabelManila,
@@ -733,7 +733,7 @@ export default function Step1DateTime({
                             {formatSlotRange(iso).split("–").join("→")}
                             {overnight && (
                               <span className="ml-1 align-middle text-[9px] font-bold uppercase tracking-wide text-warm-muted/80">
-                                (next day)
+                                ({slotDateShort(iso)})
                               </span>
                             )}
                           </span>
@@ -765,7 +765,7 @@ export default function Step1DateTime({
                                     type="button"
                                     onClick={() => toggleCell(iso, court.id)}
                                     aria-pressed={isSel}
-                                    aria-label={`${formatSlotRange(iso)}${overnight ? " (next day)" : ""} - ${rateLabel} - ${isSel ? "Selected" : "Available"}`}
+                                    aria-label={`${formatSlotRange(iso)}${overnight ? ` (${slotDateShort(iso)} next day)` : ""} - ${rateLabel} - ${isSel ? "Selected" : "Available"}`}
                                     title={rateLabel}
                                     className={cn(
                                       "flex items-center justify-center mx-auto rounded-full border-2 size-8 transition-all",

@@ -6,7 +6,7 @@ import { ArrowRight, Timer, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   formatManilaLong,
-  formatSlotRanges,
+  formatSlotRangesWithDates,
   formatCountdown,
   type CourtSlotGroup,
 } from "@/lib/courts";
@@ -137,7 +137,7 @@ function summarizeCourtLines(
         hours: slots.length,
         amount: rateRuns.reduce((sum, run) => sum + run.amount * run.slots.length, 0),
         rateDetails: rateRuns.map(
-          (run) => `${formatSlotRanges(run.slots)} · ${peso(run.amount)}/hour`,
+          (run) => `${formatSlotRangesWithDates(run.slots)} · ${peso(run.amount)}/hour`,
         ),
       };
     });
@@ -151,13 +151,13 @@ function summarizeCourtLines(
         courtName,
         hours: selectedSlots.length,
         amount,
-        rateDetails: [`${formatSlotRanges(selectedSlots)} · ${peso(rates.morning)}/hour`],
+        rateDetails: [`${formatSlotRangesWithDates(selectedSlots)} · ${peso(rates.morning)}/hour`],
       }))
     : [{
         courtName: "Court booking",
         hours: selectedSlots.length * courtCount,
         amount: amount * courtCount,
-        rateDetails: [`${formatSlotRanges(selectedSlots)} · ${peso(rates.morning)}/hour`],
+        rateDetails: [`${formatSlotRangesWithDates(selectedSlots)} · ${peso(rates.morning)}/hour`],
       }];
 }
 

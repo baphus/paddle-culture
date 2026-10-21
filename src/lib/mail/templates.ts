@@ -1,5 +1,6 @@
 import QRCode from "qrcode";
 import { googleCalendarUrlForRange } from "../booking/calendar";
+import { manilaDateStr, slotSelectionDateStr } from "../booking/slots";
 import {
   OUTBOX_TEMPLATE_CUSTOMER_SUBMITTED,
   OUTBOX_TEMPLATE_OWNER_ALERT,
@@ -75,6 +76,18 @@ function formatDate(iso: string): string {
   return dateFmt.format(d);
 }
 
+/** "Oct 22, 2026" — compact date label for overnight runs. */
+function shortDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Manila",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(d);
+}
+
 function compactTimeRange(startIso: string, endIso: string): string {
   const start = formatTime(startIso);
   const end = formatTime(endIso);
@@ -132,14 +145,22 @@ function collapseSlots(p: Payload): CourtSession[] {
       continue;
     }
 
-    // Extend run while same court and consecutive 1-hour slots.
+    // Extend run while same court and consecutive 1-hour slots that stay on
+    // the same Manila calendar date — an overnight run (e.g. 9 PM → 2 AM)
+    // becomes two sessions, each showing its actual date.
     let endMs = startMs + SLOT_DURATION_MS;
     let j = i + 1;
     while (j < sorted.length) {
       const next = sorted[j]!;
       if (str(next.courtId) !== courtId) break;
-      const nextMs = new Date(str(next.slotStart)).getTime();
+      const nextIso = str(next.slotStart);
+      const nextMs = new Date(nextIso).getTime();
       if (nextMs !== endMs) break;
+      if (
+        manilaDateStr(new Date(startIso)) !== manilaDateStr(new Date(nextIso))
+      ) {
+        break;
+      }
       endMs += SLOT_DURATION_MS;
       j++;
     }
@@ -220,7 +241,7 @@ function linesOf(
 
   // Approved/rejected payloads don't carry lines — fall back to sessions.
   if (raw.length === 0 && sessions.length > 0) {
-    return sessions.map((s) => ({ label: `${s.court} · ${s.hours} hours`, detail: s.timeRange, amount: "" }));
+    return sessions.map((s) => ({ label: `${s.court} · ${s.hours} hours`, detail: `${s.date} · ${s.timeRange}`, amount: "" }));
   }
 
   const slotsByCourt = new Map<string, SlotSummary[]>();
@@ -232,6 +253,11 @@ function linesOf(
   }
 
   const courtLines: InvoiceLine[] = [];
+  // Play/business date of the whole booking — runs on any later Manila
+  // calendar date (overnight tail) get an explicit date prefix.
+  const businessDate = slotSelectionDateStr(
+    rawSlots.map((s) => str(s.slotStart)).filter((iso) => !Number.isNaN(new Date(iso).getTime())),
+  );
   for (const [courtId, slots] of slotsByCourt) {
     const sorted = [...slots].sort((a, b) => new Date(str(a.slotStart)).getTime() - new Date(str(b.slotStart)).getTime());
     const runs: { unitAmount: string; amount: number; startIso: string; endIso: string; hours: number }[] = [];
@@ -241,7 +267,15 @@ function linesOf(
       const price = priceByCourtSlot.get(`${courtId}|${startIso}`);
       const unitAmount = price?.unitAmount ?? "";
       const previous = runs[runs.length - 1];
-      if (previous && previous.unitAmount === unitAmount && new Date(previous.endIso).getTime() === startMs) {
+      const sameDate =
+        previous !== undefined &&
+        manilaDateStr(new Date(previous.startIso)) === manilaDateStr(new Date(startIso));
+      if (
+        previous &&
+        sameDate &&
+        previous.unitAmount === unitAmount &&
+        new Date(previous.endIso).getTime() === startMs
+      ) {
         previous.endIso = new Date(startMs + SLOT_DURATION_MS).toISOString();
         previous.hours += 1;
         previous.amount += Number(price?.amount ?? 0);
@@ -257,9 +291,14 @@ function linesOf(
     }
     const courtName = courtNameById.get(courtId) ?? "Court";
     for (const run of runs) {
+      const timeRange = compactTimeRange(run.startIso, run.endIso);
+      const label =
+        businessDate && manilaDateStr(new Date(run.startIso)) !== businessDate
+          ? `${shortDate(run.startIso)} · ${timeRange}`
+          : timeRange;
       courtLines.push({
         label: `${courtName} · ${run.hours} hour${run.hours === 1 ? "" : "s"}`,
-        detail: `${compactTimeRange(run.startIso, run.endIso)}${run.unitAmount ? ` · ₱${run.unitAmount}/hour` : ""}`,
+        detail: `${label}${run.unitAmount ? ` · ₱${run.unitAmount}/hour` : ""}`,
         amount: run.amount ? run.amount.toFixed(2).replace(/\.00$/, "") : "",
       });
     }

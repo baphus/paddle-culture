@@ -11,7 +11,11 @@
 //
 // Client-safe: no server imports — importable from client components.
 
-import { manilaDateStr, maxBookableDateStr as maxBookableDateStrImpl } from "@/lib/booking/slots";
+import {
+  manilaDateStr,
+  slotSelectionDateStr,
+  maxBookableDateStr as maxBookableDateStrImpl,
+} from "@/lib/booking/slots";
 
 export interface CourtOption {
   id: string;
@@ -160,24 +164,71 @@ function splitMeridiem(s: string): [string, string] {
   return [s, ""];
 }
 
+/** Collapse sorted slot starts into consecutive-hour runs. With
+ *  `splitAcrossDates`, a run never crosses a Manila calendar-date boundary. */
+function collapseRuns(startIsos: string[], splitAcrossDates = false): string[][] {
+  const times = [...startIsos].sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+  const runs: string[][] = [];
+  for (const iso of times) {
+    const run = runs[runs.length - 1];
+    const previous = run?.[run.length - 1];
+    const contiguous =
+      previous !== undefined &&
+      new Date(iso).getTime() - new Date(previous).getTime() === 3_600_000;
+    const sameDay =
+      previous === undefined ||
+      !splitAcrossDates ||
+      manilaDateStr(new Date(previous)) === manilaDateStr(new Date(iso));
+    if (run && contiguous && sameDay) run.push(iso);
+    else runs.push([iso]);
+  }
+  return runs;
+}
+
+/** "9:00 AM" or "9:00 – 11:00 AM" for one collapsed run. */
+function runLabel(run: string[]): string {
+  if (run.length === 1) return formatSlotRange(run[0] as string);
+  return `${formatSlotRange(run[0] as string).split("–")[0]?.trim()} – ${formatSlotRange(run[run.length - 1] as string).split("–")[1]?.trim()}`;
+}
+
 /**
  * "6:00 – 8:00 AM, 10:00 – 11:00 AM" for slot start ISOs (Manila wall time).
  * Consecutive 1h runs collapse to one range; gaps start a new range.
  * Empty → "".
  */
 export function formatSlotRanges(startIsos: string[]): string {
-  if (startIsos.length === 0) return "";
-  const times = [...startIsos].sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
-  const runs: string[][] = [[times[0] as string]];
-  for (let i = 1; i < times.length; i++) {
-    const gap = new Date(times[i] as string).getTime() - new Date(times[i - 1] as string).getTime();
-    if (gap === 3_600_000) (runs[runs.length - 1] as string[]).push(times[i] as string);
-    else runs.push([times[i] as string]);
-  }
+  return collapseRuns(startIsos)
+    .map((run) => runLabel(run))
+    .join(", ");
+}
+
+/** "Oct 22, 2026" — the slot's own Manila calendar date. */
+export function slotDateShort(startIso: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Manila",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(startIso));
+}
+
+/**
+ * formatSlotRanges split at Manila-date boundaries, so an overnight booking
+ * reads in real calendar dates: each run after the selection's own business
+ * day gets an explicit date prefix —
+ * "9:00 PM – 12:00 AM, Oct 22, 2026 · 12:00 – 2:00 AM".
+ * Same-date bookings render identically to formatSlotRanges.
+ */
+export function formatSlotRangesWithDates(startIsos: string[]): string {
+  const runs = collapseRuns(startIsos, true);
+  if (runs.length === 0) return "";
+  const business = slotSelectionDateStr(runs[0] as string[]);
   return runs
     .map((run) => {
-      if (run.length === 1) return formatSlotRange(run[0] as string);
-      return `${formatSlotRange(run[0] as string).split("–")[0]?.trim()} – ${formatSlotRange(run[run.length - 1] as string).split("–")[1]?.trim()}`;
+      const label = runLabel(run);
+      return manilaDateStr(new Date(run[0] as string)) === business
+        ? label
+        : `${slotDateShort(run[0] as string)} · ${label}`;
     })
     .join(", ");
 }

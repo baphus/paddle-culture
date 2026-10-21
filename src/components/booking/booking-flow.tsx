@@ -12,7 +12,7 @@ import {
   User,
 } from "lucide-react";
 import { toast } from "sonner";
-import { formatCountdown, formatManilaLong, formatSlotRanges, type CourtOption, type CourtSlotGroup } from "@/lib/courts";
+import { formatCountdown, formatManilaLong, formatSlotRangesWithDates, type CourtOption, type CourtSlotGroup } from "@/lib/courts";
 import { calculatePaddleRentalTotal, courtRateForSlot, FALLBACK_RATES, peso, type DisplayRates } from "@/lib/pricing-display";
 import { cn } from "@/lib/utils";
 import { clearDraft, loadDraft, newOwnerToken, saveDraft, type BookingDraft } from "@/lib/booking/draft";
@@ -645,7 +645,7 @@ export default function BookingFlow({
           return {
             label: group.courtName,
             detail: rateRuns
-              .map((run) => `${formatSlotRanges(run.slots)} · ${peso(run.amount)}/hour`)
+              .map((run) => `${formatSlotRangesWithDates(run.slots)} · ${peso(run.amount)}/hour`)
               .join("; "),
             quantity: `${slotStarts.length} hour${slotStarts.length === 1 ? "" : "s"}`,
             amount,
@@ -654,7 +654,7 @@ export default function BookingFlow({
       : selectedSlots.length > 0
         ? [{
             label: courtNames.join(", ") || "Court booking",
-            detail: `${formatSlotRanges(selectedSlots)} · ${peso(rates.morning)}/hour${courtNames.length > 1 ? " per court" : ""}`,
+            detail: `${formatSlotRangesWithDates(selectedSlots)} · ${peso(rates.morning)}/hour${courtNames.length > 1 ? " per court" : ""}`,
             quantity: `${selectedSlots.length * Math.max(courtNames.length, 1)} court-hours`,
             amount: selectedSlots.length * Math.max(courtNames.length, 1) * rates.morning,
           }]

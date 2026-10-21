@@ -1,5 +1,5 @@
 import { CalendarPlus } from "lucide-react";
-import { formatManilaLong, formatSlotRanges, type CourtSlotGroup } from "@/lib/courts";
+import { formatManilaLong, formatSlotRangesWithDates, type CourtSlotGroup } from "@/lib/courts";
 import { slotSelectionDateStr } from "@/lib/booking/slots";
 import { googleCalendarUrl } from "@/lib/booking/calendar";
 import {
@@ -83,7 +83,7 @@ export default function BookingInvoice({
       const amount = rateRuns.reduce((sum, run) => sum + run.amount * run.slots.length, 0);
       invoiceLines.push({
         label: `${group.courtName} · ${slots.length} hour${slots.length === 1 ? "" : "s"}`,
-        detail: rateRuns.map((run) => `${formatSlotRanges(run.slots)} · ${peso(run.amount)}/hour`).join("; "),
+        detail: rateRuns.map((run) => `${formatSlotRangesWithDates(run.slots)} · ${peso(run.amount)}/hour`).join("; "),
         amount,
       });
     }
@@ -91,7 +91,7 @@ export default function BookingInvoice({
     const count = Math.max(courtNames.length, 1);
     invoiceLines.push({
       label: `${courtNames.join(", ") || "Court booking"} · ${sortedSlots.length * count} court-hours`,
-      detail: `${formatSlotRanges(sortedSlots)} · ${peso(rates.morning)}/hour${count > 1 ? " per court" : ""}`,
+      detail: `${formatSlotRangesWithDates(sortedSlots)} · ${peso(rates.morning)}/hour${count > 1 ? " per court" : ""}`,
       amount: sortedSlots.length * count * rates.morning,
     });
   }
@@ -106,7 +106,7 @@ export default function BookingInvoice({
   if (equipment.ball) invoiceLines.push({ label: "Ball set · one booking", amount: rates.ball });
 
   const courtTimeNotes = groups.map((group) =>
-    `${group.courtName}: ${formatSlotRanges(group.slotStarts)}`,
+    `${group.courtName}: ${formatSlotRangesWithDates(group.slotStarts)}`,
   );
   const calendarHref = googleCalendarUrl({
     title: `CK Grounds — ${courtNames.join(", ") || "Court booking"}`,
@@ -114,7 +114,7 @@ export default function BookingInvoice({
     location: VENUE_ADDRESS,
     details: [
       `Booking ref: #${token.slice(0, 8).toUpperCase()}`,
-      ...(courtTimeNotes.length > 0 ? courtTimeNotes : [formatSlotRanges(sortedSlots)]),
+      ...(courtTimeNotes.length > 0 ? courtTimeNotes : [formatSlotRangesWithDates(sortedSlots)]),
       bookingUrl ? `Track your booking: ${bookingUrl}` : "",
     ].filter(Boolean).join("\n"),
   });
