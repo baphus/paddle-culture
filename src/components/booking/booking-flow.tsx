@@ -145,13 +145,14 @@ export default function BookingFlow({
   const [ready, setReady] = useState(false);
   // A draft may only re-enter the flow at or beyond the details step if it
   // carries everything those steps render. Anything less falls back to the
-  // booking grid (with the details kept), never to a blank screen.
+  // booking grid (with the details kept), never to a blank screen. Holds only
+  // exist once payment is in play, so details/review never require one.
   const restoredStep: Step = (() => {
     const d = restoredDraft;
     if (!d) return "select";
     if (d.step === "payment" && d.hold && d.details && d.idempotencyKey) return "payment";
-    if (d.step === "review" && d.hold && d.details && d.idempotencyKey) return "review";
-    if (d.step === "details" && d.hold) return "details";
+    if (d.step === "review" && d.details) return "review";
+    if (d.step === "details" && d.details) return "details";
     return "select";
   })();
   const [resumedNotice, setResumedNotice] = useState<string | null>(null);
@@ -175,6 +176,8 @@ export default function BookingFlow({
   const [details, setDetails] = useState<DetailsValues | null>(null);
   const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // True while the review step is POSTing /api/holds to start the 10-minute window.
+  const [holdingForPayment, setHoldingForPayment] = useState(false);
   const [result, setResult] = useState<{
     trackingToken: string;
     trackingCode: string;
@@ -204,19 +207,18 @@ export default function BookingFlow({
       setLiveBall(draft.ball);
       setDetails(draft.details);
       setIdempotencyKey(draft.idempotencyKey);
-      const draftStep = draft.step === "review" && draft.hold && draft.details && draft.idempotencyKey
+      const draftStep = draft.step === "review" && draft.details
         ? "review"
-        : draft.step === "payment" && draft.hold && draft.details && draft.idempotencyKey
-          ? "payment"
-          : draft.step === "details" && draft.hold
-            ? "details"
+        : draft.step === "details" && draft.details
+          ? "details"
+          : draft.step === "payment" && draft.hold && draft.details && draft.idempotencyKey
+            ? "payment"
             : "select";
       setResumedNotice(draft.details
         ? draftStep !== "select"
           ? "We restored your booking — nothing was lost."
           : "Welcome back — your details are saved. Re-confirm your slots to continue."
-        : null);
-      setStep(draftStep);
+        : null);      setStep(draftStep);
     }
     setReady(true);
   }, [initialCourts]);
@@ -340,10 +342,10 @@ export default function BookingFlow({
   );
 
   // A draft can be restored with a hold that has already lapsed — the customer
-  // was away longer than the 10-minute window. Try to revive it silently on
-  // mount (same rules as the explicit button) so they land back on payment with
-  // working slots instead of an error banner. If that fails they still keep
-  // their details and land on step 1 with a plain explanation.
+  // was away longer than the 10-minute window. On the payment step, try to
+  // revive it silently (same rules as the explicit button) so they land back
+  // mid-payment with working slots. Anywhere else the hold is simply dropped:
+  // "Continue to Payment" creates a fresh hold, so no reclaim dance is needed.
   const restoredRan = useRef(false);
   useEffect(() => {
     if (restoredRan.current) return;
@@ -351,7 +353,10 @@ export default function BookingFlow({
     const restoredHold = restoredDraft?.hold;
     if (!restoredHold || !restoredDraft?.details) return;
     if (new Date(restoredHold.expiresAt).getTime() > Date.now()) return;
-    if (stepRef.current === "select") return;
+    if (stepRef.current !== "payment") {
+      setHold(null);
+      return;
+    }
     setStep("payment");
     void fetch("/api/holds/reclaim", {
       method: "POST",
@@ -417,8 +422,8 @@ export default function BookingFlow({
 
   const handleHoldExpired = useCallback(() => {
     // On the payment step the customer is mid-payment: money may already be on
-  // its way. Do NOT wipe their hold and dump them at step 1 — payment
-  // shows a "hold my slots again" restore instead (POST
+    // its way. Do NOT wipe their hold and dump them at step 1 — payment
+    // shows a "hold my slots again" restore instead (POST
     // /api/holds/reclaim), which keeps their details, proof and timer alive.
     if (stepRef.current === "payment") {
       toast.error("Your hold ran out. Restore your slots to finish — we kept your payment proof.", {
@@ -426,26 +431,21 @@ export default function BookingFlow({
       });
       return;
     }
+    // On review the hold can simply be re-created by continuing to payment,
+    // so there is no need to yank them back to step 1.
     setHold(null);
-    handleClearSelection();
-    setError("Your hold expired. Go back to choose your slots and try again.");
-    toast.error("Your hold expired. Go back to choose your slots and try again.", {
-      duration: 8000,
-    });
-    setStep("select");
-  }, [handleClearSelection]);
+    setError(null);
+  }, []);
 
-  const handleHoldSuccess = useCallback(
-    (newHold: HoldState, newCourtIds: string[], newSlots: string[], date: string, paddleQty = 0, ball = false, groups: CourtSlotGroup[] = []) => {
+  const handleContinueToDetails = useCallback(
+    (newCourtIds: string[], newSlots: string[], date: string, paddleQty = 0, ball = false, groups: CourtSlotGroup[] = []) => {
       setError(null);
-      setHold(newHold);
       setCourtIds(newCourtIds);
       setSelectedSlots(newSlots);
       setSlotGroups(groups);
       setSelectedDate(date);
       setLivePaddleQty(paddleQty);
       setLiveBall(ball);
-      setIdempotencyKey(crypto.randomUUID());
       setStep("details");
       window.scrollTo({ top: 0, behavior: "smooth" });
     },
@@ -475,24 +475,108 @@ export default function BookingFlow({
     }).catch(() => {});
   }, []);
 
-  // Returning from details releases the hold silently before remounting
-  // step 1, so its availability read can't race the release.
-  const returnToTimeSlots = useCallback(async () => {
-    if (hold) {
-      try {
-        await fetch("/api/holds", {
-          method: "DELETE",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ holdTokens: hold.tokens }),
-          keepalive: true,
-        });
-      } catch {}
+  /**
+   * Review → payment: the moment the customer's slots actually get held. The
+   * 10-minute window starts here, as they head off to pay — not during step 1
+   * browsing, where a hold would expire long before reaching payment.
+   */
+  const handleContinueToPayment = useCallback(async () => {
+    // Coming back from payment with a still-live hold: skip re-holding.
+    if (hold && new Date(hold.expiresAt).getTime() > Date.now()) {
+      setStep("payment");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
     }
-    setHold(null);
+    if (slotGroups.length === 0) {
+      toast.error("No slots selected — pick your times again.");
+      setStep("select");
+      return;
+    }
+    setHoldingForPayment(true);
+    try {
+      // One POST per distinct slot set; courts sharing the same hours batch
+      // together so the hold rows are exactly the picked (court, slot) pairs.
+      const grouped = new Map<string, string[]>();
+      for (const group of slotGroups) {
+        if (!group.courtId) continue;
+        const key = [...group.slotStarts].sort().join(",");
+        const list = grouped.get(key);
+        if (list) list.push(group.courtId);
+        else grouped.set(key, [group.courtId]);
+      }
+      const allTokens: string[] = [];
+      let deadlineMs = 0;
+      let expiresAt = "";
+      for (const [slotsKey, groupCourts] of grouped) {
+        const res = await fetch("/api/holds", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            courtIds: groupCourts.sort(),
+            slotStarts: slotsKey.split(",").sort(),
+            ownerToken,
+          }),
+        });
+        if (!res.ok) {
+          // A later group failed — free the holds this attempt already created.
+          void fetch("/api/holds", {
+            method: "DELETE",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ holdTokens: allTokens }),
+            keepalive: true,
+          }).catch(() => {});
+          const body = (await res.json().catch(() => null)) as
+            | { error?: { code?: string; message?: string } }
+            | null;
+          const msg =
+            body?.error?.code === "SLOT_TAKEN"
+              ? "Someone took one of your slots while you reviewed. Please go back and pick a different time."
+              : body?.error?.message ?? "Could not hold those slots. Check your connection and retry.";
+          setError(msg);
+          toast.error(msg, { duration: 8000 });
+          return;
+        }
+        const body = (await res.json()) as {
+          holds: Array<{ holdToken: string }>;
+          expiresAt: string;
+          deadlineMs: number;
+        };
+        allTokens.push(...body.holds.map((h) => h.holdToken));
+        deadlineMs = body.deadlineMs;
+        expiresAt = body.expiresAt;
+      }
+      setError(null);
+      setHold({
+        tokens: allTokens,
+        deadlineMs,
+        expiresAt,
+        courtIds: slotGroups
+          .map((g) => g.courtId)
+          .filter((id): id is string => !!id)
+          .sort(),
+        slotStarts: slotGroups.flatMap((g) => g.slotStarts).sort(),
+        ownerToken,
+      });
+      setIdempotencyKey(crypto.randomUUID());
+      toast.success("Slots held for 10 minutes — complete your payment before the timer ends.");
+      setStep("payment");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch {
+      const msg = "Could not hold those slots. Check your connection and retry.";
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setHoldingForPayment(false);
+    }
+  }, [hold, slotGroups, ownerToken, releaseHold]);
+
+  // Returning from details to step 1 — nothing to release: no hold exists
+  // until the review step hands the customer to payment.
+  const returnToTimeSlots = useCallback(() => {
     handleClearSelection();
     setStep("select");
     window.scrollTo({ top: 0, behavior: "smooth" });
-  }, [hold, handleClearSelection]);
+  }, [handleClearSelection]);
 
   const startOver = () => {
     releaseHold(hold);
@@ -683,8 +767,8 @@ export default function BookingFlow({
         </div>
       </nav>
 
-      {/* Active Hold Banner for Details and Payment steps */}
-      {hold && (step === "details" || step === "payment") && (
+      {/* Active Hold Banner for Review (after a Back from payment) and Payment */}
+      {hold && (step === "review" || step === "payment") && (
         <HoldTimerBar deadlineMs={hold.deadlineMs} onExpired={handleHoldExpired} />
       )}
 
@@ -716,23 +800,21 @@ export default function BookingFlow({
               <Step1DateTime
                 initialCourts={courts}
                 initialRates={rates}
-                existingHold={hold}
                 initialSelectedDate={selectedDate}
                 initialCourtIds={courtIds}
                 initialSelectedSlots={selectedSlots}
                 initialPaddleQty={livePaddleQty}
                 initialBall={liveBall}
-                ownerToken={ownerToken}
-                onHoldSuccess={handleHoldSuccess}
-                onHoldExpired={handleHoldExpired}
+                onContinue={handleContinueToDetails}
                 onCancel={startOver}
                 onClearSelection={handleClearSelection}
                 onLiveUpdate={handleLiveUpdate}
               />
             )}
 
-            {/* Step 2: Player Details (equipment pre-filled from step 1) */}
-            {step === "details" && hold && (
+            {/* Step 2: Player Details (equipment pre-filled from step 1).
+                No hold yet — slots are only reserved in step 4. */}
+            {step === "details" && (
               <div className="animate-rise">
                 <DetailsForm
                   maxHours={selectedSlots.length}
@@ -760,12 +842,21 @@ export default function BookingFlow({
               </div>
             )}
 
-            {/* Step 3: Complete booking review before payment */}
-            {step === "review" && hold && details && (
+            {/* Step 3: Review — these slots are NOT held yet. The hold starts
+                only when the customer continues to payment. */}
+            {step === "review" && details && (
               <section className="animate-rise mx-auto w-full max-w-3xl" aria-labelledby="booking-review-title">
                 <div className="rounded-2xl border border-line-warm/70 bg-white p-5 sm:p-8">
                   <h2 id="booking-review-title" className="text-2xl font-bold text-ink">Review booking</h2>
                   <p className="mt-1 text-sm text-warm-muted">Check the invoice details before continuing to payment.</p>
+                  {!hold && (
+                    <p
+                      role="status"
+                      className="mt-3 rounded-2xl border border-flame/40 bg-flame-light/30 px-4 py-3 text-xs sm:text-sm font-semibold text-flame"
+                    >
+                      Your slot is not reserved yet. Continue to payment to hold it for 10 minutes while you pay.
+                    </p>
+                  )}
 
                 <div className="mt-8 border-y border-line-warm py-5">
                   <h3 className="text-xs font-bold uppercase tracking-wide text-warm-muted">Booking</h3>
@@ -817,8 +908,12 @@ export default function BookingFlow({
 
                 <div className="mt-3 flex items-center justify-between gap-4 border-t border-line-warm pt-5">
                   <button type="button" onClick={() => { setStep("details"); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="min-h-11 px-1 text-sm font-semibold text-pine underline underline-offset-4 hover:text-flame">Edit details</button>
-                  <button type="button" id="review-advance" onClick={() => { setStep("payment"); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-flame px-5 text-sm font-semibold text-white hover:bg-flame-hover">
-                    <span>Continue to Payment</span><CreditCard className="size-4" />
+                  <button type="button" id="review-advance" onClick={() => { void handleContinueToPayment(); }} disabled={holdingForPayment} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-flame px-5 text-sm font-semibold text-white hover:bg-flame-hover disabled:pointer-events-none disabled:opacity-50">
+                    {holdingForPayment ? (
+                      <><span>Holding your slots…</span><Timer className="size-4 animate-pulse" /></>
+                    ) : (
+                      <><span>Continue to Payment</span><CreditCard className="size-4" /></>
+                    )}
                   </button>
                 </div>
                 </div>

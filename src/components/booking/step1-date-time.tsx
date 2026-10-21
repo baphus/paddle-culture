@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 import { LoadingAnimation } from "@/components/ui/loading-animation";
 import { MAX_SLOTS_PER_BOOKING } from "@/lib/booking/constants";
 import { clearDraft } from "@/lib/booking/draft";
-import { slotsForDate } from "@/lib/booking/slots";
+import { slotsForDate, isOvernightSlot } from "@/lib/booking/slots";
 import {
   daysInManilaMonth,
   firstWeekdayManila,
@@ -34,10 +34,8 @@ import LandingImage from "@/components/landing/landing-image";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 
 interface AvailabilitySlot {
   index: number;
@@ -71,37 +69,6 @@ export interface HoldState {
 
 type CellState = "open" | "held" | "booked" | "closed" | "past";
 
-const HOLD_ERROR_FRIENDLY: Record<string, string> = {
-  OFF_GRID: "That time isn't on the hourly grid. Pick a listed slot.",
-  SLOT_PAST: "That slot already started. Pick a future time.",
-  TOO_MANY_SLOTS: `Max ${MAX_SLOTS_PER_BOOKING} court-hours per booking — fewer hours or courts.`,
-  SLOT_UNAVAILABLE: "Someone just took one of those slots. Refresh and pick again.",
-  SLOT_CLOSED: "A selected time is closed. Pick another time.",
-  COURT_UNAVAILABLE: "A selected court isn't bookable right now.",
-  UNKNOWN_COURT: "A selected court no longer exists. Refresh the page.",
-  DUPLICATE_SLOT: "You picked the same hour twice.",
-};
-
-function friendlyHoldError(code: string | undefined, fallback: string): string {
-  return (code && HOLD_ERROR_FRIENDLY[code]) || fallback;
-}
-
-/**
- * Release holds server-side. `keepalive` keeps the request alive across a
- * navigation, so a release fired just before leaving still lands. Callers
- * choose whether to surface a failure or ignore it.
- */
-async function releaseHoldTokens(tokens: string[]): Promise<void> {
-  if (tokens.length === 0) return;
-  const response = await fetch("/api/holds", {
-    method: "DELETE",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ holdTokens: tokens }),
-    keepalive: true,
-  });
-  if (!response.ok) throw new Error("Could not release your held slots.");
-}
-
 function cellState(slot: AvailabilitySlot): CellState {
   if (slot.state === "held") return "held";
   if (slot.state === "pending" || slot.state === "approved") return "booked";
@@ -128,7 +95,6 @@ function shiftMonth(month: string, delta: number): string {
 export interface Step1DateTimeProps {
   initialCourts: CourtOption[];
   initialRates?: DisplayRates;
-  existingHold?: HoldState | null;
   initialSelectedDate?: string | null;
   /**
    * Courts the restored `initialSelectedSlots` were picked on. Used ONLY to
@@ -140,10 +106,9 @@ export interface Step1DateTimeProps {
   initialSelectedSlots?: string[];
   initialPaddleQty?: number;
   initialBall?: boolean;
-  /** Browser-session owner token, stamped on every hold this step creates. */
-  ownerToken?: string;
-  onHoldSuccess?: (
-    hold: HoldState,
+  /** Fires when the customer finishes step 1 — no hold is created here; slots
+   * are only reserved later, from the review step's "Continue to Payment". */
+  onContinue?: (
     courtIds: string[],
     slotStarts: string[],
     date: string,
@@ -151,7 +116,6 @@ export interface Step1DateTimeProps {
     ball: boolean,
     slotGroups: CourtSlotGroup[],
   ) => void;
-  onHoldExpired?: () => void;
   onCancel?: () => void;
   /**
    * Fires when the picks themselves are dropped — a date change, Back out of
@@ -177,15 +141,12 @@ type Panel = 0 | 1 | 2;
 export default function Step1DateTime({
   initialCourts,
   initialRates = FALLBACK_RATES,
-  existingHold = null,
   initialSelectedDate = null,
   initialCourtIds,
   initialSelectedSlots,
   initialPaddleQty = 0,
   initialBall = false,
-  ownerToken,
-  onHoldSuccess,
-  onHoldExpired,
+  onContinue,
   onCancel,
   onClearSelection,
   onLiveUpdate,
@@ -234,15 +195,8 @@ export default function Step1DateTime({
       .filter((iso) => grid.has(new Date(iso).toISOString()) || grid.size === 0)
       .flatMap((iso) => courtIds.map((cId) => `${cId}|${new Date(iso).toISOString()}`));
   });
-  const [hold, setHold] = useState<HoldState | null>(existingHold ?? null);
-  const [holding, setHolding] = useState(false);
-  // Confirmation only when changing the date would release an active hold.
-  const [releaseConfirm, setReleaseConfirm] = useState<{
-    message: string;
-    confirmLabel: string;
-    run: () => void;
-  } | null>(null);
-
+  // Holds are never created in step 1 — the customer's picks are just local
+  // selection state here. Slots are reserved later, from the review step.
   const [paddleQty, setPaddleQty] = useState<number>(initialPaddleQty);
   const [ball, setBall] = useState<boolean>(initialBall);
 
@@ -423,34 +377,7 @@ export default function Step1DateTime({
   function goPanel(p: Panel) {
     if (p === 1 && !selectedDate) { toast.error("Pick a play date first."); return; }
     if (p === 2 && selected.length === 0) { toast.error("Pick at least 1 time slot first."); return; }
-    if (p < panel && hold) {
-      confirmBackNavigation(p);
-      return;
-    }
     setPanel(p);
-  }
-
-  function confirmBackNavigation(target: Panel) {
-    setReleaseConfirm({
-      message: "Going back releases your held slots and clears your selection. You can choose new slots afterward.",
-      confirmLabel: "Release hold & clear slots",
-      run: async () => {
-        try {
-          await releaseHoldTokens(hold?.tokens ?? []);
-        } catch {
-          toast.error("Could not release your held slots. Please try again.");
-          return;
-        }
-        // Availability is cached by month. Drop the cached snapshot only after
-        // the release has completed, then reload it from the server.
-        setMonthCache(new Map());
-        setRetryKey((key) => key + 1);
-        setHold(null);
-        setSelected([]);
-        onClearSelection?.();
-        setPanel(target);
-      },
-    });
   }
 
   function panelSteps() {
@@ -505,7 +432,6 @@ export default function Step1DateTime({
 
   // Toggle a specific (court, slot) cell
   function toggleCell(iso: string, courtId: string) {
-    if (hold) return;
     if (!avail) { toast.error("Loading fresh slots — try again in a moment."); return; }
     const key = `${courtId}|${iso}`;
     if (selected.includes(key)) {
@@ -533,109 +459,7 @@ export default function Step1DateTime({
     setSelected(next);
   }
 
-  async function createHold() {
-    if (selected.length === 0) { toast.error("Pick at least 1 hour first."); return; }
-    if (courtIds.length === 0) { toast.error("No courts listed right now."); return; }
-    // Only ever POST instants that sit on the selected date's grid. A stale
-    // restored draft (or a slot left over from another date) would otherwise be
-    // rejected server-side as OFF_GRID while every visible cell shows free.
-    const grid = new Set(slotsForDate(selectedDate ?? "").map((s) => s.start.toISOString()));
-    if (grid.size > 0 && selected.some((pair) => !grid.has(pair.split("|")[1] ?? ""))) {
-      toast.error("Some picks aren't available on this date any more. Please re-select.");
-      setSelected((prev) => prev.filter((pair) => grid.has(pair.split("|")[1] ?? "")));
-      return;
-    }
-    setHolding(true);
-    try {
-      // Group selected pairs by court
-      const byCourtMap = new Map<string, string[]>();
-      for (const pair of selected) {
-        const [cId, iso] = pair.split("|") as [string, string];
-        const existing = byCourtMap.get(cId);
-        if (existing) existing.push(iso);
-        else byCourtMap.set(cId, [iso]);
-      }
-
-      // Find groups with the same slot set so we can batch them into one call
-      // (slots sorted for stable comparison key)
-      const grouped = new Map<string, string[]>(); // slotsKey → courtIds
-      for (const [cId, slots] of byCourtMap) {
-        const key = [...slots].sort().join(",");
-        const existing = grouped.get(key);
-        if (existing) existing.push(cId);
-        else grouped.set(key, [cId]);
-      }
-
-      const allTokens: string[] = [];
-      let sharedDeadlineMs = 0;
-      let sharedExpiresAt = "";
-      const allCourtIds: string[] = [];
-      const allSlotStarts: string[] = [];
-
-      for (const [slotsKey, groupCourts] of grouped) {
-        const slotStarts = slotsKey.split(",").sort();
-        const res = await fetch("/api/holds", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ courtIds: groupCourts.sort(), slotStarts, ownerToken }),
-        });
-        if (!res.ok) {
-          let code: string | undefined;
-          let msg = "Could not hold those slots.";
-          try {
-            const b = (await res.json()) as { error?: { code?: string; message?: string } };
-            code = b.error?.code;
-            if (b.error?.message) msg = b.error.message;
-          } catch {}
-          // A later group failed — free the holds this attempt already created.
-          void releaseHoldTokens(allTokens).catch(() => {});
-          toast.error(friendlyHoldError(code, msg));
-          return;
-        }
-        const body = (await res.json()) as {
-          holds: Array<{ holdToken: string }>;
-          expiresAt: string;
-          deadlineMs: number;
-        };
-        allTokens.push(...body.holds.map((h) => h.holdToken));
-        sharedDeadlineMs = body.deadlineMs;
-        sharedExpiresAt = body.expiresAt;
-        allCourtIds.push(...groupCourts);
-        allSlotStarts.push(...slotStarts.filter((s) => !allSlotStarts.includes(s)));
-      }
-
-      const holdState: HoldState = {
-        tokens: allTokens,
-        deadlineMs: sharedDeadlineMs,
-        expiresAt: sharedExpiresAt,
-        courtIds: [...new Set(allCourtIds)].sort(),
-        slotStarts: [...new Set(allSlotStarts)].sort(),
-        ...(ownerToken ? { ownerToken } : {}),
-      };
-      setHold(holdState);
-      toast.success("Slots held — add equipment or continue to details.");
-      setPanel(2);
-    } catch {
-      toast.error("Could not hold those slots. Check your connection and retry.");
-    } finally {
-      setHolding(false);
-    }
-  }
-
-  const handleHoldExpired = useCallback(() => {
-    setHold(null);
-    if (onHoldExpired) onHoldExpired();
-    toast.error('Your hold expired — tap "Continue" again.', { duration: 8000 });
-  }, [onHoldExpired]);
-
-  function handleContinueCta() {
-    if (hold && onHoldSuccess && selectedDate) {
-      onHoldSuccess(hold, hold.courtIds, hold.slotStarts, selectedDate, paddleQty, ball, slotGroups);
-      return;
-    }
-    void createHold();
-  }
-
+  // Calendar model
   // Calendar model
   const monthLabel = monthLabelManila(view.y, view.m);
   const leadBlanks = firstWeekdayManila(view.y, view.m);
@@ -657,11 +481,6 @@ export default function Step1DateTime({
    */
   function applyDateChange(dateStr: string, stayOnTimeGrid: boolean) {
     const hadPicks = selected.length > 0;
-    if (hold) {
-      void releaseHoldTokens(hold.tokens).catch(() => {});
-      setHold(null);
-      toast("Previous hold released — those slots are free again.");
-    }
     setSelected([]);
     setSelectedDate(dateStr);
     setView(partsOf(dateStr));
@@ -679,24 +498,11 @@ export default function Step1DateTime({
       if (!stayOnTimeGrid) setPanel(1);
       return;
     }
-    if (hold) {
-      setReleaseConfirm({
-        message:
-          "Changing the date releases the slots you're holding — you'll need to pick them again on the new date.",
-        confirmLabel: "Release hold & change date",
-        run: () => applyDateChange(dateStr, stayOnTimeGrid),
-      });
-      return;
-    }
     applyDateChange(dateStr, stayOnTimeGrid);
   }
 
   /** End the attempt when the customer cancels. */
   function resetAll(next?: () => void) {
-    if (hold) {
-      void releaseHoldTokens(hold.tokens).catch(() => {});
-      setHold(null);
-    }
     setSelected([]);
     setSelectedDate(null);
     setPaddleQty(0);
@@ -714,19 +520,15 @@ export default function Step1DateTime({
       next?.();
       return;
     }
-    if (hold) {
-      void releaseHoldTokens(hold.tokens).catch(() => {});
-      setHold(null);
-    }
     setSelected([]);
     onClearSelection?.();
     next?.();
   }
 
   function handleCancel() {
-    // Cancel always ends the attempt cleanly: the hold is released, everything
-    // dropped (so the summary and the saved draft don't bring it back) and the
-    // tab's draft cleared before we leave.
+    // Cancel always ends the attempt cleanly: everything is dropped (so the
+    // summary and the saved draft don't bring it back) and the tab's draft
+    // cleared before we leave. No hold exists in step 1 by definition.
     resetAll(() => {
       clearDraft();
       if (onCancel) { onCancel(); return; }
@@ -734,23 +536,13 @@ export default function Step1DateTime({
     });
   }
 
-  /** Return to the date panel, confirming first if that releases a hold. */
+  /** Return to the date panel. */
   function backToDates() {
-    if (hold) {
-      confirmBackNavigation(0);
-      return;
-    }
     setPanel(0);
   }
 
-  /** Moving back after holding slots requires releasing the hold and clearing them. */
   function backPanel() {
-    const target = (panel - 1) as Panel;
-    if (hold) {
-      confirmBackNavigation(target);
-      return;
-    }
-    setPanel(target);
+    setPanel((panel - 1) as Panel);
   }
 
   const weekRows = useMemo<Array<Array<{ key: string; dateStr: string | null }>>>(() => {
@@ -778,7 +570,7 @@ export default function Step1DateTime({
     return "open";
   }
 
-  const ctaDisabled = selected.length === 0 || holding || !!hold || courtIds.length === 0;
+  const ctaDisabled = selected.length === 0 || courtIds.length === 0;
 
   // ── Panel 2: Time Grid ─────────────────────────────────────────────
   // Renders a scrollable table: rows = time slots, columns = each selected court
@@ -786,43 +578,12 @@ export default function Step1DateTime({
 
   // ── Render ─────────────────────────────────────────────────────────
 
-  // Shared confirmation for actions that release the hold.
-  const releaseDialog = (
-    <Dialog
-      open={releaseConfirm !== null}
-      onOpenChange={(open) => { if (!open) setReleaseConfirm(null); }}
-    >
-      {releaseConfirm && (
-        <DialogContent className="sm:max-w-sm">
-          <DialogTitle>Release your hold?</DialogTitle>
-          <DialogDescription>{releaseConfirm.message}</DialogDescription>
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button variant="outline" onClick={() => setReleaseConfirm(null)}>
-              Stay
-            </Button>
-            <Button
-              className="bg-flame text-white hover:bg-flame-hover"
-              onClick={() => {
-                const run = releaseConfirm.run;
-                setReleaseConfirm(null);
-                run();
-              }}
-            >
-              {releaseConfirm.confirmLabel}
-            </Button>
-          </div>
-        </DialogContent>
-      )}
-    </Dialog>
-  );
-
   // Panel 1 (time grid) is fullscreen — rendered separately from the card wrapper
   if (panel === 1) {
     const previewCourt = previewCourtId ? courts.find((c) => c.id === previewCourtId) ?? null : null;
     const previewIndex = previewCourt ? (courtIndexById.get(previewCourt.id) ?? 0) : 0;
     return (
       <div className="flex flex-col">
-        {releaseDialog}
         <Dialog open={previewCourt !== null} onOpenChange={(open) => { if (!open) setPreviewCourtId(null); }}>
           {previewCourt && (
             <DialogContent className="max-w-lg overflow-hidden p-0">
@@ -946,6 +707,7 @@ export default function Step1DateTime({
               </thead>
               <tbody>
                 {gridSlots.map((iso, idx) => {
+                  const overnight = isOvernightSlot(new Date(iso));
                   const rowHasSelection = courtIds.some((id) => isCellSelected(iso, id));
                   const allClosed = courtIds.every((id) => {
                     const cs = slotStateForCourt(iso, id);
@@ -969,6 +731,11 @@ export default function Step1DateTime({
                             )}
                           >
                             {formatSlotRange(iso).split("–").join("→")}
+                            {overnight && (
+                              <span className="ml-1 align-middle text-[9px] font-bold uppercase tracking-wide text-warm-muted/80">
+                                (next day)
+                              </span>
+                            )}
                           </span>
                         </td>
                         {/* Court cells */}
@@ -996,17 +763,15 @@ export default function Step1DateTime({
                                 ) : (
                                   <button
                                     type="button"
-                                    disabled={!!hold || holding}
                                     onClick={() => toggleCell(iso, court.id)}
                                     aria-pressed={isSel}
-                                    aria-label={`${formatSlotRange(iso)} - ${rateLabel} - ${isSel ? "Selected" : "Available"}`}
+                                    aria-label={`${formatSlotRange(iso)}${overnight ? " (next day)" : ""} - ${rateLabel} - ${isSel ? "Selected" : "Available"}`}
                                     title={rateLabel}
                                     className={cn(
                                       "flex items-center justify-center mx-auto rounded-full border-2 size-8 transition-all",
                                       isSel
                                         ? "border-flame bg-flame text-white shadow-sm scale-110"
                                         : "border-flame/40 bg-flame/5 hover:bg-flame/15 hover:border-flame/70",
-                                      (!!hold || holding) && "cursor-not-allowed opacity-60",
                                     )}
                                   >
                                     {isSel && <Check className="size-3.5" strokeWidth={3} />}
@@ -1050,18 +815,12 @@ export default function Step1DateTime({
             )}
             <button
               type="button"
-              onClick={handleContinueCta}
+              onClick={() => goPanel(2)}
               disabled={ctaDisabled}
               id="step1-advance"
               className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-flame px-6 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
             >
-              {holding ? (
-                <><LoadingAnimation size="compact" label="Holding slots" /> Holding…</>
-              ) : hold ? (
-                <><span className="sm:hidden">Gear</span><span className="hidden sm:inline">Continue to Equipment</span><ArrowRight className="size-4" /></>
-              ) : (
-                <>Continue <ArrowRight className="size-4" /></>
-              )}
+              <><span className="sm:hidden">Gear</span><span className="hidden sm:inline">Continue to Equipment</span><ArrowRight className="size-4" /></>
             </button>
           </div>
         </div>
@@ -1072,7 +831,6 @@ export default function Step1DateTime({
   // ── Panels 0, 2 (card layout) ──────────────────────────────────
   return (
     <div className="bg-cream border border-line-warm/60 rounded-2xl p-5 sm:p-7 shadow-sm">
-      {releaseDialog}
       {/* Stepper header */}
       <div className="mb-6">
         <div className="flex items-center justify-between gap-3">
@@ -1378,10 +1136,10 @@ export default function Step1DateTime({
             type="button"
             id="step1-advance"
             onClick={() => {
-              if (!hold || !selectedDate) return;
-              onHoldSuccess?.(hold, hold.courtIds, hold.slotStarts, selectedDate, paddleQty, ball, slotGroups);
+              if (!selectedDate) return;
+              onContinue?.(selectedCourtIds, selectedSlotIsos, selectedDate, paddleQty, ball, slotGroups);
             }}
-            disabled={!hold || !selectedDate}
+            disabled={!selectedDate || selected.length === 0}
             className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-flame px-5 text-sm font-bold text-white shadow-md transition-all hover:bg-flame-hover active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
           >
             Continue to Details <ArrowRight className="size-4" aria-hidden />

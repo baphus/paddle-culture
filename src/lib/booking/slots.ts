@@ -63,10 +63,18 @@ export function manilaDateStr(instant: Date): string {
 }
 
 /**
- * Selection date for an instant: the Manila calendar date containing it.
+ * Business-day (selection) date for an instant: the Manila calendar date of
+ * the business day it belongs to. A business day anchored at
+ * DAY_START_HOUR_MANILA (07:00 Manila) spans into the next calendar date, so
+ * slots at 00:00–06:59 belong to the *previous* selected day — a booking made
+ * for Oct 19 that runs 10 PM → 2 AM stays Play Date Oct 19.
  */
 export function selectionDateStr(instant: Date): string {
   const z = new TZDate(instant, MANILA_TZ);
+  if (z.getHours() < DAY_START_HOUR_MANILA) {
+    const prev = new Date(Date.UTC(z.getFullYear(), z.getMonth(), z.getDate()) - 86_400_000);
+    return `${prev.getUTCFullYear()}-${pad(prev.getUTCMonth() + 1)}-${pad(prev.getUTCDate())}`;
+  }
   return `${z.getFullYear()}-${pad(z.getMonth() + 1)}-${pad(z.getDate())}`;
 }
 
@@ -94,6 +102,15 @@ export function slotSelectionDateStr(
   }
   if (earliest === null) return null;
   return selectionDateStr(new Date(earliest));
+}
+
+/**
+ * True when an instant sits in the overnight tail (00:00–06:59 Manila) that
+ * belongs to the *previous* business day. Grid labels use this to mark
+ * such rows as "next day".
+ */
+export function isOvernightSlot(instant: Date): boolean {
+  return new TZDate(instant, MANILA_TZ).getHours() < DAY_START_HOUR_MANILA;
 }
 
 /**

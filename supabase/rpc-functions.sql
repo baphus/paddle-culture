@@ -459,13 +459,18 @@ BEGIN
   END IF;
 
   -- ── Insert booking ───────────────────────────────────────────────────────
-  -- play_date is computed here, once, from the requested slots: the Manila
-  -- calendar date of the earliest instant. Storing it stops
+  -- play_date is computed here, once, from the requested slots: the business
+  -- day of the earliest instant. A business day is anchored at 07:00 Manila
+  -- and runs to 06:59 next calendar date, so a slot at 00:00–06:59 stays on
+  -- the day the customer selected. Storing it stops
   -- every consumer from re-deriving a civil date out of a UTC instant — that
   -- re-derivation is what showed customers the wrong Play Date.
   INSERT INTO bookings (tracking_token, tracking_code, status, full_name, email, phone, total, play_date)
   SELECT p_tracking_token, p_tracking_code, 'Pending', p_full_name, p_email, p_phone, p_total::numeric,
-         (min((s->>'slot_start')::timestamptz) AT TIME ZONE 'Asia/Manila')::date
+         -- date - 1 when the earliest slot is 00:00–06:59 Manila (overnight
+         -- tail); date - 0 otherwise. Matches selectionDateStr() in slots.ts.
+         ((min((s->>'slot_start')::timestamptz) AT TIME ZONE 'Asia/Manila')::date
+          - CASE WHEN (min((s->>'slot_start')::timestamptz) AT TIME ZONE 'Asia/Manila')::time < time '07:00' THEN 1 ELSE 0 END)
   FROM   jsonb_array_elements(p_slots) AS s
   RETURNING id INTO v_booking_id;
 
@@ -858,12 +863,14 @@ BEGIN
   END IF;
 
   -- ── Insert booking (born Approved) ───────────────────────────────────────
-  -- play_date: see rpc_submit_booking — the Manila selection date of the
-  -- earliest requested slot, computed in SQL so it can never disagree with the
+  -- play_date: see rpc_submit_booking — the Manila business day of the
+  -- earliest requested slot (07:00 anchor, so overnight slots stay on the
+  -- selected day), computed in SQL so it can never disagree with the
   -- rows written to booking_slots just below.
   INSERT INTO bookings (tracking_token, tracking_code, status, full_name, email, phone, total, play_date)
   SELECT p_tracking_token, p_tracking_code, 'Approved', p_full_name, p_email, p_phone, p_total::numeric,
-         (min((s->>'slot_start')::timestamptz) AT TIME ZONE 'Asia/Manila')::date
+         ((min((s->>'slot_start')::timestamptz) AT TIME ZONE 'Asia/Manila')::date
+          - CASE WHEN (min((s->>'slot_start')::timestamptz) AT TIME ZONE 'Asia/Manila')::time < time '07:00' THEN 1 ELSE 0 END)
   FROM   jsonb_array_elements(p_slots) AS s
   RETURNING id INTO v_booking_id;
 

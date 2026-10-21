@@ -1,15 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { recalculateTotal } from "../src/lib/booking/pricing.ts";
-import { slotsForDate } from "../src/lib/booking/slots.ts";
 import { isSlotOpen, type OpenRules } from "../src/lib/booking/hours.ts";
 import { createHours, hoursCreateSchema } from "../src/lib/admin/config.ts";
 
 // ADR-13: the operating_hours row owns the rate. No pricing_windows.
 //
-// 2026-10-12 is a Monday. Slot index matches its Manila wall-clock hour.
-const MON = slotsForDate("2026-10-12");
-const at = (hourIndex: number) => MON[hourIndex]!.start;
+// 2026-10-12 is a Monday. `at(hour)` builds the instant for Manila wall-clock
+// hour `hour`, independent of the booking grid's 7:00 AM anchor.
+const at = (hour: number) =>
+  new Date(Date.UTC(2026, 9, hour < 8 ? 11 : 12, (hour + 16) % 24));
 
 // PostgREST-shaped operating_hours rows (snake_case, numeric → string).
 function hourRow(
@@ -84,11 +84,11 @@ test("touching rows split the rate; the boundary hour belongs to the later row",
 test("the previous day's wrapping row prices post-midnight hours", async () => {
   // Monday 18:00 → Tuesday 03:00; Tuesday 00:00 and 01:00 keep Monday's rate.
   const hours = [hourRow("late", "c1", 1, "18:00", "03:00", "200.00")];
-  const tuesday = slotsForDate("2026-10-13");
-  const midnight = await price(hours, tuesday[0]!.start);
+  // Tue 00:00 = Oct 12 16:00Z; Tue 01:00 = Oct 12 17:00Z.
+  const midnight = await price(hours, new Date("2026-10-12T16:00:00.000Z"));
   assert.equal(midnight.total, "200.00");
   assert.match((midnight.lines[0] as { detail: string }).detail, /6:00 PM–3:00 AM @/);
-  assert.equal((await price(hours, tuesday[1]!.start)).total, "200.00");
+  assert.equal((await price(hours, new Date("2026-10-12T17:00:00.000Z"))).total, "200.00");
 });
 
 test("equal opening and closing times price a full calendar day", async () => {

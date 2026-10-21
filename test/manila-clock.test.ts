@@ -30,16 +30,18 @@ function withTZ<T>(tz: string, fn: () => T): T {
  */
 const DATES = ["2026-10-19", "2026-10-21", "2026-10-31", "2026-12-31", "2027-01-01"];
 
-test("grid base is midnight Manila wall clock even when the process is UTC", () => {
+test("grid base is 7:00 AM Manila wall clock even when the process is UTC", () => {
   withTZ("UTC", () => {
     const slots = slotsForDate("2026-10-19");
     assert.equal(slots.length, 24);
     // Plain-Date ISO is always UTC; TZDate would print "+08:00" here and leak
     // into PostgREST filters and JSON bodies.
-    assert.equal(slots[0]!.start.toISOString(), "2026-10-18T16:00:00.000Z");
-    assert.equal(slots[0]!.start.getTime(), Date.UTC(2026, 9, 18, 16));
-    // The final start is 23:00 Manila on the selected date.
-    assert.equal(slots[23]!.start.getTime(), Date.UTC(2026, 9, 19, 15));
+    // 7:00 AM Manila on Oct 19 = 23:00Z on Oct 18.
+    assert.equal(slots[0]!.start.toISOString(), "2026-10-18T23:00:00.000Z");
+    assert.equal(slots[0]!.start.getTime(), Date.UTC(2026, 9, 18, 23));
+    // The final start is 6:00 AM Manila on the NEXT calendar date — the
+    // overnight tail that belongs to the selected day.
+    assert.equal(slots[23]!.start.getTime(), Date.UTC(2026, 9, 19, 22));
     assert.equal(isOnSlotGrid(slots[0]!.start), true);
 
     // The same instants no matter the host timezone — that is the regression.
@@ -77,16 +79,16 @@ test("every generated slot survives the ISO round-trip under any host TZ", () =>
   }
 });
 
-test("selectionDateStr returns the Manila calendar date for each slot", () => {
+test("selectionDateStr maps every slot of a date to that business day", () => {
   withTZ("UTC", () => {
     const slots = slotsForDate("2026-10-21");
-    // The whole grid is the Oct 21 selection day, including its 00:00-02:00
-    // tail which happens on the Oct 22 wall clock.
+    // The whole Oct 21 grid — 7:00 AM Oct 21 through 6:00 AM on the Oct 22
+    // wall clock — belongs to the Oct 21 business day.
     for (const slot of slots) {
       assert.equal(selectionDateStr(slot.start), "2026-10-21", `idx ${slot.index}`);
     }
-    assert.equal(new Date(slots[0]!.start.getTime()).toISOString(), "2026-10-20T16:00:00.000Z");
-    // The whole grid of a date belongs to that calendar day.
+    assert.equal(new Date(slots[0]!.start.getTime()).toISOString(), "2026-10-20T23:00:00.000Z");
+    // The whole grid of a date belongs to that business day.
     for (const date of DATES) {
       for (const slot of slotsForDate(date)) {
         assert.equal(

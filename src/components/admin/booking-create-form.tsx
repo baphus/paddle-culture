@@ -36,7 +36,7 @@ import { PROOF_CLIENT_ACCEPT, precheckProofFile } from "@/lib/proof-client";
 import { formatSlotRange } from "@/lib/courts";
 import { courtRateForSlot } from "@/lib/pricing-display";
 import { suggestEmailDomain } from "@/lib/booking/email";
-import { maxBookableDateStr, slotsForDate } from "@/lib/booking/slots";
+import { maxBookableDateStr, slotsForDate, isOvernightSlot } from "@/lib/booking/slots";
 
 // ── Shapes mirrored from the server (no server-only imports here) ────────────
 
@@ -89,7 +89,9 @@ interface ProofRef {
   bytes: number;
 }
 
-const MAX_SLOTS = 12;
+// Matches MAX_SLOTS_PER_BOOKING (constants) — effectively unlimited: the day
+// grid itself bounds how many slots a booking can contain.
+const MAX_SLOTS = 240;
 
 /** Mirrors FALLBACK_RATES — the SSR'd rates equal these only when the DB read
  *  failed, which is the one case worth refetching from the client. */
@@ -924,6 +926,11 @@ function SlotGrid({
             <tr key={iso} className="border-b border-border/40 last:border-0">
               <td className="py-1 pr-2 text-xs tabular-nums text-muted-foreground">
                 {formatSlotRange(iso)}
+                {isOvernightSlot(new Date(iso)) && (
+                  <span className="ml-1 text-[9px] font-bold uppercase text-muted-foreground/70">
+                    (next day)
+                  </span>
+                )}
               </td>
               {courts.map((court) => {
                 const slot = slotStateFor(court.id, iso);

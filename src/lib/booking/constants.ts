@@ -1,11 +1,17 @@
 // Holds + submit lane constants (ADR-02 / ADR-03).
 export const MANILA_TZ = "Asia/Manila";
 
-// Each Manila calendar day has 24 hourly starts. Court operating hours and
-// closures determine which of those starts can actually be booked.
-export const DAY_START_HOUR_MANILA = 0;
+// Each business day has 24 hourly starts anchored at 7:00 AM Manila and runs
+// 7 AM that day → 6 AM next calendar day, so slots past midnight belong to the
+// day the customer selected. Court operating hours and closures determine
+// which of those starts can actually be booked.
+export const DAY_START_HOUR_MANILA = 7;
 export const SLOT_COUNT = 24;
-export const MAX_SLOTS_PER_BOOKING = 12;
+// Effectively no limit: a selection day offers 24 slot starts and courts are
+// capped at 10 by the API schemas, so 240 is the largest legal (court, slot)
+// cross product and will never bite a real booking. Kept as a schema bound,
+// not a business rule.
+export const MAX_SLOTS_PER_BOOKING = 240;
 
 // Hold time-to-live (ADR-03: countdown cosmetic client-side, server enforces
 // expires_at > now() on every read).

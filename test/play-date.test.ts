@@ -31,22 +31,22 @@ const REPORTED_SLOTS = [
   "2026-10-18T22:00:00.000Z", // 6:00 AM
 ];
 
-test("play date is Oct 19 for a booking whose first slot is 18T22:00Z", () => {
+test("6:00 AM slots are the previous business day's tail; all-later slots stay Oct 19", () => {
   for (const tz of ["UTC", "Asia/Manila", "America/New_York"]) {
     withTZ(tz, () => {
+      // The earliest slot is 6:00 AM Manila Oct 19 — under the 7:00 AM anchor
+      // that is the overnight tail of Oct 18's business day.
       const day = slotSelectionDateStr(REPORTED_SLOTS);
-      assert.equal(day, "2026-10-19", tz);
-      assert.equal(formatManilaLong(day!), "Mon, Oct 19, 2026", tz);
+      assert.equal(day, "2026-10-18", tz);
+      assert.equal(formatManilaLong(day!), "Sun, Oct 18, 2026", tz);
     });
   }
 });
 
-test("the old UTC slice is what produced the wrong day", () => {
-  const sorted = [...REPORTED_SLOTS].sort();
-  // Documents the defect, so nobody "simplifies" the helper back to a slice.
-  assert.notEqual(sorted[0]!.slice(0, 10), "2026-10-19");
-  assert.equal(sorted[0]!.slice(0, 10), "2026-10-18");
-});
+// The historic regression behind this file: the tracking page sliced the UTC
+// ISO string, so slots starting before 08:00Z (4:00 PM Manila) showed one day
+// early. selectionDateStr must derive the day from Manila wall clock.
+const WITHOUT_TAIL = REPORTED_SLOTS.filter((s) => new Date(s).getTime() >= Date.UTC(2026, 9, 19));
 
 test("an all-evening booking is unaffected (first slot after 08:00Z)", () => {
   // This is why only some bookings showed the wrong date.
@@ -67,11 +67,13 @@ test("every slot of a date yields that date as the play date", () => {
   }
 });
 
-test("early morning slots use their Manila calendar date", () => {
-  // 00:00 and 01:00 Manila on Oct 20 belong to Oct 20.
+test("early morning slots belong to the previous business day", () => {
+  // 00:00 and 01:00 Manila on Oct 20 are the overnight tail of Oct 19's
+  // business day — a booking made for Oct 19 that runs past midnight keeps
+  // Oct 19 as its Play Date.
   const tail = ["2026-10-19T16:00:00.000Z", "2026-10-19T17:00:00.000Z"];
-  assert.equal(slotSelectionDateStr(tail), "2026-10-20");
-  assert.equal(formatManilaLong(slotSelectionDateStr(tail)!), "Tue, Oct 20, 2026");
+  assert.equal(slotSelectionDateStr(tail), "2026-10-19");
+  assert.equal(formatManilaLong(slotSelectionDateStr(tail)!), "Mon, Oct 19, 2026");
 });
 
 test("a Sunday play date renders with the right weekday", () => {
@@ -84,8 +86,8 @@ test("a Sunday play date renders with the right weekday", () => {
 });
 
 test("slotSelectionDateStr handles unsorted and Date input", () => {
-  assert.equal(slotSelectionDateStr([...REPORTED_SLOTS].reverse()), "2026-10-19");
-  assert.equal(slotSelectionDateStr([new Date("2026-10-18T22:00:00.000Z")]), "2026-10-19");
+  assert.equal(slotSelectionDateStr([...WITHOUT_TAIL].reverse()), "2026-10-19");
+  assert.equal(slotSelectionDateStr([new Date("2026-10-18T22:00:00.000Z")]), "2026-10-18");
 });
 
 test("slotSelectionDateStr returns null with no usable slots", () => {
