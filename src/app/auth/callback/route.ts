@@ -19,6 +19,8 @@ export async function GET(request: Request) {
     if (!error) {
       return NextResponse.redirect(`${base}${safeNext}`);
     }
+    return NextResponse.redirect(`${base}/auth/error?code=otp_expired`);
   }
-  return NextResponse.redirect(`${base}/login?error=reset`);
+  // GoTrue-targeted auth errors (no code present) also land on the error page.
+  return NextResponse.redirect(`${base}/auth/error?code=otp_expired`);
 }
