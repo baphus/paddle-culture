@@ -1,3 +1,4 @@
+import { appBase, normalizeAppUrl } from "@/lib/app-url";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
@@ -8,7 +9,7 @@ export const runtime = "nodejs";
 // login when the code is expired/single-use-spent/missing its verifier).
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
-  const base = (process.env.APP_URL || origin).replace(/\/$/, "");
+  const base = process.env.APP_URL ? appBase() : normalizeAppUrl(origin);
   const next = searchParams.get("next") ?? "";
   const safeNext =
     next.startsWith("/") && !next.startsWith("//") ? next : "/reset-password";

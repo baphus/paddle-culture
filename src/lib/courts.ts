@@ -138,12 +138,19 @@ export function formatCourtSlotLine(courtName: string, startIso: string): string
   return `${formatSlotRange(startIso)} (${courtName})`;
 }
 
-/** Compact admin label: "7:00 – 8:00, 8:00 – 9:00 AM (Court 1)". */
+/** Compact admin label with date-aware splits: "7:00 – 8:00, 8:00 – 9:00 AM
+ *  (Court 1)"; next-day runs get a prefix — "Oct 22, 2026 · 12:00 – 2:00 AM". */
 export function formatCourtSlotGroup(courtName: string, startIsos: string[]): string {
-  const labels = [...startIsos]
-    .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())
-    .map(formatSlotRange);
-  if (labels.length === 0) return "";
+  const runs = collapseRuns(startIsos, true);
+  if (runs.length === 0) return "";
+  const business = slotSelectionDateStr(runs[0] as string[]);
+  const labels = runs
+    .map((run) => {
+      const label = runLabel(run);
+      return manilaDateStr(new Date(run[0] as string)) === business
+        ? label
+        : `${slotDateShort(run[0] as string)} · ${label}`;
+    });
 
   const meridiems = labels.map((label) => label.trim().split(" ").at(-1));
   const sharedMeridiem = meridiems.every((meridiem) => meridiem === meridiems[0])
@@ -252,7 +259,7 @@ export function formatCourtSlotGroups(groups: CourtSlotGroup[]): string[] {
   if (booked.length <= 1) return [];
   const keys = booked.map((g) => [...g.slotStarts].sort().join(","));
   if (keys.every((k) => k === keys[0])) return [];
-  return booked.map((g) => `${g.courtName} · ${formatSlotRanges(g.slotStarts)}`);
+  return booked.map((g) => `${g.courtName} · ${formatSlotRangesWithDates(g.slotStarts)}`);
 }
 
 /** "mm:ss" countdown text for a millisecond remainder (clamped at 0). */

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  formatCourtSlotGroup,
   formatSlotRanges,
   formatSlotRangesWithDates,
   slotDateShort,
@@ -46,5 +47,12 @@ test("formatSlotRangesWithDates: date-split runs never merge across midnight", (
   assert.equal(
     formatSlotRangesWithDates(["2026-10-21T15:00:00Z", "2026-10-21T16:00:00Z"]),
     "11:00 PM – 12:00 AM, Oct 22, 2026 · 12:00 – 1:00 AM",
+  );
+});
+
+test("formatCourtSlotGroup: admin label splits and dates the overnight portion", () => {
+  assert.equal(
+    formatCourtSlotGroup("Court 1", ["2026-10-21T15:00:00Z", "2026-10-21T16:00:00Z"]),
+    "11:00 PM – 12:00, Oct 22, 2026 · 12:00 – 1:00 AM (Court 1)",
   );
 });

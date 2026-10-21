@@ -1,4 +1,5 @@
 import QRCode from "qrcode";
+import { appBase } from "../app-url";
 import { googleCalendarUrlForRange } from "../booking/calendar";
 import { manilaDateStr, slotSelectionDateStr } from "../booking/slots";
 import {
@@ -305,10 +306,6 @@ function linesOf(
   }
 
   return [...courtLines, ...otherLines];
-}
-
-function appBase(): string {
-  return (process.env.APP_URL || "https://ckgrounds.vercel.app").replace(/\/$/, "");
 }
 
 function bookingUrl(token: string): string | null {
@@ -707,8 +704,10 @@ function qrCard(cid: string | null, trackingUrl: string, alt: string): string {
       <tr>
         <td style="background:${BRAND.white};border:2px solid ${BRAND.line};
                    border-radius:12px;padding:16px;display:inline-block;">
-          <img src="cid:${escapeHtml(cid)}" width="180" height="180"
-               alt="${escapeHtml(alt)}" style="display:block;border:0;" />
+          <a href="${escapeHtml(trackingUrl)}" style="display:block;text-decoration:none;">
+            <img src="cid:${escapeHtml(cid)}" width="180" height="180"
+                 alt="${escapeHtml(alt)}" style="display:block;border:0;" />
+          </a>
         </td>
       </tr>
     </table>`;

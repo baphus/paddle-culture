@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
+import { appBase, normalizeAppUrl } from "@/lib/app-url";
 
 // Invite tokens are 256-bit hex; only the SHA-256 hash is stored
 // (admin_invites.token_hash) so a DB read never yields a usable link.
@@ -12,7 +13,7 @@ export function hashInviteToken(token: string): string {
 }
 
 export function inviteLinkFor(token: string, origin: string): string {
-  const base = (process.env.APP_URL || origin || "https://ckgrounds.vercel.app").replace(/\/$/, "");
+  const base = process.env.APP_URL ? appBase() : normalizeAppUrl(origin);
   return `${base}/register?token=${token}`;
 }
 

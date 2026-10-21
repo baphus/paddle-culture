@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { getDb } from "@/db/client";
+import { appBase } from "@/lib/app-url";
 import { FALLBACK_RATES, getDisplayRates, type DisplayRates } from "@/lib/pricing-display";
 import Header from "@/components/landing/header";
 import Footer from "@/components/landing/footer";
@@ -14,7 +15,7 @@ export const metadata = {
 };
 
 async function absoluteBookingUrl(token: string): Promise<string> {
-  const base = (process.env.APP_URL || "https://ckgrounds.vercel.app").replace(/\/$/, "");
+  const base = appBase();
   if (base) return `${base}/track/${token}`;
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
