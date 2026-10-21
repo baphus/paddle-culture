@@ -51,13 +51,13 @@ function minutesOfWall(time: string): number {
   return (h as number) * 60 + (m as number);
 }
 
-/** True when `hour` (0-23) falls inside the row, wrap-aware (ADR-13 span). */
+/** True when `hour` falls inside this row on its configured weekday. */
 function hourInRow(hour: number, row: HoursRateRow): boolean {
   const open = minutesOfWall(row.openTime);
   const close = minutesOfWall(row.closeTime);
   const end = close <= open ? close + 1440 : close;
   const at = hour * 60;
-  return (at >= open && at < end) || (at + 1440 >= open && at + 1440 < end);
+  return at >= open && at < end;
 }
 
 /** "6:00 AM–12:00 PM" — the detail label for a priced hours row. */
@@ -189,9 +189,18 @@ export async function recalculateTotal(
 
   for (const slot of input.slots) {
     const { day, hour } = manilaParts(slot.start);
-    const match = hours.find(
-      (r) => r.courtId === slot.courtId && r.dayOfWeek === day && hourInRow(hour, r),
-    );
+    const previousDay = (day + 6) % 7;
+    const scopedHours = hours.filter((r) => r.courtId === slot.courtId);
+    const match =
+      scopedHours.find((r) => r.dayOfWeek === day && hourInRow(hour, r)) ??
+      scopedHours.find((r) => {
+        if (r.dayOfWeek !== previousDay) return false;
+        const open = minutesOfWall(r.openTime);
+        const close = minutesOfWall(r.closeTime);
+        // A previous day's overnight range carries its rate through its
+        // closing hour after midnight, matching isSlotOpen.
+        return close <= open && hour * 60 < close;
+      });
     if (!match) {
       throw new LaneError(
         "PRICING_NOT_CONFIGURED",

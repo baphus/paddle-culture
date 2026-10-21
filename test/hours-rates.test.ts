@@ -7,8 +7,7 @@ import { createHours, hoursCreateSchema } from "../src/lib/admin/config.ts";
 
 // ADR-13: the operating_hours row owns the rate. No pricing_windows.
 //
-// 2026-10-12 is a Monday. slot index 0 = Monday 06:00, 6 = Mon 12:00,
-// 12 = Mon 18:00, 18 = Tuesday 00:00.
+// 2026-10-12 is a Monday. Slot index matches its Manila wall-clock hour.
 const MON = slotsForDate("2026-10-12");
 const at = (hourIndex: number) => MON[hourIndex]!.start;
 
@@ -68,7 +67,7 @@ test("the hours row covering the slot prices it; another court's row does not", 
     hourRow("c2h", "c2", 1, "06:00", "12:00", "120.00"),
     hourRow("c1h", "c1", 1, "06:00", "12:00", "90.00"),
   ];
-  const six = await price(hours, at(0));
+  const six = await price(hours, at(6));
   assert.equal(six.total, "90.00");
   assert.match((six.lines[0] as { detail: string }).detail, /6:00 AM–12:00 PM @/);
 });
@@ -78,30 +77,37 @@ test("touching rows split the rate; the boundary hour belongs to the later row",
     hourRow("am", "c1", 1, "06:00", "12:00", "100.00"),
     hourRow("pm", "c1", 1, "12:00", "22:00", "150.00"),
   ];
-  assert.equal((await price(hours, at(0))).total, "100.00");
-  assert.equal((await price(hours, at(6))).total, "150.00");
+  assert.equal((await price(hours, at(6))).total, "100.00");
+  assert.equal((await price(hours, at(12))).total, "150.00");
 });
 
-test("a wrapping row prices its post-midnight hours (hour + 24)", async () => {
-  // Tuesday 18:00 → 03:00. Index 18 is Tuesday 00:00 Manila.
-  const hours = [hourRow("late", "c1", 2, "18:00", "03:00", "200.00")];
-  const midnight = await price(hours, at(18));
+test("the previous day's wrapping row prices post-midnight hours", async () => {
+  // Monday 18:00 → Tuesday 03:00; Tuesday 00:00 and 01:00 keep Monday's rate.
+  const hours = [hourRow("late", "c1", 1, "18:00", "03:00", "200.00")];
+  const tuesday = slotsForDate("2026-10-13");
+  const midnight = await price(hours, tuesday[0]!.start);
   assert.equal(midnight.total, "200.00");
   assert.match((midnight.lines[0] as { detail: string }).detail, /6:00 PM–3:00 AM @/);
-  assert.equal((await price(hours, at(19))).total, "200.00"); // Tue 01:00
+  assert.equal((await price(hours, tuesday[1]!.start)).total, "200.00");
+});
+
+test("equal opening and closing times price a full calendar day", async () => {
+  const allDay = [hourRow("all-day", "c1", 1, "00:00", "00:00", "100.00")];
+  assert.equal((await price(allDay, at(0))).total, "100.00");
+  assert.equal((await price(allDay, at(23))).total, "100.00");
 });
 
 test("a day with no hours row is closed: 503 PRICING_NOT_CONFIGURED", async () => {
   const hours = [hourRow("tue", "c1", 2, "06:00", "22:00", "100.00")];
   await assert.rejects(
-    () => price(hours, at(0)), // Monday, no Monday row
+    () => price(hours, at(6)), // Monday, no Monday row
     /No court rate for court c1 \(06:00\) — court is not open at this day\/time\./,
   );
 });
 
 test("no hours rows at all is a 503, not a zero", async () => {
   await assert.rejects(
-    () => price([], at(0)),
+    () => price([], at(6)),
     /PRICING_NOT_CONFIGURED|No court rate/,
   );
 });
@@ -109,7 +115,7 @@ test("no hours rows at all is a 503, not a zero", async () => {
 test("a NULL amount is a 503 naming the day and range", async () => {
   const hours = [hourRow("legacy", "c1", 1, "06:00", "12:00", null)];
   await assert.rejects(
-    () => price(hours, at(0)),
+    () => price(hours, at(6)),
     /No court rate configured yet for Mon 6:00 AM–12:00 PM\./,
   );
 });
@@ -120,7 +126,7 @@ test("paddle still uses the band chain alongside the hours rate", async () => {
   ];
   const hours = [hourRow("h", "c1", 1, "06:00", "03:00", "100.00")];
   const { total } = await recalculateTotal(fakeDb(hours, rules), {
-    slots: [{ courtId: "c1", start: at(0) }],
+    slots: [{ courtId: "c1", start: at(6) }],
     paddleQty: 1,
     paddleHours: 1,
     ball: false,
@@ -176,8 +182,8 @@ test("hoursCreateSchema requires a court and an amount", () => {
   assert.equal(hoursCreateSchema.safeParse({ ...base, courtId: null }).success, false);
   assert.equal(hoursCreateSchema.safeParse({ ...base, amount: undefined }).success, false);
   assert.equal(hoursCreateSchema.safeParse({ ...base, amount: "0" }).success, false);
-  assert.equal(hoursCreateSchema.safeParse({ ...base, openTime: "12:00" }).success, false);
-  assert.equal(hoursCreateSchema.safeParse({ ...base, openTime: "12:00", closeTime: "12:00" }).success, false);
+  assert.equal(hoursCreateSchema.safeParse({ ...base, openTime: "12:00" }).success, true);
+  assert.equal(hoursCreateSchema.safeParse({ ...base, openTime: "12:00", closeTime: "12:00" }).success, true);
 });
 
 // Minimal fake DB for createHours' pre-insert overlap report.

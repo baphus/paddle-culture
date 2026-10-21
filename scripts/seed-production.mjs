@@ -4,15 +4,13 @@
 //   1. courts:          if empty → insert 2 active courts ("Court 1","Court 2",
 //                      owner can rename in /admin/courts). If non-empty → touch nothing.
 //   2. operating_hours: if empty → insert one row per COURT per weekday, open
-//                      06:00 close 03:00 — the frozen 06:00–03:00 daily
-//                      schedule (ADR-02, evening-correction 18:00). The
-//                      close<=open overnight form is exactly what
-//                      src/lib/booking/hours.ts:isSlotOpen expects (spill into
-//                      the next Manila day). ADR-13: rows are per-court only
-//                      (no global NULL scope) and carry the rate; the seed
-//                      leaves amount NULL = "rate not configured yet", which
-//                      the owner fills in /admin/hours. If non-empty → touch
-//                      nothing.
+//                      00:00 close 00:00 = the full 24-hour grid (equal times
+//                      mean "open all day" — see src/lib/booking/hours.ts and
+//                      supabase/hours-rates.sql; admins split or shorten it in
+//                      /admin/hours). ADR-13: rows are per-court only (no
+//                      global NULL scope) and carry the rate; the seed leaves
+//                      amount NULL = "rate not configured yet", which the owner
+//                      fills in /admin/hours. If non-empty → touch nothing.
 //   3. pricing_rules:  if empty → insert the 2 GLOBAL (court_id NULL) rental
 //                      rows. Vocabulary used by pickRule():
 //                        day_type:  'weekday' | 'weekend' | 'all'  (never 'any')
@@ -75,17 +73,16 @@ try {
   summary.operating_hours.before = hours.length;
   if (hours.length === 0) {
     // One row per court per weekday 0=Sunday..6=Saturday, amount NULL until the
-    // owner sets a rate. time columns accept 'HH:MM'; close 03:00 <= open
-    // 06:00 = overnight spill. Query courts again so freshly inserted ones are
-    // included.
+    // owner sets a rate. open 00:00 = close 00:00 means a full 24-hour day.
+    // Query courts again so freshly inserted ones are included.
     const courtRows = await sql`SELECT id, name FROM courts ORDER BY name`;
     const rows = courtRows.flatMap((c) =>
       [0, 1, 2, 3, 4, 5, 6].map((d) => ({
         court_id: c.id,
         court: c.name,
         day: d,
-        open: "06:00",
-        close: "03:00",
+        open: "00:00",
+        close: "00:00",
         amount: null,
       })),
     );

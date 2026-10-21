@@ -72,7 +72,7 @@ Vercel. `.env.example` documents every key.
 
 ## Booking rules
 
-- 21 hourly slots per day, 06:00 → 03:00 the next morning (Manila).
+- 24 hourly slots per Manila calendar day. Each court's configured opening hours and closures decide which slots are available.
 - Up to 12 slots per booking; up to 12 months in the future (both enforced server-side).
 - Holds last 10 minutes and are one per (court, slot).
 - Payment proof: jpg/png/webp, ≤ 5 MB, server-verified against the uploaded file.

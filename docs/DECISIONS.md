@@ -3,7 +3,7 @@
 Date: 2026-10-03 · Status: **Accepted, before code** · PRD: v1.0 Final (launch Oct 20, 2026)
 Constraints locked by owner: **$0 as much as possible · Gmail SMTP via Nodemailer · serverless · simplest setup · production-ready**
 
-Scale driver (from PRD): 2 courts, 21h/day (06:00–03:00), 1h slots, 1–12h consecutive, multi-court, no same-day, 12-mo rolling ≈ **15,330 live slot rows**. Single-to-low-double-digit bookings/day. No sharding/replicas needed.
+Scale driver (updated per owner): 2 courts, 24 hourly starts/day (Manila calendar day; each court's configured hours decide availability), 1h slots, 1–12h consecutive, multi-court, no same-day, 12-mo rolling ≈ **17,520 live slot rows**. Single-to-low-double-digit bookings/day. No sharding/replicas needed.
 
 ## ADR-01 — Stack: Netlify Free + Supabase Free + Drizzle + Nodemailer/Gmail
 
@@ -35,7 +35,7 @@ Derived, not stored: revenue rollups, booking QR (encodes tracking URL), website
 - **Wizard draft persistence (same amendment).** The booking wizard mirrors its state to `sessionStorage` (`src/lib/booking/draft.ts`, per-tab, dies with the tab) so a reload restores the customer to the step they were on. Confirmation is never persisted. Server validation is unchanged — the draft is a convenience, never a source of truth.
 - Submit is **one serializable transaction**: delete expired holds → `SELECT … FOR UPDATE` → re-validate availability → server-side total recalc → insert booking + slots → delete hold → insert 2 outbox rows (customer submission + owner alert; approve/reject decision email enqueued at decision time per ADR-05). Idempotency key on submit kills duplicate POSTs.
 - All times `timestamptz`, app TZ fixed to `Asia/Manila` (CONFIRMED by owner 2026-10-03).
-- Midnight-crossing (06:00→03:00+1d) handled as datetime ranges, selection date = start date.
+- Midnight-crossing hours are handled as datetime ranges; selection date is the Manila calendar date of the slot start. Equal opening and closing times represent a full 24-hour opening period.
 - Same-day bookings ALLOWED per owner 2026-10-03 (PRD §9 forbade them; acceptance gate #2 inverted). Only future slots bookable: `slot_start > now()` enforced in UI and server-side.
 
 ## ADR-04 — Auth (admin-only, customers unauthenticated)
@@ -89,7 +89,7 @@ Next 16.3 + React 19 + Tailwind v4.3 (CSS-first `@theme` in globals.css, no conf
 
 **Decision:** court rates may be expressed as whole-hour windows `HH:00-HH:00` (Manila) in `pricing_rules.time_band`, e.g. `06:00-12:00 → ₱120`. A window row is `day_type='all'`, `item_type='court'`, `unit='slot'`; `court_id` is the court or NULL for global. Windows are **day-agnostic** — the same set applies to every day, and `day_type` does not scope them.
 
-- **Coverage gate.** Windows are active for a court only when that court's own windows ∪ global windows cover *every* bookable hourly start (derived from `operating_hours` with the global fallback availability uses; falls back to the fixed 21-slot 06:00→03:00 grid when hours cannot be read). If any hour is uncovered, windows are inert and the existing band fallback prices every court slot exactly as before. When active, window rows price court slots exclusively (no band fallback); paddle/ball keep using bands.
+- **Coverage gate.** Windows are active for a court only when that court's own windows ∪ global windows cover *every* bookable hourly start (derived from `operating_hours`; if hours cannot be read, it falls back to all 24 hours). If any hour is uncovered, windows are inert and the existing band fallback prices every court slot exactly as before. When active, window rows price court slots exclusively (no band fallback); paddle/ball keep using bands.
 - **Precedence.** Within active windows: court-scoped window beats global window. Bands (`morning`/`evening`/`all`) never price a court slot while windows are active.
 - **Overlap rule.** Saving a window that overlaps an existing window of the **same scope** is rejected (409) naming the conflict; touching endpoints (06-12 / 12-18) are not overlaps and overnight wrap (18-03) is allowed. Court windows may overlap global windows — the court row wins. The DB key index is unchanged; no SQL change.
 - **Deletes.** Global *band* rows still cannot be deleted (they are the fallback). Global *window* rows can be deleted like court-scoped rows.

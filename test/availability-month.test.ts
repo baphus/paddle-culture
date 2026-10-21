@@ -51,12 +51,12 @@ test("datesInMonth: December rolls correctly (no month 00)", () => {
 
 // ------------------------------------------------------------------ grouping
 
-test("groupByDate: every date gets exactly the 21-slot grid", () => {
+test("groupByDate: every date gets exactly the 24-hour grid", () => {
   const month = "2026-10";
   const days = groupByDate(month, [COURT_A], availabilityFor(month, [COURT_A]));
   assert.equal(Object.keys(days).length, 31);
   for (const date of datesInMonth(month)) {
-    assert.equal(days[date]![COURT_A]!.length, 21, `${date} should have 21 slots`);
+    assert.equal(days[date]![COURT_A]!.length, 24, `${date} should have 24 slots`);
   }
 });
 
@@ -67,24 +67,23 @@ test("groupByDate: each court gets its own bucket", () => {
     [COURT_A, COURT_B],
     availabilityFor(month, [COURT_A, COURT_B]),
   );
-  // 21 per court, never 42 pooled together.
-  assert.equal(days["2026-10-15"]![COURT_A]!.length, 21);
-  assert.equal(days["2026-10-15"]![COURT_B]!.length, 21);
+  // 24 per court, never 48 pooled together.
+  assert.equal(days["2026-10-15"]![COURT_A]!.length, 24);
+  assert.equal(days["2026-10-15"]![COURT_B]!.length, 24);
 });
 
 test("groupByDate: no slot is dropped or double-counted across the month", () => {
   const month = "2026-10";
   const days = groupByDate(month, [COURT_A], availabilityFor(month, [COURT_A]));
   const all = Object.values(days).flatMap((d) => d[COURT_A]!.map((s) => s.start));
-  assert.equal(all.length, 31 * 21);
-  assert.equal(new Set(all).size, 31 * 21, "no instant appears on two days");
+  assert.equal(all.length, 31 * 24);
+  assert.equal(new Set(all).size, 31 * 24, "no instant appears on two days");
 });
 
-test("groupByDate: overnight slots stay on their selection date", () => {
+test("groupByDate: midnight slots stay on their calendar date", () => {
   const month = "2026-10";
   const days = groupByDate(month, [COURT_A], availabilityFor(month, [COURT_A]));
-  // The 2026-10-15 grid runs 06:00 on the 15th through 02:00 on the 16th.
-  // The 02:00 instant is wall-clock on the 16th but belongs to the 15th's grid.
+  // The 2026-10-15 grid runs from 00:00 through 23:00 on that date.
   const forFifteenth = days["2026-10-15"]![COURT_A]!;
   const last = forFifteenth[forFifteenth.length - 1]!;
   const manilaDate = new Intl.DateTimeFormat("en-CA", {
@@ -93,7 +92,7 @@ test("groupByDate: overnight slots stay on their selection date", () => {
     month: "2-digit",
     day: "2-digit",
   }).format(new Date(last.start));
-  assert.equal(manilaDate, "2026-10-16", "last slot is 02:00 on the 16th");
+  assert.equal(manilaDate, "2026-10-15", "last slot is 23:00 on the 15th");
   // …and it is NOT in the 16th's bucket.
   const startsOnSixteenth = new Set(days["2026-10-16"]![COURT_A]!.map((s) => s.start));
   assert.equal(startsOnSixteenth.has(last.start), false);

@@ -39,7 +39,7 @@ export const courts = pgTable("courts", {
 
 // ------------------------------------------------------- operating_hours ---
 // ADR-13: one row per court per weekday, and that row OWNS the hourly rate.
-// Overnight ranges (06:00 → 03:00+1d) are handled app-side as datetime
+// Overnight ranges are handled app-side as datetime
 // ranges (ADR-03); selection date = start date. dayOfWeek: 0=Sunday..6=Saturday.
 // amount NULL = "hours exist, rate not configured yet" (engine returns 503).
 // No rows for a court on a weekday means CLOSED. Court rows only — the old
@@ -161,7 +161,7 @@ export const bookings = pgTable(
     total: numeric("total", { precision: 12, scale: 2 }).notNull(),
     /**
      * Manila *selection* date the customer booked (YYYY-MM-DD) — the day whose
-     * 06:00→03:00+1d slot grid the booking came from. Written by
+     * 24-hour Manila calendar-day slot grid the booking came from. Written by
      * rpc_submit_booking / rpc_admin_create_booking, never derived in JS from a
      * slot instant (that is what turned `...T22:00:00Z` into the previous day
      * and showed customers the wrong Play Date). Read it, don't recompute it.

@@ -298,7 +298,7 @@ function hourOf(time: string): number {
 
 /** Whether a proposed range has no overlap with this day's existing rows. */
 function isAvailableHoursRange(from: string, until: string, existing: HourRow[]): boolean {
-  if (!from || !until || from === until) return false;
+  if (!from || !until) return false;
   const proposed = { start: hourOf(from), end: hourOf(until) };
   return !existing.some((row) =>
     windowOverlaps(proposed, { start: hourOf(row.openTime), end: hourOf(row.closeTime) }),
@@ -454,7 +454,9 @@ function EditableHourRow({
           </div>
         ) : (
         <p className="min-w-0 truncate text-[11px] tabular-nums">
-          {fmt12(row.openTime)} – {fmt12(row.closeTime)}
+          {row.openTime === row.closeTime
+            ? "All day (24 hours)"
+            : `${fmt12(row.openTime)} – ${fmt12(row.closeTime)}`}
           {" · "}
           {row.amount === null ? (
             <span className="text-muted-foreground italic">no rate yet</span>
@@ -529,7 +531,7 @@ function AddHoursModal({
   const overnight = hasTimes && until < from;
   const hasRate = amount.trim() !== "";
   const rangeAvailable = isAvailableHoursRange(from, until, existingHours);
-  const canSave = hasTimes && hasRate && !sameTime && rangeAvailable;
+  const canSave = hasTimes && hasRate && rangeAvailable;
 
   function changeFrom(value: string) {
     setFrom(value);
@@ -596,7 +598,11 @@ function AddHoursModal({
                 options={untilOptions}
               />
             </div>
-            {overnight ? (
+            {sameTime ? (
+              <p className="text-xs text-muted-foreground">
+                Open 24 hours — the court is available all day at this rate.
+              </p>
+            ) : overnight ? (
               <p className="text-xs text-muted-foreground">
                 Runs past midnight — {fmt12(from)} to {fmt12(until)} covers the overnight hours.
               </p>
@@ -616,11 +622,7 @@ function AddHoursModal({
             />
           </div>
 
-          {sameTime ? (
-            <p className="text-xs text-muted-foreground">
-              Open and close times must differ.
-            </p>
-          ) : hasTimes && !rangeAvailable ? (
+          {hasTimes && !rangeAvailable ? (
             <p className="text-xs text-muted-foreground">
               That period is already configured. Pick from the remaining hours.
             </p>
@@ -669,9 +671,8 @@ function QuickSetupModal({
   const [saving, setSaving] = useState(false);
 
   const hasTimes = from !== "" && until !== "";
-  const sameTime = hasTimes && from === until;
   const hasRate = amount.trim() !== "";
-  const canSave = selectedDays.length > 0 && hasTimes && !sameTime && hasRate;
+  const canSave = selectedDays.length > 0 && hasTimes && hasRate;
 
   function toggleDay(day: number, checked: boolean) {
     setSelectedDays((current) =>
@@ -763,8 +764,8 @@ function QuickSetupModal({
               <span className="text-xs text-muted-foreground">to</span>
               <HourSelect label="Quick setup end time" value={until} onChange={setUntil} />
             </div>
-            {sameTime ? (
-              <p className="text-xs text-destructive">Start and end times must differ.</p>
+            {hasTimes && from === until ? (
+              <p className="text-xs text-muted-foreground">Open 24 hours each selected day.</p>
             ) : null}
           </div>
 

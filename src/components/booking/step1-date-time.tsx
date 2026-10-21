@@ -413,8 +413,6 @@ export default function Step1DateTime({
     [selectedDate],
   );
 
-  const selectedSorted = selectedSlotIsos;
-
   // Keep focus on panel change
   const panelMounted = useRef(false);
   useEffect(() => {
@@ -1260,9 +1258,9 @@ export default function Step1DateTime({
                       <span className="mt-1 block text-[11px] text-warm-muted">
                         High-grade carbon fiber paddles
                       </span>
-                      {paddleQty > 0 && selectedSorted.length > 0 && (
+                      {paddleQty > 0 && selected.length > 0 && (
                         <span className="mt-1 block text-xs font-bold text-flame">
-                          = {peso(calculatePaddleRentalTotal(rates.paddle, paddleQty, selectedSorted.length))} total
+                          = {peso(calculatePaddleRentalTotal(rates.paddle, paddleQty, selected.length))} total
                         </span>
                       )}
                     </div>

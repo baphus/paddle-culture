@@ -51,9 +51,14 @@ export default function BookingInvoice({
   );
   const bookingDate = dateStr || slotSelectionDateStr(sortedSlots);
   const formattedDate = bookingDate ? formatManilaLong(bookingDate) : "Upcoming";
-  const paddleHours = equipment.paddleHours ?? sortedSlots.length;
-  const invoiceLines: InvoiceLine[] = [];
   const groups = (slotGroups ?? []).filter((group) => group.slotStarts.length > 0);
+  // Rentals bill per booked court-hour — every court's hours count, not just
+  // the distinct hours on the grid. Matches the server's per-pair pricing.
+  const bookedHours = groups.length > 0
+    ? groups.reduce((sum, group) => sum + group.slotStarts.length, 0)
+    : sortedSlots.length * Math.max(courtNames.length, 1);
+  const paddleHours = equipment.paddleHours ?? bookedHours;
+  const invoiceLines: InvoiceLine[] = [];
 
   if (groups.length > 0) {
     for (const group of groups) {

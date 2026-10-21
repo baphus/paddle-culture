@@ -40,6 +40,7 @@ const NAV_ITEMS = [
 
 const CONFIG_ITEMS = [
   { href: "/admin/hours", label: "Court setup", icon: Settings },
+  { href: "/admin/manual", label: "Manual", icon: BookOpen },
 ] as const;
 
 interface Props {

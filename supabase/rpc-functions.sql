@@ -45,7 +45,7 @@ BEGIN
   IF p_days IS NULL OR cardinality(p_days) < 1 OR cardinality(p_days) > 7
      OR EXISTS (SELECT 1 FROM unnest(p_days) AS days(day) WHERE day < 0 OR day > 6)
      OR (SELECT count(*) FROM unnest(p_days) AS days(day)) <> (SELECT count(DISTINCT day) FROM unnest(p_days) AS days(day))
-     OR p_open_time = p_close_time OR p_amount <= 0 THEN
+     OR p_amount <= 0 THEN
     RAISE EXCEPTION 'Invalid court hours setup' USING ERRCODE = '22023';
   END IF;
 
@@ -460,17 +460,12 @@ BEGIN
 
   -- ── Insert booking ───────────────────────────────────────────────────────
   -- play_date is computed here, once, from the requested slots: the Manila
-  -- selection date of the earliest instant, where hours before 06:00 belong to
-  -- the previous selection day (the grid runs 06:00→03:00+1d). Storing it stops
+  -- calendar date of the earliest instant. Storing it stops
   -- every consumer from re-deriving a civil date out of a UTC instant — that
   -- re-derivation is what showed customers the wrong Play Date.
   INSERT INTO bookings (tracking_token, tracking_code, status, full_name, email, phone, total, play_date)
   SELECT p_tracking_token, p_tracking_code, 'Pending', p_full_name, p_email, p_phone, p_total::numeric,
-         (
-           (min((s->>'slot_start')::timestamptz) AT TIME ZONE 'Asia/Manila')
-           - CASE WHEN (min((s->>'slot_start')::timestamptz) AT TIME ZONE 'Asia/Manila')::time < TIME '06:00'
-                  THEN INTERVAL '1 day' ELSE INTERVAL '0 day' END
-         )::date
+         (min((s->>'slot_start')::timestamptz) AT TIME ZONE 'Asia/Manila')::date
   FROM   jsonb_array_elements(p_slots) AS s
   RETURNING id INTO v_booking_id;
 
@@ -868,11 +863,7 @@ BEGIN
   -- rows written to booking_slots just below.
   INSERT INTO bookings (tracking_token, tracking_code, status, full_name, email, phone, total, play_date)
   SELECT p_tracking_token, p_tracking_code, 'Approved', p_full_name, p_email, p_phone, p_total::numeric,
-         (
-           (min((s->>'slot_start')::timestamptz) AT TIME ZONE 'Asia/Manila')
-           - CASE WHEN (min((s->>'slot_start')::timestamptz) AT TIME ZONE 'Asia/Manila')::time < TIME '06:00'
-                  THEN INTERVAL '1 day' ELSE INTERVAL '0 day' END
-         )::date
+         (min((s->>'slot_start')::timestamptz) AT TIME ZONE 'Asia/Manila')::date
   FROM   jsonb_array_elements(p_slots) AS s
   RETURNING id INTO v_booking_id;
 

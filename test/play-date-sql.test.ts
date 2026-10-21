@@ -14,13 +14,11 @@ import { slotSelectionDateStr } from "../src/lib/booking/slots.ts";
 
 const root = join(import.meta.dirname, "..");
 
-/** The SQL expression, verbatim in meaning: shift to Manila, then fold the
- *  00:00–02:00 tail back one day. Manila is a fixed UTC+8 with no DST. */
+/** The current RPC expression: use the Manila calendar date. Manila is a fixed
+ *  UTC+8 with no DST. */
 function sqlPlayDate(earliestSlotIso: string): string {
   const MANILA_MS = 8 * 3_600_000;
   const local = new Date(new Date(earliestSlotIso).getTime() + MANILA_MS);
-  const hour = local.getUTCHours();
-  if (hour < 6) local.setTime(local.getTime() - 86_400_000);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${local.getUTCFullYear()}-${pad(local.getUTCMonth() + 1)}-${pad(local.getUTCDate())}`;
 }
@@ -45,14 +43,13 @@ test("the SQL play_date expression agrees with slotSelectionDateStr", () => {
   }
 });
 
-test("both implementations put the overnight tail on the picked day", () => {
-  // 00:00 and 02:00 Manila on the 20th belong to Oct 19's selection grid.
+test("both implementations use the slot's Manila calendar date", () => {
+  // 00:00 and 02:00 Manila on the 20th belong to Oct 20's calendar date.
   for (const tail of ["2026-10-19T16:00:00.000Z", "2026-10-19T18:00:00.000Z"]) {
-    assert.equal(sqlPlayDate(tail), "2026-10-19", tail);
-    assert.equal(slotSelectionDateStr([tail]), "2026-10-19", tail);
+    assert.equal(sqlPlayDate(tail), "2026-10-20", tail);
+    assert.equal(slotSelectionDateStr([tail]), "2026-10-20", tail);
   }
-  // 05:00 Manila is still before the 06:00 day start, so it folds back too.
-  assert.equal(sqlPlayDate("2026-10-19T21:00:00.000Z"), "2026-10-19");
+  assert.equal(sqlPlayDate("2026-10-19T21:00:00.000Z"), "2026-10-20");
 });
 
 test("the migration and both RPCs actually write play_date", () => {

@@ -39,7 +39,7 @@ export async function POST(request: Request) {
       start: new Date(s.slotStart),
     }));
 
-    // Q8: future-only, and on the published 21-slot grid.
+    // Future-only, and on the hourly Manila calendar-day grid.
     for (const p of slotPairs) {
       if (!isOnSlotGrid(p.start) || !isFutureSlot(p.start)) {
         return err("SLOT_INVALID", "That slot is no longer bookable.", 422);

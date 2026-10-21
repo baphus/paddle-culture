@@ -1,10 +1,10 @@
 // Holds + submit lane constants (ADR-02 / ADR-03).
 export const MANILA_TZ = "Asia/Manila";
 
-// Operating day 06:00 → 03:00+1d Manila = 21 one-hour slots, index 0..20.
-// Selection date = start date; midnight crossing handled as datetime ranges.
-export const DAY_START_HOUR_MANILA = 6;
-export const SLOT_COUNT = 21;
+// Each Manila calendar day has 24 hourly starts. Court operating hours and
+// closures determine which of those starts can actually be booked.
+export const DAY_START_HOUR_MANILA = 0;
+export const SLOT_COUNT = 24;
 export const MAX_SLOTS_PER_BOOKING = 12;
 
 // Hold time-to-live (ADR-03: countdown cosmetic client-side, server enforces

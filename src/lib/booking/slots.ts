@@ -18,7 +18,6 @@ export interface SlotInstant {
 }
 
 const HOUR_MS = 3_600_000;
-const DAY_MS = 86_400_000;
 
 function pad(n: number): string {
   return String(n).padStart(2, "0");
@@ -37,7 +36,7 @@ export function manilaWallClock(dateStr: string, hour = 0, minute = 0): TZDate {
 }
 
 /**
- * All 21 slot-start instants for a Manila selection date (YYYY-MM-DD).
+ * All 24 slot-start instants for a Manila calendar date (YYYY-MM-DD).
  * The base is resolved once with Manila wall-clock args, then stepped by pure
  * epoch arithmetic. Manila is UTC+8 with no DST, so hour arithmetic is exact
  * and the result never depends on the host timezone.
@@ -45,9 +44,7 @@ export function manilaWallClock(dateStr: string, hour = 0, minute = 0): TZDate {
 export function slotsForDate(dateStr: string): SlotInstant[] {
   const baseMs = manilaWallClock(dateStr, DAY_START_HOUR_MANILA).getTime();
   const out: SlotInstant[] = [];
-  // Cover every admin-configurable hour, including the early-morning tail.
-  const slotCount = Math.max(SLOT_COUNT, 23);
-  for (let i = 0; i < slotCount; i++) {
+  for (let i = 0; i < SLOT_COUNT; i++) {
     out.push({ index: i, start: new Date(baseMs + i * HOUR_MS) });
   }
   return out;
@@ -66,27 +63,15 @@ export function manilaDateStr(instant: Date): string {
 }
 
 /**
- * Selection (offer) date for an instant. The operating day runs
- * 06:00→03:00+1d Manila, so instants before 06:00 wall time belong to the
- * previous selection date's 21-slot grid.
- *
- * The previous day is derived by subtracting 24h of *instants*, not with
- * `setDate`: @date-fns/tz does not override `setDate`, so it would mutate in
- * the process timezone and walk back two Manila days on a UTC server (the
- * production OFF_GRID bug). Manila has no DST, so -24h is exactly one day.
+ * Selection date for an instant: the Manila calendar date containing it.
  */
 export function selectionDateStr(instant: Date): string {
   const z = new TZDate(instant, MANILA_TZ);
-  const ms = z.getTime();
-  if (z.getHours() < DAY_START_HOUR_MANILA) {
-    const prev = new TZDate(ms - DAY_MS, MANILA_TZ);
-    return `${prev.getFullYear()}-${pad(prev.getMonth() + 1)}-${pad(prev.getDate())}`;
-  }
   return `${z.getFullYear()}-${pad(z.getMonth() + 1)}-${pad(z.getDate())}`;
 }
 
 /**
- * Play Date for a set of slot-start instants: the Manila *selection* date of
+ * Play Date for a set of slot-start instants: the Manila calendar date of
  * the earliest slot (YYYY-MM-DD), or null when there are no slots.
  *
  * Never `iso.slice(0, 10)`: a slot's ISO string is UTC, so a 06:00 Manila
@@ -95,8 +80,8 @@ export function selectionDateStr(instant: Date): string {
  * report ("booked Oct 19, tracking says Oct 18").
  *
  * Sorting by epoch (not string) keeps the comparison meaningful for mixed
- * offsets, and going through `selectionDateStr` makes an overnight tail
- * (00:00–02:00 wall clock) resolve to the day the customer actually picked.
+ * offsets, and going through `selectionDateStr` makes the saved date match
+ * the date the customer selected.
  */
 export function slotSelectionDateStr(
   slotStarts: readonly (string | Date)[],
@@ -112,34 +97,15 @@ export function slotSelectionDateStr(
 }
 
 /**
- * True when an instant sits exactly on the hourly slot grid of its Manila
- * selection date (whole hour, one of the 21 slots starting 06:00).
- * Overnight slots 00:00–02:00 belong to the previous selection date's grid,
- * so that date's 06:00 base is tried as a fallback.
+ * True when an instant is on a whole hour in Manila. Every hour is a valid
+ * grid start; the court's configured hours determine whether it is bookable.
  */
 export function isOnSlotGrid(instant: Date): boolean {
   const z = new TZDate(instant, MANILA_TZ);
   if (z.getMinutes() !== 0 || z.getSeconds() !== 0 || z.getMilliseconds() !== 0) {
     return false;
   }
-  const todayStr = `${z.getFullYear()}-${pad(z.getMonth() + 1)}-${pad(z.getDate())}`;
-  const baseMs = manilaWallClock(todayStr, DAY_START_HOUR_MANILA).getTime();
-  const diffHours = (z.getTime() - baseMs) / HOUR_MS;
-  const slotCount = Math.max(SLOT_COUNT, 23);
-  if (Number.isInteger(diffHours) && diffHours >= 0 && diffHours < slotCount) {
-    return true;
-  }
-  // Overnight spill: 00:00–02:00 wall time belongs to the previous
-  // selection date's 06:00→03:00+1d grid.
-  const sel = selectionDateStr(instant);
-  const selBaseMs = manilaWallClock(sel, DAY_START_HOUR_MANILA).getTime();
-  if (selBaseMs === baseMs) return false;
-  const prevDiffHours = (z.getTime() - selBaseMs) / HOUR_MS;
-  return (
-    Number.isInteger(prevDiffHours) &&
-    prevDiffHours >= 0 &&
-    prevDiffHours < slotCount
-  );
+  return true;
 }
 
 /** Only future slots are bookable (ADR-03; same-day allowed if in future). */
@@ -177,7 +143,8 @@ export function isWithinBookingHorizon(start: Date, now: Date = new Date()): boo
 // with whatever the admin UI writes:
 //   day_type:  'weekend' (Sat/Sun Manila) else 'weekday'
 //   time_band: 'evening' for slot starts 18:00–02:59 Manila (frozen rate card,
-//     ADR-02) else 'morning' (06:00–18:00)
+//     ADR-02) else 'morning' (03:00–17:59), so 24-hour schedules have a band;
+//     paddle/ball rules are seeded day_type='all'/time_band='all'.
 //   item_type: 'court' | 'paddle' | 'ball'
 export function dayTypeFor(instant: Date): string {
   const { day } = manilaParts(instant);
@@ -186,7 +153,6 @@ export function dayTypeFor(instant: Date): string {
 
 export function timeBandFor(instant: Date): string {
   const { hour } = manilaParts(instant);
-  // Evening 18:00–03:00 (hour 18–23 or 0–2; slots end at 03:00 so hour 3+ never
-  // occurs); morning 06:00–18:00.
+  // Evening 18:00–02:59 (hour 18–23 or 0–2), morning 03:00–17:59.
   return hour >= 18 || hour < 3 ? "evening" : "morning";
 }

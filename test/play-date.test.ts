@@ -67,14 +67,11 @@ test("every slot of a date yields that date as the play date", () => {
   }
 });
 
-test("an overnight tail (00:00–02:00 wall clock) belongs to the picked day", () => {
-  // Oct 19's grid runs past midnight: its last three slots are on the Oct 20
-  // wall clock but still the Oct 19 selection day, so admin and the customer
-  // must not disagree about the date.
+test("early morning slots use their Manila calendar date", () => {
+  // 00:00 and 01:00 Manila on Oct 20 belong to Oct 20.
   const tail = ["2026-10-19T16:00:00.000Z", "2026-10-19T17:00:00.000Z"];
-  assert.equal(new Date(tail[0]!).toISOString().slice(0, 10), "2026-10-19");
-  assert.equal(slotSelectionDateStr(tail), "2026-10-19");
-  assert.equal(formatManilaLong(slotSelectionDateStr(tail)!), "Mon, Oct 19, 2026");
+  assert.equal(slotSelectionDateStr(tail), "2026-10-20");
+  assert.equal(formatManilaLong(slotSelectionDateStr(tail)!), "Tue, Oct 20, 2026");
 });
 
 test("a Sunday play date renders with the right weekday", () => {

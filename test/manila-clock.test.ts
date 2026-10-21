@@ -30,16 +30,16 @@ function withTZ<T>(tz: string, fn: () => T): T {
  */
 const DATES = ["2026-10-19", "2026-10-21", "2026-10-31", "2026-12-31", "2027-01-01"];
 
-test("grid base is 06:00 Manila wall clock even when the process is UTC", () => {
+test("grid base is midnight Manila wall clock even when the process is UTC", () => {
   withTZ("UTC", () => {
     const slots = slotsForDate("2026-10-19");
-    assert.equal(slots.length, 21);
+    assert.equal(slots.length, 24);
     // Plain-Date ISO is always UTC; TZDate would print "+08:00" here and leak
     // into PostgREST filters and JSON bodies.
-    assert.equal(slots[0]!.start.toISOString(), "2026-10-18T22:00:00.000Z");
-    assert.equal(slots[0]!.start.getTime(), Date.UTC(2026, 9, 18, 22));
-    // 20h later: 02:00 Manila on the 20th (the grid spills past midnight).
-    assert.equal(slots[20]!.start.getTime(), Date.UTC(2026, 9, 19, 18));
+    assert.equal(slots[0]!.start.toISOString(), "2026-10-18T16:00:00.000Z");
+    assert.equal(slots[0]!.start.getTime(), Date.UTC(2026, 9, 18, 16));
+    // The final start is 23:00 Manila on the selected date.
+    assert.equal(slots[23]!.start.getTime(), Date.UTC(2026, 9, 19, 15));
     assert.equal(isOnSlotGrid(slots[0]!.start), true);
 
     // The same instants no matter the host timezone — that is the regression.
@@ -77,7 +77,7 @@ test("every generated slot survives the ISO round-trip under any host TZ", () =>
   }
 });
 
-test("selectionDateStr maps 00:00-02:00 to the previous selection date", () => {
+test("selectionDateStr returns the Manila calendar date for each slot", () => {
   withTZ("UTC", () => {
     const slots = slotsForDate("2026-10-21");
     // The whole grid is the Oct 21 selection day, including its 00:00-02:00
@@ -85,10 +85,8 @@ test("selectionDateStr maps 00:00-02:00 to the previous selection date", () => {
     for (const slot of slots) {
       assert.equal(selectionDateStr(slot.start), "2026-10-21", `idx ${slot.index}`);
     }
-    // Wall clock says Oct 22 for the tail, which is why the plain Manila date
-    // alone is not enough — the fallback in isOnSlotGrid needs the day before.
-    assert.equal(new Date(slots[18]!.start.getTime()).toISOString(), "2026-10-21T16:00:00.000Z");
-    // The whole grid of a date belongs to that date's selection day.
+    assert.equal(new Date(slots[0]!.start.getTime()).toISOString(), "2026-10-20T16:00:00.000Z");
+    // The whole grid of a date belongs to that calendar day.
     for (const date of DATES) {
       for (const slot of slotsForDate(date)) {
         assert.equal(
@@ -101,13 +99,10 @@ test("selectionDateStr maps 00:00-02:00 to the previous selection date", () => {
   });
 });
 
-test("isOnSlotGrid rejects off-grid instants", () => {
+test("isOnSlotGrid accepts every whole Manila hour", () => {
   withTZ("UTC", () => {
-    // 05:00 Manila sits before the 06:00 day start and after the previous
-    // day's 02:00 tail, so it is off-grid despite being a whole hour.
-    assert.equal(isOnSlotGrid(new Date("2026-10-20T21:00:00.000Z")), false);
-    // 03:00 Manila is past the last slot's start.
-    assert.equal(isOnSlotGrid(new Date("2026-10-21T19:00:00.000Z")), false);
+    assert.equal(isOnSlotGrid(new Date("2026-10-20T21:00:00.000Z")), true); // 05:00
+    assert.equal(isOnSlotGrid(new Date("2026-10-21T19:00:00.000Z")), true); // 03:00
     // Any minute offset is off-grid.
     assert.equal(isOnSlotGrid(new Date("2026-10-21T10:30:00.000Z")), false);
   });

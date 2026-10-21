@@ -29,6 +29,7 @@ import { PROOF_CLIENT_ACCEPT, precheckProofFile } from "@/lib/proof-client";
 import { formatSlotRange } from "@/lib/courts";
 import { courtRateForSlot } from "@/lib/pricing-display";
 import { suggestEmailDomain } from "@/lib/booking/email";
+import { slotsForDate } from "@/lib/booking/slots";
 
 // ── Shapes mirrored from the server (no server-only imports here) ────────────
 
@@ -81,7 +82,6 @@ interface ProofRef {
   bytes: number;
 }
 
-const MANILA_DAY_START_HOUR = 6;
 const MAX_SLOTS = 12;
 
 /** Mirrors FALLBACK_RATES — the SSR'd rates equal these only when the DB read
@@ -294,12 +294,7 @@ export default function BookingCreateForm({
     const anyCourt = Object.values(availability)[0];
     if (anyCourt) return anyCourt.slots.map((s) => s.start);
     // Fallback skeleton rows before availability arrives.
-    const base = new Date(`${date}T00:00:00+08:00`);
-    return Array.from({ length: 21 }, (_, i) => {
-      const d = new Date(base);
-      d.setHours(MANILA_DAY_START_HOUR + i, 0, 0, 0);
-      return d.toISOString();
-    });
+    return slotsForDate(date).map(({ start }) => start.toISOString());
   }, [availability, date]);
 
   const slotStateFor = useCallback(

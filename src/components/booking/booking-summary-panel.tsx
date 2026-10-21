@@ -167,8 +167,10 @@ function useSummary(data: SummaryData) {
     [data.selectedSlots, data.courtNames, data.slotGroups, data.rates],
   );
   const courtTotal = courtLines.reduce((sum, line) => sum + line.amount, 0);
+  // Rentals bill per booked court-hour, so hours on every selected court count.
+  const courtHours = courtLines.reduce((sum, line) => sum + line.hours, 0);
   const paddleTotal = data.paddleQty > 0
-    ? calculatePaddleRentalTotal(data.rates.paddle, data.paddleQty, data.selectedSlots.length)
+    ? calculatePaddleRentalTotal(data.rates.paddle, data.paddleQty, courtHours)
     : 0;
   const ballTotal = data.ball ? data.rates.ball : 0;
   return {
@@ -176,6 +178,7 @@ function useSummary(data: SummaryData) {
     courtTotal,
     paddleTotal,
     ballTotal,
+    courtHours,
     total: courtTotal + paddleTotal + ballTotal,
     duration: `${data.selectedSlots.length} hour${data.selectedSlots.length === 1 ? "" : "s"}`,
   };
@@ -236,7 +239,7 @@ function SummaryLines({ data, compact = false }: { data: SummaryData; compact?: 
           {data.paddleQty > 0 && (
             <div className="flex justify-between gap-3">
               <span className="text-ink">
-                Paddle rental · {data.paddleQty} × {data.selectedSlots.length} hour{data.selectedSlots.length === 1 ? "" : "s"}
+                Paddle rental · {data.paddleQty} × {summary.courtHours} hour{summary.courtHours === 1 ? "" : "s"}
                 {!compact && <span className="mt-0.5 block text-[11px] text-warm-muted">{peso(data.rates.paddle)} per paddle per hour</span>}
               </span>
               <span className="shrink-0 tabular-nums text-ink">{peso(summary.paddleTotal)}</span>

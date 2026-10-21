@@ -326,9 +326,6 @@ export const hoursCreateSchema = z
     openTime: hhmm,
     closeTime: hhmm,
     amount: pricingAmountSchema.shape.amount,
-  })
-  .refine((d) => d.openTime !== d.closeTime, {
-    message: "Open and close times must differ (use overnight close<=open for late nights).",
   });
 
 export const quickHoursSetupSchema = z
@@ -338,9 +335,6 @@ export const quickHoursSetupSchema = z
     openTime: hhmm,
     closeTime: hhmm,
     amount: pricingAmountSchema.shape.amount,
-  })
-  .refine((d) => d.openTime !== d.closeTime, {
-    message: "Open and close times must differ (use overnight close<=open for late nights).",
   })
   .refine((d) => new Set(d.days).size === d.days.length, {
     message: "Days must not be repeated.",
@@ -372,15 +366,11 @@ export const hoursAmountSchema = z.object({
   amount: pricingAmountSchema.shape.amount,
 });
 
-export const hoursUpdateSchema = z
-  .object({
-    openTime: hhmm,
-    closeTime: hhmm,
-    amount: pricingAmountSchema.shape.amount,
-  })
-  .refine((d) => d.openTime !== d.closeTime, {
-    message: "Open and close times must differ (use overnight close<=open for late nights).",
-  });
+export const hoursUpdateSchema = z.object({
+  openTime: hhmm,
+  closeTime: hhmm,
+  amount: pricingAmountSchema.shape.amount,
+});
 
 export interface HoursRow {
   id: string;

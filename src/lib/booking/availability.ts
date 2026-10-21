@@ -143,9 +143,8 @@ export function datesInMonth(month: string): string[] {
 /**
  * Split flat per-court availability into `days[date][courtId] = slots`.
  *
- * Each instant is attributed to the date whose grid produced it, so the
- * overnight 00:00–02:00 slots land on the previous selection date, where the
- * booking UI shows them.
+ * Each instant is attributed to its Manila calendar date, where the booking
+ * UI shows it.
  */
 export function groupByDate(
   month: string,

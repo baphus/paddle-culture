@@ -576,8 +576,13 @@ export default function BookingFlow({
           }]
         : [];
     const courtTotal = courtLines.reduce((sum, line) => sum + line.amount, 0);
+    // Rentals bill per booked court-hour (same basis as the server, which
+    // prices one line per held court-slot pair) — a second court doubles them.
+    const courtHours = groups.length > 0
+      ? groups.reduce((sum, group) => sum + group.slotStarts.length, 0)
+      : selectedSlots.length * Math.max(courtNames.length, 1);
     const paddleTotal = livePaddleQty > 0
-      ? calculatePaddleRentalTotal(rates.paddle, livePaddleQty, selectedSlots.length)
+      ? calculatePaddleRentalTotal(rates.paddle, livePaddleQty, courtHours)
       : 0;
     const ballTotal = liveBall ? rates.ball : 0;
     return {
@@ -585,6 +590,7 @@ export default function BookingFlow({
       courtTotal,
       paddleTotal,
       ballTotal,
+      courtHours,
       total: courtTotal + paddleTotal + ballTotal,
     };
   }, [slotGroups, selectedSlots, courtNames, rates, livePaddleQty, liveBall]);
@@ -783,7 +789,7 @@ export default function BookingFlow({
                     ))}
                     {livePaddleQty > 0 && (
                       <div className="flex justify-between gap-4 py-3">
-                        <span className="text-ink">Paddle rental · {livePaddleQty} × {selectedSlots.length} hour{selectedSlots.length === 1 ? "" : "s"}<span className="mt-0.5 block text-xs text-warm-muted">{peso(rates.paddle)} per paddle per hour</span></span>
+                        <span className="text-ink">Paddle rental · {livePaddleQty} × {reviewInvoice.courtHours} hour{reviewInvoice.courtHours === 1 ? "" : "s"}<span className="mt-0.5 block text-xs text-warm-muted">{peso(rates.paddle)} per paddle per hour</span></span>
                         <span className="shrink-0 font-medium tabular-nums text-ink">{peso(reviewInvoice.paddleTotal)}</span>
                       </div>
                     )}

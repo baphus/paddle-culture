@@ -7,14 +7,16 @@
 export interface RateWindow {
   /** 0-23 hour start. */
   start: number;
-  /** 0-23 hour end (exclusive); <= start means the window wraps midnight. */
+  /** 0-23 hour end (exclusive); === start is a full day, < start wraps midnight. */
   end: number;
 }
 
 /** Every hour the window covers, end-exclusive (wrap-aware). */
 function hoursOf(w: RateWindow): number[] {
   const out: number[] = [];
-  if (w.start < w.end) {
+  if (w.start === w.end) {
+    for (let h = 0; h < 24; h++) out.push(h);
+  } else if (w.start < w.end) {
     for (let h = w.start; h < w.end; h++) out.push(h);
   } else {
     for (let h = w.start; h < 24; h++) out.push(h);
@@ -36,6 +38,7 @@ export function windowLabel(w: RateWindow): string {
 
 /** True when `hour` (0-23) is one of the window's hours. */
 export function hourInWindow(hour: number, w: RateWindow): boolean {
+  if (w.start === w.end) return true;
   return w.start < w.end ? hour >= w.start && hour < w.end : hour >= w.start || hour < w.end;
 }
 
@@ -66,10 +69,9 @@ export function dayListLabel(days: number[]): string {
   return MON_SUN.filter((d) => set.has(d)).map(dayName).join(", ");
 }
 
-// The park's fixed bookable grid: 21 hourly starts from 06:00 to 03:00.
-const GRID_HOURS: number[] = [
-  6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 0, 1, 2,
-];
+// Every hourly start on a Manila calendar day. Operating hours decide which
+// starts are open for a given court and weekday.
+const GRID_HOURS: number[] = Array.from({ length: 24 }, (_, hour) => hour);
 
 export interface HoursLike {
   courtId: string | null;
@@ -88,8 +90,8 @@ function minutesOfWall(time: string): number {
  * Hourly grid starts for one weekday, derived the same way availability's
  * isSlotOpen resolves hours (court rows for that day, else global rows).
  *
- * Fail safe: no applicable operating_hours rows at all means the fixed 21-slot
- * park grid. A day with no rows while other days have rows is closed ([]).
+ * Fail safe: no applicable operating_hours rows at all means all 24 hours.
+ * A day with no rows while other days have rows is closed ([]).
  */
 export function bookableHoursForDay(
   hours: HoursLike[],
