@@ -80,10 +80,11 @@ test("groupByDate: no slot is dropped or double-counted across the month", () =>
   assert.equal(new Set(all).size, 31 * 24, "no instant appears on two days");
 });
 
-test("groupByDate: midnight slots stay on their calendar date", () => {
+test("groupByDate: business-day slots stay on their selection date", () => {
   const month = "2026-10";
   const days = groupByDate(month, [COURT_A], availabilityFor(month, [COURT_A]));
-  // The 2026-10-15 grid runs from 00:00 through 23:00 on that date.
+  // A business day runs 07:00 (the 15th) → 06:00 (the 16th): overnight
+  // midnight slots belong to the day the customer selected.
   const forFifteenth = days["2026-10-15"]![COURT_A]!;
   const last = forFifteenth[forFifteenth.length - 1]!;
   const manilaDate = new Intl.DateTimeFormat("en-CA", {
@@ -92,8 +93,8 @@ test("groupByDate: midnight slots stay on their calendar date", () => {
     month: "2-digit",
     day: "2-digit",
   }).format(new Date(last.start));
-  assert.equal(manilaDate, "2026-10-15", "last slot is 23:00 on the 15th");
-  // …and it is NOT in the 16th's bucket.
+  assert.equal(manilaDate, "2026-10-16", "last slot is 06:00 on the 16th");
+  // …and it is NOT in the 16th's bucket: that grid starts 07:00 on the 16th.
   const startsOnSixteenth = new Set(days["2026-10-16"]![COURT_A]!.map((s) => s.start));
   assert.equal(startsOnSixteenth.has(last.start), false);
 });
