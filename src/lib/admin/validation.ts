@@ -21,6 +21,14 @@ export const loginBodySchema = z.object({
   password: z.string().min(1).max(256),
 });
 
+export const forgotBodySchema = z.object({
+  email: z.string().trim().email().max(254),
+});
+
+export const resetPasswordBodySchema = z.object({
+  password: z.string().min(8, "Password must be at least 8 characters.").max(256),
+});
+
 export const registerBodySchema = z.object({
   token: z.string().min(32).max(256),
   name: z.string().trim().min(1).max(100),

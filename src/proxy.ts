@@ -13,6 +13,8 @@ import { createProxyClient } from "@/lib/supabase/proxy";
 // venue's scale; a real cap needs Redis or an edge KV.
 const WRITE_LIMITS: Array<{ prefix: string; limit: number; windowMs: number }> = [
   { prefix: "/api/submit", limit: 10, windowMs: 60_000 },
+  // Forgot-password sends emails and is fully unauthenticated.
+  { prefix: "/api/auth/forgot-password", limit: 5, windowMs: 60_000 },
   { prefix: "/api/proofs/upload-url", limit: 20, windowMs: 60_000 },
   { prefix: "/api/holds", limit: 60, windowMs: 60_000 },
 ];
@@ -99,5 +101,6 @@ export const config = {
     "/api/holds/reclaim",
     "/api/submit",
     "/api/proofs/upload-url",
+    "/api/auth/forgot-password",
   ],
 };

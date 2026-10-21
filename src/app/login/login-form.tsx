@@ -15,7 +15,11 @@ export default function LoginForm() {
   const next = searchParams.get("next") ?? "/admin";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(
+    searchParams.get("error") === "reset"
+      ? "That reset link expired or was already used. Try again below."
+      : null,
+  );
   const [busy, setBusy] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
@@ -100,6 +104,12 @@ export default function LoginForm() {
                   "Sign in"
                 )}
               </Button>
+              <a
+                href="/forgot-password"
+                className="text-center text-sm text-muted-foreground underline-offset-4 hover:underline"
+              >
+                Forgot password?
+              </a>
             </Field>
           </FieldGroup>
         </form>
