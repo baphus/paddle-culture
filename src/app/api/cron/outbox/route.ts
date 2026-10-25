@@ -5,14 +5,17 @@ import { processOutboxBatch } from "@/lib/mail/worker";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Vercel primary backstop for the email outbox (vercel.json: hourly, `5 * * * *`).
-// Why hourly and not daily: inline delivery in submit is scoped to that
-// booking's rows and budgeted at 5s, so a slow/cold mailer leaves rows unsent
-// by design. The only thing that picks them up is this cron, and at the old
-// `0 2 * * *` a booking made at 10:00 could sit unsent for ~16 hours —
-// after the customer had already paid. Hourly caps the delay at ~1 hour.
-// Primary delivery is inline drainOutboxWithin() in submit; this cron plus
-// POST /api/admin/outbox/process are backstops only.
+// Backstop for the email outbox.
+//
+// SCHEDULE: the FREQUENT drain is Supabase pg_cron + pg_net, hourly, defined
+// in supabase/outbox-cron.sql. Vercel's Hobby plan cannot run a cron more than
+// once a day, so vercel.json keeps this route on a daily `5 2 * * *` as a
+// second backstop only. That split matters: inline delivery in submit is
+// scoped to one booking and budgeted at 5s, so a slow/cold mailer leaves rows
+// unsent by design, and the only thing that picks them up is a scheduled
+// drain. Daily alone would let a mid-morning booking sit unsent ~16 hours
+// after the customer paid; hourly via pg_cron caps it at ~1 hour.
+// POST /api/admin/outbox/process is the manual trigger.
 
 export async function GET(req: Request) {
   if (!isCronAuthorized(req)) {
