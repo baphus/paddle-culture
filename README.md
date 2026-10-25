@@ -10,9 +10,11 @@ Next.js 16 · React 19 · TypeScript (strict) · Tailwind v4 · Supabase
 (Postgres + Auth + Storage) · Gmail SMTP · Vercel.
 
 There is no ORM in the request path. The app talks to Supabase over HTTP with
-the service-role key; the eight transactional steps live in Postgres functions
+the service-role key; the transactional steps live in Postgres functions
 (`supabase/rpc-functions.sql`). `src/db/schema.ts` is a Drizzle definition used
-only for types.
+only for types. The public anon key ships in the browser bundle, so the
+database relies on `supabase/security-lockdown.sql` to keep `anon` out of every
+table — see the setup order below.
 
 ## Running it
 
@@ -24,11 +26,18 @@ npm run dev
 
 You must also run the SQL in the Supabase editor, once, in this order:
 
-1. `drizzle/*.sql` — tables and indexes (generated)
+1. `drizzle/*.sql` — tables and indexes (generated). Includes
+   `0005_outbox_claimed_at.sql`, which must be applied before step 4.
 2. `supabase/proof-bucket.sql` — private `proofs` bucket
 3. `supabase/audit-rls.sql` — RLS policies
 4. `supabase/rpc-functions.sql` — the RPCs + `holds_court_slot_unique_idx`
 5. `supabase/expenses.sql` — expense table, default-deny RLS, and audited expense RPCs
+6. `supabase/security-lockdown.sql` — **last.** RLS on all 14 business tables,
+   every privilege revoked from `anon`/`authenticated`, the RPCs granted to
+   `service_role` only, and default privileges so a new table starts closed.
+   The file ends with verification queries; run them and expect the results in
+   the comments. Skipping this leaves every table readable and writable by
+   anyone holding the public anon key.
 
 Then seed the courts and hours: `node scripts/seed-production.mjs`.
 
@@ -55,9 +64,11 @@ src/app/admin/       staff screens (bookings, calendar, courts, hours, pricing,
 src/lib/booking/     slot grid, availability, holds gate, pricing, operating
                      hours, payment-proof verification
 src/lib/admin/       admin sessions, booking list, revenue, dashboard
+src/lib/cron/        shared cron auth guard (isCronAuthorized)
 src/lib/mail/        transactional outbox + Gmail transport
 src/components/      UI (shadcn base-nova components under components/ui)
-supabase/            SQL that must be applied to Supabase by hand
+supabase/            SQL that must be applied to Supabase by hand;
+                     security-lockdown.sql last
 drizzle/             generated migrations
 test/                node --test specs
 ```
