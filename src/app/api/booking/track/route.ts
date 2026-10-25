@@ -38,12 +38,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Service unavailable." }, { status: 503 });
   }
 
+  // One query for code AND email together: the database does the comparison,
+  // so a wrong email cannot return a row at all, and `maybeSingle` avoids the
+  // "multiple rows" error when two bookings happen to share a code.
   const { data, error } = await db
     .from("bookings")
-    .select("tracking_token,email")
+    .select("tracking_token")
     .eq("tracking_code", rawCode)
+    .ilike("email", rawEmail)
     .limit(1)
-    .single();
+    .maybeSingle();
 
   if (error || !data) {
     return NextResponse.json(
@@ -52,15 +56,5 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const row = data as { tracking_token: string; email: string };
-
-  // Same-address, different case must still match, but nothing else should.
-  if (row.email.trim().toLowerCase() !== rawEmail.toLowerCase()) {
-    return NextResponse.json(
-      { error: "No booking found with that tracking code and email. Double-check and try again." },
-      { status: 404 },
-    );
-  }
-
-  return NextResponse.json({ token: row.tracking_token });
+  return NextResponse.json({ token: (data as { tracking_token: string }).tracking_token });
 }

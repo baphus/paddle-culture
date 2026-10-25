@@ -187,10 +187,21 @@ export async function recalculateTotal(
   const lines: TotalLine[] = [];
   let cents = 0;
 
+  // Index hours by court once. Filtering the whole table inside the slot loop
+  // made pricing O(slots x hours) — small today (56 rows), but the loop also
+  // read all courts' rows for every slot.
+  const hoursByCourt = new Map<string, HoursRateRow[]>();
+  for (const row of hours) {
+    if (row.courtId === null) continue;
+    const list = hoursByCourt.get(row.courtId);
+    if (list) list.push(row);
+    else hoursByCourt.set(row.courtId, [row]);
+  }
+
   for (const slot of input.slots) {
     const { day, hour } = manilaParts(slot.start);
     const previousDay = (day + 6) % 7;
-    const scopedHours = hours.filter((r) => r.courtId === slot.courtId);
+    const scopedHours = hoursByCourt.get(slot.courtId) ?? [];
     const match =
       scopedHours.find((r) => r.dayOfWeek === day && hourInRow(hour, r)) ??
       scopedHours.find((r) => {
@@ -235,6 +246,13 @@ export async function recalculateTotal(
         422,
       );
     }
+    // One rule prices the whole paddle line, chosen from the FIRST slot only,
+    // then multiplied by every hour. That is correct while paddle has a single
+    // fixed rate (seed-production.mjs rows it as day_type='all', time_band='all',
+    // so every slot resolves to the same row). It becomes a wrong total the
+    // moment a second paddle rate is added with a day_type or time_band that is
+    // not 'all': a 17:00+18:00 booking would charge the morning rate for both
+    // hours. If that happens, price paddle per slot like the court loop above.
     const first = input.slots[0] as PricedSlot;
     const rule = pickRule(
       rules,
@@ -250,15 +268,15 @@ export async function recalculateTotal(
         503,
       );
     }
-    const hours = input.paddleHours ?? input.slots.length;
-    const lineCents = amountOrThrow(rule.id, rule.amount) * input.paddleQty * hours;
+    const paddleHourCount = input.paddleHours ?? input.slots.length;
+    const lineCents = amountOrThrow(rule.id, rule.amount) * input.paddleQty * paddleHourCount;
     cents += lineCents;
     lines.push({
       kind: "paddle",
       courtId: null,
-      detail: `${input.paddleQty} paddle(s) x ${hours}h`,
+      detail: `${input.paddleQty} paddle(s) x ${paddleHourCount}h`,
       unitAmount: rule.amount,
-      qty: input.paddleQty * hours,
+      qty: input.paddleQty * paddleHourCount,
       amount: fromCentavos(lineCents),
     });
   }

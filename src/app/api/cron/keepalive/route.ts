@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/db/client";
+import { isCronAuthorized } from "@/lib/cron/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -7,14 +8,8 @@ export const dynamic = "force-dynamic";
 // Vercel Cron invokes this endpoint daily (vercel.json).
 // Replaced `getDb().execute(sql\`select 1\`)` with a lightweight Supabase
 // HTTP ping that does not open a persistent TCP socket.
-function isAuthorized(req: Request): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return process.env.NODE_ENV !== "production";
-  return req.headers.get("authorization") === `Bearer ${secret}`;
-}
-
 export async function GET(req: Request) {
-  if (!isAuthorized(req)) {
+  if (!isCronAuthorized(req)) {
     return NextResponse.json({ ok: false }, { status: 401 });
   }
 

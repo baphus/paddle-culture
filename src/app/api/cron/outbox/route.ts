@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isCronAuthorized } from "@/lib/cron/auth";
 import { processOutboxBatch } from "@/lib/mail/worker";
 
 export const runtime = "nodejs";
@@ -12,15 +13,8 @@ export const dynamic = "force-dynamic";
 // Netlify `*/5` worker is legacy. On a commercial-allowed Vercel plan, the
 // schedule can be raised to `*/5` if needed (see vercel.json).
 
-function isAuthorized(req: Request): boolean {
-  const secret = process.env.CRON_SECRET;
-  // Allow bypass when CRON_SECRET is unset only in development.
-  if (!secret) return process.env.NODE_ENV !== "production";
-  return req.headers.get("authorization") === `Bearer ${secret}`;
-}
-
 export async function GET(req: Request) {
-  if (!isAuthorized(req)) {
+  if (!isCronAuthorized(req)) {
     return NextResponse.json({ ok: false }, { status: 401 });
   }
   try {

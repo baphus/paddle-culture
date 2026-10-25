@@ -11,12 +11,24 @@ import { createProxyClient } from "@/lib/supabase/proxy";
 // in-memory counter, not a distributed limiter: on Vercel each instance has its
 // own map, so the effective limit is LIMIT × instances. Good enough for this
 // venue's scale; a real cap needs Redis or an edge KV.
-const WRITE_LIMITS: Array<{ prefix: string; limit: number; windowMs: number }> = [
+const WRITE_LIMITS: Array<{
+  prefix: string;
+  limit: number;
+  windowMs: number;
+  /** Methods to limit. Defaults to POST/DELETE when omitted. */
+  methods?: string[];
+}> = [
   { prefix: "/api/submit", limit: 10, windowMs: 60_000 },
   // Forgot-password sends emails and is fully unauthenticated.
   { prefix: "/api/auth/forgot-password", limit: 5, windowMs: 60_000 },
+  // Login: unauthenticated and does a password hash + Supabase round trip per
+  // try, so it is a cheap way to hammer the auth service.
+  { prefix: "/api/auth/login", limit: 10, windowMs: 60_000 },
   { prefix: "/api/proofs/upload-url", limit: 20, windowMs: 60_000 },
   { prefix: "/api/holds", limit: 60, windowMs: 60_000 },
+  // Tracking look-up is a GET with a 5-char code (~60M values). It is the only
+  // gate in front of a booking's token, so it must be expensive to guess.
+  { prefix: "/api/booking/track", limit: 10, windowMs: 60_000, methods: ["GET"] },
 ];
 
 interface Bucket { count: number; resetAt: number }
@@ -36,8 +48,9 @@ function tooManyRequests(request: NextRequest): boolean {
   const rule = WRITE_LIMITS.find((r) => request.nextUrl.pathname.startsWith(r.prefix));
   if (!rule) return false;
 
-  // Only POST/DELETE write; reads stay free so the calendar keeps working.
-  if (request.method !== "POST" && request.method !== "DELETE") return false;
+  // Default is write-only, so reads stay free and the calendar keeps working.
+  const allowed = rule.methods ?? ["POST", "DELETE"];
+  if (!allowed.includes(request.method)) return false;
 
   const ip =
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
@@ -115,5 +128,8 @@ export const config = {
     "/api/submit",
     "/api/proofs/upload-url",
     "/api/auth/forgot-password",
+    // Rate-limited so the 5-char tracking code cannot be brute-forced.
+    "/api/booking/track",
+    "/api/auth/login",
   ],
 };

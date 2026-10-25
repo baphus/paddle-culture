@@ -249,11 +249,17 @@ export const emailOutbox = pgTable(
     attempts: integer("attempts").notNull().default(0),
     nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
     messageId: text("message_id"),
+    // Set when a worker claims the row (status -> 'sending'). Lets the claim
+    // function reclaim rows stranded by a process that died mid-batch.
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
   },
   (t) => [
     index("email_outbox_claim_idx")
       .on(t.status, t.nextAttemptAt)
       .where(sql`${t.status} IN ('pending', 'retry')`),
+    index("email_outbox_sending_idx")
+      .on(t.claimedAt)
+      .where(sql`${t.status} = 'sending'`),
   ],
 );
 

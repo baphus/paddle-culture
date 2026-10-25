@@ -42,7 +42,17 @@ export async function PUT(request: Request) {
     return NextResponse.json({ count });
   } catch (e) {
     if (e instanceof LaneError && e.code === "HOURS_OVERLAP") {
-      return NextResponse.json({ error: { message: e.message }, conflicts: JSON.parse(e.message) }, { status: 409 });
+      // The RPC path packs the conflicting rows into the message as a JSON
+      // array; the single-row helpers (config.ts createHours/updateHours)
+      // throw prose. Parsing blindly turned a 409 into a 500.
+      let conflicts: unknown = [];
+      try {
+        const parsedMessage: unknown = JSON.parse(e.message);
+        if (Array.isArray(parsedMessage)) conflicts = parsedMessage;
+      } catch {
+        conflicts = [];
+      }
+      return NextResponse.json({ error: { message: e.message }, conflicts }, { status: 409 });
     }
     if (e instanceof LaneError) return err(e.code, e.message, e.status);
     console.error("admin quick hours setup failed", e);

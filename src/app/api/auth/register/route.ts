@@ -79,13 +79,16 @@ export async function POST(request: Request) {
       return err("REGISTER_FAILED", "Registration failed.", 500);
     }
 
-    await db.from("audit_log").insert({
+    // Best effort only: the user and the invite are already committed, so a
+    // failed audit write must not turn a successful signup into a 500.
+    const { error: auditError } = await db.from("audit_log").insert({
       actor: "system",
       action: "admin_invite.use",
       entity: "admin_invites",
       entity_id: tokenHash,
       after: { email, userId },
     });
+    if (auditError) console.error("register audit insert failed", auditError.message);
 
     return NextResponse.json(
       // Require a fresh sign-in to receive claims with the admin role.

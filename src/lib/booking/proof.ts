@@ -39,12 +39,19 @@ export function isScopedProofPath(path: string): boolean {
   return /^incoming\/[0-9a-f]{32}\.(jpg|jpeg|png|webp)$/.test(path);
 }
 
+// Cached service-role client. getDb() caches its client; this one did not, so
+// every proof check, signed URL and discard built a fresh Supabase client
+// (new fetch agent, new headers) for the same credentials.
+let storageAdmin: ReturnType<typeof createClient> | null = null;
+
 /** Service-role Storage client (server only). */
 export function getStorageAdmin() {
+  if (storageAdmin) return storageAdmin;
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceKey) throw new LaneError("NOT_CONFIGURED", "Storage is not configured.", 500);
-  return createClient(url, serviceKey);
+  storageAdmin = createClient(url, serviceKey);
+  return storageAdmin;
 }
 
 export interface VerifiedProof {
@@ -71,7 +78,7 @@ export async function verifyProofFile(args: {
     throw new LaneError("PROOF_TYPE_REJECTED", "Proof must be jpg, png, or webp.", 422);
   }
 
-  const supabase = createClient(url, serviceKey);
+  const supabase = getStorageAdmin();
   // storage.info(path) reads this object's metadata directly — no folder
   // listing, so no `limit: 100` truncation and no prefix collision with other
   // uploads. The API returns camelCased fields (contentType, size) plus a

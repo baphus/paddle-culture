@@ -32,7 +32,7 @@ CREATE OR REPLACE FUNCTION rpc_replace_court_hours(
 )
 RETURNS int
 LANGUAGE plpgsql SECURITY DEFINER
-SET search_path = public
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_before jsonb;
@@ -91,7 +91,7 @@ CREATE OR REPLACE FUNCTION rpc_add_court_hours(
 )
 RETURNS int
 LANGUAGE plpgsql SECURITY DEFINER
-SET search_path = public
+SET search_path = public, pg_temp
 SET datestyle = 'ISO, MDY'
 AS $$
 DECLARE
@@ -161,12 +161,25 @@ RETURNS TABLE (
   booking_id  uuid
 )
 LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 BEGIN
+  -- Reclaim rows stranded in 'sending'. A process that dies mid-batch (Vercel
+  -- timeout, deploy, OOM) leaves its claims in 'sending' forever, because the
+  -- claim below only looks at 'pending'/'retry'. Those emails never sent and
+  -- nothing would ever retry them. 15 minutes is far longer than any single
+  -- batch, so a genuinely in-flight claim is never stolen.
+  UPDATE email_outbox
+  SET    status   = 'retry',
+         next_attempt_at = now()
+  WHERE  status = 'sending'
+    AND  claimed_at < now() - interval '15 minutes';
+
   RETURN QUERY
     UPDATE email_outbox AS o
     SET    status   = 'sending',
-           attempts = o.attempts + 1
+           attempts = o.attempts + 1,
+           claimed_at = now()
     WHERE  o.id IN (
       SELECT inner_o.id FROM email_outbox AS inner_o
       WHERE  inner_o.status IN ('pending', 'retry')
@@ -187,6 +200,7 @@ $$;
 CREATE OR REPLACE FUNCTION rpc_delete_expired_holds(p_cutoff timestamptz)
 RETURNS int
 LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_count int;
@@ -229,6 +243,7 @@ CREATE OR REPLACE FUNCTION rpc_reclaim_holds(
 )
 RETURNS TABLE (hold_token text, court_id uuid, slot_start timestamptz, expires_at timestamptz)
 LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_pair_count int := jsonb_array_length(p_pairs);
@@ -251,6 +266,23 @@ BEGIN
     AND  h.court_id   = req.court_id
     AND  h.slot_start = req.slot_start
     AND  h.expires_at <= now();
+
+  -- Re-check live bookings INSIDE this transaction. The app checks before
+  -- calling here, but between that check and this insert another session can
+  -- take the slot (a submit, or an admin walk-in). Without this lock the first
+  -- commit wins and this caller is handed a hold on an already-booked slot.
+  -- FOR UPDATE blocks a concurrent submit's clash read until we commit.
+  PERFORM 1
+  FROM   booking_slots bs
+  JOIN   (SELECT (p->>'court_id')::uuid          AS court_id,
+                 (p->>'slot_start')::timestamptz AS slot_start
+          FROM   jsonb_array_elements(p_pairs) AS p) req
+         ON bs.court_id = req.court_id AND bs.slot_start = req.slot_start
+  WHERE  bs.state IN ('held', 'pending', 'approved')
+  FOR UPDATE OF bs;
+  IF FOUND THEN
+    RAISE EXCEPTION 'SLOT_TAKEN: That slot was just taken.' USING ERRCODE = '23505';
+  END IF;
 
   -- Insert the fresh rows. holds_court_slot_unique_idx arbitrates a race with
   -- another session; a 23505 here is surfaced to the caller as SLOT_TAKEN.
@@ -284,6 +316,7 @@ CREATE OR REPLACE FUNCTION rpc_apply_decision(
 )
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_booking        bookings%ROWTYPE;
@@ -439,6 +472,7 @@ CREATE OR REPLACE FUNCTION rpc_submit_booking(
 )
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_booking_id     uuid;
@@ -782,6 +816,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS pricing_rules_key_uniq
 CREATE OR REPLACE FUNCTION rpc_delete_expired_proofs(p_cutoff timestamptz)
 RETURNS TABLE (deleted_paths text[])
 LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_paths text[];
@@ -850,6 +885,7 @@ CREATE OR REPLACE FUNCTION rpc_admin_create_booking(
 )
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_booking_id   uuid;
@@ -900,11 +936,12 @@ BEGIN
     END IF;
   END IF;
 
-  -- ── Lazy expiry, then evict live holds on the requested (court, slot) ────
-  -- Lazy expiry first so a dead hold's unique-key entry cannot make the
-  -- eviction below report rows the purge was about to delete anyway.
-  DELETE FROM holds WHERE expires_at <= v_now;
-
+  -- ── Evict live holds on the requested (court, slot) ────────────────────
+  -- Scoped to the pairs being booked. This used to be preceded by a
+  -- table-wide `DELETE FROM holds WHERE expires_at <= now()`, which threw
+  -- away every other customer's expired-but-still-in-grace hold, so their
+  -- "Restore my slots" came back HOLD_NOT_FOUND while they were in their
+  -- banking app. The pair-scoped delete below is all this function needs.
   WITH req AS (
     SELECT (s->>'court_id')::uuid          AS court_id,
            (s->>'slot_start')::timestamptz AS slot_start

@@ -19,6 +19,39 @@ import type { TotalLine } from "@/lib/booking/pricing";
 export const BOOKINGS_PAGE_SIZE = 20;
 export const BOOKING_STATUSES = ["Pending", "Approved", "Rejected"] as const;
 
+/** One booking_slots row joined with its court name (embedded `courts`). */
+type SlotJoinRow = {
+  booking_id: string;
+  court_id: string;
+  slot_start: string;
+  courts: unknown;
+};
+type RentalRow = {
+  booking_id: string;
+  paddle_qty: number;
+  paddle_hours: string | null;
+  ball_fee: string | null;
+};
+type ProofRow = { booking_id: string; path: string };
+
+/** Embedded joins are typed `unknown` (object or 1-element array). */
+function courtName(s: SlotJoinRow): string {
+  const c = s.courts;
+  if (!c) return s.court_id;
+  if (Array.isArray(c)) return (c[0] as { name?: string })?.name ?? s.court_id;
+  return (c as { name?: string })?.name ?? s.court_id;
+}
+
+/** Earliest slot start (ms) — the booking's first hour, not join order. */
+function earliestSlotMs(slots: Array<{ slot_start: string }>): number {
+  let min = Number.POSITIVE_INFINITY;
+  for (const s of slots) {
+    const t = new Date(s.slot_start).getTime();
+    if (t < min) min = t;
+  }
+  return min;
+}
+
 export interface BookingSlotView {
   courtId: string;
   courtName: string;
@@ -305,15 +338,7 @@ export async function listBookings(
       .in("booking_id", ids),
   ]);
 
-  type SlotRow = { booking_id: string; court_id: string; slot_start: string; courts: unknown };
-  function courtName(s: SlotRow): string {
-    const c = s.courts;
-    if (!c) return s.court_id;
-    if (Array.isArray(c)) return (c[0] as { name?: string })?.name ?? s.court_id;
-    return (c as { name?: string })?.name ?? s.court_id;
-  }
-  type RentalRow = { booking_id: string; paddle_qty: number; paddle_hours: string | null; ball_fee: string | null };
-  type ProofRow = { booking_id: string; path: string };
+  type SlotRow = SlotJoinRow;
 
   const slotsByBooking = new Map<string, SlotRow[]>();
   for (const s of (slotsResult.data ?? []) as SlotRow[]) {
@@ -417,9 +442,12 @@ export async function revenueByDay(
   let totalCents = 0;
 
   for (const b of rows) {
-    const firstSlot = b.booking_slots?.[0];
-    if (!firstSlot) continue;
-    const day = manilaDateStr(new Date(firstSlot.slot_start));
+    // Earliest slot = the day the booking starts. The embedded join comes back
+    // unordered, so [0] was whichever slot the planner happened to return
+    // first: a 22:00-02:00 booking landed on the next day about half the time.
+    const min = earliestSlotMs(b.booking_slots ?? []);
+    if (!Number.isFinite(min)) continue;
+    const day = manilaDateStr(new Date(min));
     const dayStart = manilaDayStart(day).getTime();
     if (dayStart < args.from.getTime() || dayStart >= args.to.getTime()) continue;
     const cents = pesosToCents(b.total);
@@ -492,12 +520,8 @@ export async function revenueByMonth(db: Db): Promise<RevenueMonthResult> {
   let totalCents = 0;
 
   for (const b of rows) {
-    // Earliest slot of this booking = its Manila start day → month key.
-    let min = Number.POSITIVE_INFINITY;
-    for (const s of b.booking_slots ?? []) {
-      const t = new Date(s.slot_start).getTime();
-      if (t < min) min = t;
-    }
+    // Earliest slot = the month the booking starts.
+    const min = earliestSlotMs(b.booking_slots ?? []);
     if (!Number.isFinite(min)) continue;
     const monthKey = manilaDateStr(new Date(min)).slice(0, 7);
     const cents = pesosToCents(b.total);
@@ -565,14 +589,7 @@ export async function getBookingById(
       .eq("booking_id", id),
   ]);
 
-  type SlotRow = { booking_id: string; court_id: string; slot_start: string; courts: unknown };
-  function courtName(s: SlotRow): string {
-    const c = s.courts;
-    if (!c) return s.court_id;
-    if (Array.isArray(c)) return (c[0] as { name?: string })?.name ?? s.court_id;
-    return (c as { name?: string })?.name ?? s.court_id;
-  }
-  type RentalRow = { booking_id: string; paddle_qty: number; paddle_hours: string | null; ball_fee: string | null };
+  type SlotRow = SlotJoinRow;
 
   const rawSlots = ((slotsResult.data ?? []) as SlotRow[])
     .slice()
