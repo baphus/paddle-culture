@@ -7,7 +7,7 @@ import { fromAddress, getSharedTransport } from "./transport";
 // Outbox worker (ADR-05). Replaces the Drizzle FOR UPDATE SKIP LOCKED raw
 // SQL path with a Postgres RPC (rpc_claim_outbox_batch) that runs the same
 // atomic claim server-side. Status updates use plain supabase-js .update()
-// calls. Relative imports only — Netlify bundles this for esbuild.
+// calls. Relative imports only.
 
 export const OUTBOX_CLAIM_LIMIT = 50;
 export const OUTBOX_MAX_ATTEMPTS = 8;

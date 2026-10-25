@@ -91,11 +91,10 @@ pg_restore -d "postgresql://postgres:'[NEW-DB-PASSWORD]'@db.[NEW-REF].supabase.c
 ## 7. Retention purge (automatic, weekly)
 
 Holds are the only unbounded-growth table (one row per court-hour held, most
-abandoned). A scheduled job prunes them automatically — Vercel primary:
-`src/app/api/cron/retention` (`vercel.json` `0 2 * * 0`); legacy:
-`netlify/functions/retention.mts`:
+abandoned). A scheduled job prunes them automatically —
+`src/app/api/cron/retention` (`vercel.json` `0 2 * * 0`):
 
-- **What:** `netlify/functions/retention.mts`, schedule `0 2 * * 0`
+- **What:** `src/app/api/cron/retention` (`vercel.json`), schedule `0 2 * * 0`
   (every Sunday 02:00 UTC ≈ 10:00 Manila).
 - **Deletes ONLY:** `holds` rows with `expires_at` older than
   `RETENTION_HOLD_GRACE_HOURS = 24` hours — i.e. holds that expired a full day

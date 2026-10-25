@@ -6,9 +6,6 @@ node_modules/
 out/
 tsconfig.tsbuildinfo
 
-# netlify
-.netlify/
-
 # env (never commit real secrets; .env.example is the template)
 .env
 .env*.local

@@ -12,8 +12,7 @@ export const dynamic = "force-dynamic";
 // `0 2 * * *` a booking made at 10:00 could sit unsent for ~16 hours —
 // after the customer had already paid. Hourly caps the delay at ~1 hour.
 // Primary delivery is inline drainOutboxWithin() in submit; this cron plus
-// POST /api/admin/outbox/process are backstops only. The Netlify `*/5` worker
-// is legacy.
+// POST /api/admin/outbox/process are backstops only.
 
 export async function GET(req: Request) {
   if (!isCronAuthorized(req)) {

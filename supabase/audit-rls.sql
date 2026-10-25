@@ -18,7 +18,7 @@
 --     denying service_role via policy. Anyone holding SUPABASE_SERVICE_ROLE_KEY
 --     (or the direct DB password) can still UPDATE/DELETE audit rows. This is
 --     a Supabase-platform limit, not a gap in this file: treat both keys as
---     owner-only secrets (Netlify env, never in git, never emailed).
+--     owner-only secrets (Vercel env, never in git, never emailed).
 --   - Do NOT add `FORCE ROW LEVEL SECURITY`: it would subject the table
 --     owner (the app's direct connection) to RLS too and BREAK all audit
 --     writes until an owner-bypass policy exists. Default (non-forced) RLS

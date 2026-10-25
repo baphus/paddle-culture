@@ -1,10 +1,10 @@
 // Outbox drain — manual/maintenance sends (run: `npx tsx scripts/drain-outbox.ts`).
 //
 // Claims up to 50 due email_outbox rows (same FOR UPDATE SKIP LOCKED code path
-// as the */5 Netlify cron and the POST /api/admin/outbox/process admin
-// trigger) and sends them over the configured SMTP transport (Mailpit locally
-// via SMTP_HOST, Gmail in prod). Prints the { claimed, sent, retried, failed }
-// batch result as JSON.
+// as the hourly Vercel outbox cron, `5 * * * *`, and the
+// POST /api/admin/outbox/process admin trigger) and sends them over the
+// configured SMTP transport (Mailpit locally via SMTP_HOST, Gmail in prod).
+// Prints the { claimed, sent, retried, failed } batch result as JSON.
 //
 // Normally unneeded: submit/approve/reject routes already drain best-effort
 // immediately after commit. Reach for this when mail didn't go out (e.g. the

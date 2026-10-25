@@ -34,7 +34,6 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    "netlify/functions/**/*.mts",
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
