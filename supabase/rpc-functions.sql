@@ -159,6 +159,15 @@ GRANT EXECUTE ON FUNCTION rpc_add_court_hours(uuid, int[], time, time, numeric, 
 --    waited behind a queue. NULL (the cron/backstop case) keeps the old
 --    behaviour of claiming anything due.
 -- ===========================================================================
+-- DROP THE OLD ARITY FIRST. `CREATE OR REPLACE` with a different argument
+-- list does not replace anything — it creates an OVERLOAD. Leaving the old
+-- one-argument function in place is a silent disaster: PostgREST resolves a
+-- 2-arg call like `{p_limit, p_booking_id}` to the OLD 1-arg function and
+-- silently ignores p_booking_id (so the unscoped claim comes back), and it
+-- stays anonymous-callable with its original PUBLIC grant. Dropping it makes
+-- the path unambiguous. Safe to re-run: IF EXISTS.
+DROP FUNCTION IF EXISTS rpc_claim_outbox_batch(int);
+
 CREATE OR REPLACE FUNCTION rpc_claim_outbox_batch(
   p_limit      int  DEFAULT 50,
   p_booking_id uuid DEFAULT NULL

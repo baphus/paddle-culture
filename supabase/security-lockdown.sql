@@ -71,7 +71,28 @@ REVOKE CREATE ON SCHEMA public FROM anon, authenticated;
 -- ===========================================================================
 REVOKE ALL ON FUNCTION rpc_replace_court_hours(uuid, int[], time, time, numeric, text)                  FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION rpc_add_court_hours(uuid, int[], time, time, numeric, boolean, text)             FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION rpc_claim_outbox_batch(int)                                                      FROM PUBLIC, anon, authenticated;
+-- NOTE: the signature must match rpc-functions.sql EXACTLY. `CREATE OR REPLACE
+-- FUNCTION` with a changed argument list does not replace the old function, it
+-- adds an overload — so a stale `(int)` copy lives on beside the new
+-- `(int, uuid)` one. Both are then anon-callable until lockdown runs, and this
+-- file must name both arities or the stale one keeps a PUBLIC grant.
+-- rpc-functions.sql drops the old (int) form on re-run; these lines cover the
+-- window before that, and are skipped when the function is absent.
+DO $$
+DECLARE
+  fn text;
+BEGIN
+  FOR fn IN
+    SELECT p.oid::regprocedure::text
+    FROM   pg_proc p
+    JOIN   pg_namespace n ON n.oid = p.pronamespace
+    WHERE  n.nspname = 'public'
+    AND    p.proname = 'rpc_claim_outbox_batch'
+  LOOP
+    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated', fn);
+    EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', fn);
+  END LOOP;
+END $$;
 REVOKE ALL ON FUNCTION rpc_delete_expired_holds(timestamptz)                                            FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION rpc_reclaim_holds(text, jsonb, timestamptz, text[])                              FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION rpc_apply_decision(uuid, text, text, text)                                       FROM PUBLIC, anon, authenticated;
@@ -81,7 +102,6 @@ REVOKE ALL ON FUNCTION rpc_admin_create_booking(text, text, text, text, text, te
 
 GRANT EXECUTE ON FUNCTION rpc_replace_court_hours(uuid, int[], time, time, numeric, text)                  TO service_role;
 GRANT EXECUTE ON FUNCTION rpc_add_court_hours(uuid, int[], time, time, numeric, boolean, text)             TO service_role;
-GRANT EXECUTE ON FUNCTION rpc_claim_outbox_batch(int)                                                      TO service_role;
 GRANT EXECUTE ON FUNCTION rpc_delete_expired_holds(timestamptz)                                            TO service_role;
 GRANT EXECUTE ON FUNCTION rpc_reclaim_holds(text, jsonb, timestamptz, text[])                              TO service_role;
 GRANT EXECUTE ON FUNCTION rpc_apply_decision(uuid, text, text, text)                                       TO service_role;
@@ -151,3 +171,18 @@ FROM   pg_proc p
 JOIN   pg_namespace n ON n.oid = p.pronamespace
 WHERE  n.nspname = 'public' AND p.prosecdef
 ORDER BY p.proname;
+
+-- Expected: exactly ONE row for rpc_claim_outbox_batch, with args
+-- "integer, uuid". TWO rows means the old one-argument overload survived a
+-- re-run of rpc-functions.sql (CREATE OR REPLACE with a new argument list
+-- adds an overload instead of replacing). That overload shadows the new
+-- signature: PostgREST drops the unnamed argument it cannot match, so calls
+-- still succeed but p_booking_id is silently ignored and the unscoped claim
+-- comes back. Run the DROP FUNCTION IF EXISTS rpc_claim_outbox_batch(int);
+-- at the top of rpc-functions.sql to remove it.
+SELECT p.oid::regprocedure AS signature,
+       pg_get_function_identity_arguments(p.oid) AS args
+FROM   pg_proc p
+JOIN   pg_namespace n ON n.oid = p.pronamespace
+WHERE  n.nspname = 'public'
+  AND  p.proname = 'rpc_claim_outbox_batch';
