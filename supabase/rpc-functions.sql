@@ -150,8 +150,19 @@ GRANT EXECUTE ON FUNCTION rpc_add_court_hours(uuid, int[], time, time, numeric, 
 -- 1. rpc_claim_outbox_batch
 --    Claims up to p_limit due outbox rows atomically (FOR UPDATE SKIP LOCKED),
 --    bumps attempts + sets status='sending', returns the claimed rows.
+--
+--    p_booking_id (optional) narrows the claim to one booking's rows. The
+--    submit route drains inline with a 5s budget before answering the
+--    customer; without this filter it claimed up to 50 rows belonging to
+--    OTHER customers and sent them serially (~5s each on a cold instance),
+--    so the 2nd booking in a burst already timed out and everyone after it
+--    waited behind a queue. NULL (the cron/backstop case) keeps the old
+--    behaviour of claiming anything due.
 -- ===========================================================================
-CREATE OR REPLACE FUNCTION rpc_claim_outbox_batch(p_limit int DEFAULT 50)
+CREATE OR REPLACE FUNCTION rpc_claim_outbox_batch(
+  p_limit      int  DEFAULT 50,
+  p_booking_id uuid DEFAULT NULL
+)
 RETURNS TABLE (
   id          uuid,
   template    text,
@@ -184,6 +195,7 @@ BEGIN
       SELECT inner_o.id FROM email_outbox AS inner_o
       WHERE  inner_o.status IN ('pending', 'retry')
         AND  (inner_o.next_attempt_at IS NULL OR inner_o.next_attempt_at <= now())
+        AND  (p_booking_id IS NULL OR inner_o.booking_id = p_booking_id)
       ORDER BY inner_o.next_attempt_at NULLS FIRST
       LIMIT p_limit
       FOR UPDATE SKIP LOCKED

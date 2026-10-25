@@ -10,8 +10,17 @@ import {
   Sparkles,
   Timer,
   User,
+  ArrowLeft,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { formatCountdown, formatSummaryDateRange, formatSlotRangesWithDates, type CourtOption, type CourtSlotGroup } from "@/lib/courts";
 import { calculatePaddleRentalTotal, courtRateForSlot, FALLBACK_RATES, peso, type DisplayRates } from "@/lib/pricing-display";
 import { cn } from "@/lib/utils";
@@ -178,6 +187,8 @@ export default function BookingFlow({
   const [submitting, setSubmitting] = useState(false);
   // True while the review step is POSTing /api/holds to start the 10-minute window.
   const [holdingForPayment, setHoldingForPayment] = useState(false);
+  // Back-from-details confirm: a live hold is about to be released.
+  const [confirmReleaseOpen, setConfirmReleaseOpen] = useState(false);
   const [result, setResult] = useState<{
     trackingToken: string;
     trackingCode: string;
@@ -590,6 +601,29 @@ export default function BookingFlow({
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [hold, handleClearSelection, releaseHold]);
 
+  // Back from details to slots. Walking away from a LIVE hold hands those
+  // slots back to everyone else, so confirm first — a single mis-click on
+  // "Back to Slots" should not silently surrender a reservation the customer
+  // may have waited for. With no hold (the common case: they came straight
+  // from step 1) there is nothing to lose, so go straight through.
+  const handleBackToSlots = useCallback(() => {
+    // Only a STILL-LIVE hold is worth confirming — an expired one has already
+    // handed the slots back, so there is nothing left to lose and a "you will
+    // lose your slots" prompt would be a lie.
+    const holdIsLive = hold !== null && new Date(hold.expiresAt).getTime() > Date.now();
+    if (holdIsLive) {
+      setConfirmReleaseOpen(true);
+      return;
+    }
+    void returnToTimeSlots();
+  }, [hold, returnToTimeSlots]);
+
+  const confirmReleaseAndBack = useCallback(async () => {
+    setConfirmReleaseOpen(false);
+    await returnToTimeSlots();
+    toast.success("Your held slots were released — pick your times again.");
+  }, [returnToTimeSlots]);
+
   const startOver = () => {
     releaseHold(hold);
     clearDraft();
@@ -841,7 +875,7 @@ export default function BookingFlow({
                     }
                   }
                   busy={false}
-                  onBack={returnToTimeSlots}
+                  onBack={handleBackToSlots}
                   onSubmit={(vals) => {
                     setDetails(vals);
                     // Keep live equipment in sync with any edits made in step 2
@@ -853,6 +887,39 @@ export default function BookingFlow({
                 />
               </div>
             )}
+
+            {/* Confirmation before surrendering a live hold. Rendering it once
+                here (not inside the details block) keeps it mounted across the
+                step change that the confirm itself triggers. */}
+            <Dialog open={confirmReleaseOpen} onOpenChange={setConfirmReleaseOpen}>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Release your held slots?</DialogTitle>
+                  <DialogDescription>
+                    Going back to the slots page cancels the reservation on these times.
+                    They become available to other customers straight away, and if someone
+                    else books them first you will not be able to pick them again.
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmReleaseOpen(false)}
+                    className="inline-flex min-h-11 items-center justify-center rounded-xl border border-line-warm/70 bg-white px-4 text-sm font-bold text-pine transition-colors hover:bg-cream"
+                  >
+                    Keep my slots
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { void confirmReleaseAndBack(); }}
+                    className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-flame px-4 text-sm font-bold text-white shadow-md transition-colors hover:bg-flame-hover"
+                  >
+                    <ArrowLeft className="size-4" />
+                    Release and go back
+                  </button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
 
             {/* Step 3: Review — these slots are NOT held yet. The hold starts
                 only when the customer continues to payment. */}

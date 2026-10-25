@@ -1,5 +1,5 @@
 import * as Sentry from "@sentry/nextjs";
-import { NextResponse, after } from "next/server";
+import { NextResponse } from "next/server";
 import { getDb } from "@/db/client";
 import { LIVE_SLOT_STATES, OWNER_ALERT_EMAIL } from "@/lib/booking/constants";
 import { LaneError, err } from "@/lib/booking/errors";
@@ -15,7 +15,7 @@ import {
   isTrackingCodeViolation,
 } from "@/lib/booking/tracking";
 import { submitBodySchema } from "@/lib/booking/validation";
-import { drainOutboxBestEffort, drainOutboxWithin } from "@/lib/mail/worker";
+import { drainOutboxWithin } from "@/lib/mail/worker";
 
 export const runtime = "nodejs";
 
@@ -181,6 +181,7 @@ export async function POST(request: Request) {
       tracking_code: string;
       total: string;
       status: string;
+      booking_id: string;
       deduped: boolean;
     };
     let rpcResult: RpcResult | null = null;
@@ -272,13 +273,16 @@ export async function POST(request: Request) {
       // Try to deliver the confirmation before responding, so a healthy mailer
       // means the customer's email is genuinely sent when they see the
       // confirmation screen. Budgeted: a slow/broken mailer must not hold the
-      // request. If it times out (or throws before finishing), the 02:00 cron
-      // drains the rest and we tell the UI to say "arriving shortly".
-      const drained = await drainOutboxWithin(IMMEDIATE_DRAIN_BUDGET_MS);
-      if (!drained) {
-        response.emailDeferred = true;
-        after(() => drainOutboxBestEffort().catch(() => {}));
-      }
+      // request. Scoped to THIS booking's rows — one send on a cold instance
+      // already costs most of the budget, so claiming other customers' mail
+      // here made every booking after the first in a burst time out.
+      // If it times out, the hourly backstop cron finishes the rest and we
+      // tell the UI to say "arriving shortly".
+      const drained = await drainOutboxWithin(
+        IMMEDIATE_DRAIN_BUDGET_MS,
+        rpcResult.booking_id,
+      );
+      if (!drained) response.emailDeferred = true;
     }
 
     return NextResponse.json(response, { status: response.deduped ? 200 : 201 });

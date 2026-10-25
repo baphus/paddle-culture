@@ -28,7 +28,30 @@ export interface BatchResult {
   failed: number;
 }
 
-async function claimBatch(db: Db): Promise<ClaimedRow[]> {
+async function claimBatch(db: Db, bookingId?: string): Promise<ClaimedRow[]> {
+  if (bookingId) {
+    // Two-arg call so the inline submit drain claims only this booking's
+    // rows. If the deployed SQL is older than this code (p_booking_id does
+    // not exist yet), PostgREST answers PGRST202 — fall through to the
+    // unfiltered claim rather than failing the customer's submit.
+    const scoped = await db.rpc("rpc_claim_outbox_batch", {
+      p_limit: OUTBOX_CLAIM_LIMIT,
+      p_booking_id: bookingId,
+    });
+    const missingFn =
+      scoped.error?.code === "PGRST202" ||
+      /could not find the function|does not exist/i.test(
+        scoped.error?.message ?? "",
+      );
+    if (!missingFn) {
+      if (scoped.error)
+        throw new Error(`claimBatch RPC failed: ${scoped.error.message}`);
+      return (scoped.data ?? []) as ClaimedRow[];
+    }
+    console.warn(
+      "rpc_claim_outbox_batch has no p_booking_id yet; re-run supabase/rpc-functions.sql to stop draining other bookings' mail inline",
+    );
+  }
   const { data, error } = await db.rpc("rpc_claim_outbox_batch", {
     p_limit: OUTBOX_CLAIM_LIMIT,
   });
@@ -180,11 +203,14 @@ async function processRow(
   }
 }
 
-export async function processOutboxBatch(db?: Db): Promise<BatchResult> {
+export async function processOutboxBatch(
+  db?: Db,
+  bookingId?: string,
+): Promise<BatchResult> {
   const database = db ?? getDb();
   const transport = getSharedTransport();
   const from = fromAddress();
-  const rows = await claimBatch(database);
+  const rows = await claimBatch(database, bookingId);
   const result: BatchResult = { claimed: rows.length, sent: 0, retried: 0, failed: 0 };
 
   // One owner alert per batch: if Gmail auth dies, every row in the batch
@@ -218,6 +244,22 @@ export async function drainOutboxBestEffort(): Promise<void> {
 }
 
 /**
+ * Drain only `bookingId`'s rows, best effort. Use this on the inline path
+ * after a booking commits: the customer's own 2 rows are what must go out
+ * before we answer, and claiming anything else makes them wait behind other
+ * people's mail. Anything left behind is picked up by the backstop cron.
+ */
+export async function drainBookingOutboxBestEffort(
+  bookingId: string,
+): Promise<void> {
+  try {
+    await processOutboxBatch(undefined, bookingId);
+  } catch (e) {
+    console.error("immediate outbox drain failed (cron will retry)", e);
+  }
+}
+
+/**
  * Drain with a hard deadline, for the submit path. `after()` gives no signal
  * back to the request, so the confirmation screen shows before any mail is
  * confirmed sent. Awaiting a bounded drain lets the common case (Gmail healthy)
@@ -225,13 +267,20 @@ export async function drainOutboxBestEffort(): Promise<void> {
  * hold the request past `timeoutMs` — the cron backstop finishes the rest.
  * Never throws; returns whether every claimed row was handled in time.
  */
-export async function drainOutboxWithin(timeoutMs: number): Promise<boolean> {
+export async function drainOutboxWithin(
+  timeoutMs: number,
+  bookingId?: string,
+): Promise<boolean> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const timeout = new Promise<"timeout">((resolve) => {
       timer = setTimeout(() => resolve("timeout"), timeoutMs);
     });
-    const drain = drainOutboxBestEffort().then(() => "done" as const);
+    const drain = (
+      bookingId
+        ? drainBookingOutboxBestEffort(bookingId)
+        : drainOutboxBestEffort()
+    ).then(() => "done" as const);
     const winner = await Promise.race([drain, timeout]);
     return winner === "done";
   } catch (e) {

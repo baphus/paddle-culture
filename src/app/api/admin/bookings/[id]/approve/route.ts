@@ -3,7 +3,7 @@ import { z } from "zod";
 import { LaneError, err } from "@/lib/booking/errors";
 import { requireAdmin } from "@/lib/admin/session";
 import { applyDecision, getDbOrThrow } from "@/lib/admin/decisions";
-import { drainOutboxBestEffort } from "@/lib/mail/worker";
+import { drainBookingOutboxBestEffort } from "@/lib/mail/worker";
 
 export const runtime = "nodejs";
 
@@ -24,7 +24,10 @@ export async function POST(
     }
     const result = await applyDecision(getDbOrThrow(), admin, id, "Approved");
     // Background send of the approval email (best-effort; cron is backstop).
-    if (!result.deduped) after(() => drainOutboxBestEffort().catch(() => {}));
+    // Scoped to this booking so the drain can't spend its time on other
+    // customers' queued mail.
+    if (!result.deduped)
+      after(() => drainBookingOutboxBestEffort(result.id).catch(() => {}));
     return NextResponse.json(result);
   } catch (e) {
     if (e instanceof LaneError) return err(e.code, e.message, e.status);
