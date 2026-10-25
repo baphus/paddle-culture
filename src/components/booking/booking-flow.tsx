@@ -466,13 +466,15 @@ export default function BookingFlow({
   );
 
   const releaseHold = useCallback((holdToRelease: HoldState | null) => {
-    if (!holdToRelease) return;
-    void fetch("/api/holds", {
+    if (!holdToRelease) return Promise.resolve();
+    return fetch("/api/holds", {
       method: "DELETE",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ holdTokens: holdToRelease.tokens }),
       keepalive: true,
-    }).catch(() => {});
+    })
+      .then(() => undefined)
+      .catch(() => undefined); // best-effort: an unreleased hold just expires on its own
   }, []);
 
   /**
@@ -570,13 +572,23 @@ export default function BookingFlow({
     }
   }, [hold, slotGroups, ownerToken, releaseHold]);
 
-  // Returning from details to step 1 — nothing to release: no hold exists
-  // until the review step hands the customer to payment.
-  const returnToTimeSlots = useCallback(() => {
-    handleClearSelection();
+  // Returning from details to step 1. A hold may be live if the customer
+  // reached payment and then navigated back: review → details → select.
+  // Release it and WAIT for the DELETE to land before re-mounting step 1:
+  // step 1 fires /api/availability/month on mount, and if that request beats
+  // the release the customer's own still-held slots come back as "held" and
+  // become unselectable. Keeping the date drops them straight onto the time
+  // grid instead of the date picker. If no hold exists (e.g. they never
+  // reached payment) releaseHold resolves immediately.
+  const returnToTimeSlots = useCallback(async () => {
+    if (hold) {
+      await releaseHold(hold);
+      setHold(null);
+    }
+    handleClearSelection({ keepDate: true });
     setStep("select");
     window.scrollTo({ top: 0, behavior: "smooth" });
-  }, [handleClearSelection]);
+  }, [hold, handleClearSelection, releaseHold]);
 
   const startOver = () => {
     releaseHold(hold);

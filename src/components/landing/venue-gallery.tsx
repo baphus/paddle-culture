@@ -46,42 +46,98 @@ const SLIDES = [
 // Static "likes" per slide — decorative, not interactive state
 const LIKES = [214, 189, 301, 412, 178, 256, 333];
 
+// Horizontal travel (px) before a drag counts as a swipe instead of a tap.
+const SWIPE_THRESHOLD = 48;
+// Inertia factor: how far the track follows the finger past the first photo.
+const EDGE_RESISTANCE = 0.35;
+
 export default function VenueGallery() {
   const [current, setCurrent] = useState(0);
   const [liked, setLiked] = useState<boolean[]>(Array(SLIDES.length).fill(false));
   const [saved, setSaved] = useState<boolean[]>(Array(SLIDES.length).fill(false));
-  const [transitioning, setTransitioning] = useState(false);
+  // Live finger offset (px) while dragging.
+  const [dragX, setDragX] = useState(0);
+  const [dragging, setDragging] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const goTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Drag bookkeeping kept in refs so pointer handlers stay cheap and non-stale.
+  const startXRef = useRef(0);
+  const startYRef = useRef(0);
+  const axisRef = useRef<"none" | "x" | "y">("none");
+  const pointerIdRef = useRef<number | null>(null);
 
   const go = useCallback(
-    (next: number) => {
-      if (transitioning || next === current) return;
-      setTransitioning(true);
-      // Clear any in-flight slide timer so rapid clicks can't overlap.
-      if (goTimeoutRef.current) clearTimeout(goTimeoutRef.current);
-      goTimeoutRef.current = setTimeout(() => {
-        setCurrent(next);
-        setTransitioning(false);
-      }, 220);
+    (target: number) => {
+      setCurrent(((target % SLIDES.length) + SLIDES.length) % SLIDES.length);
     },
-    [current, transitioning],
+    [],
   );
 
-  const prev = useCallback(() => {
-    go((current - 1 + SLIDES.length) % SLIDES.length);
-  }, [current, go]);
+  const prev = useCallback(() => go(current - 1), [current, go]);
 
-  const next = useCallback(() => {
-    go((current + 1) % SLIDES.length);
-  }, [current, go]);
+  const next = useCallback(() => go(current + 1), [current, go]);
 
   useEffect(() => {
+    // Don't auto-advance under the user's finger.
+    if (dragging) return;
     timeoutRef.current = setTimeout(next, 5000);
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
-  }, [current, next]);
+  }, [current, next, dragging]);
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    pointerIdRef.current = e.pointerId;
+    startXRef.current = e.clientX;
+    startYRef.current = e.clientY;
+    axisRef.current = "none";
+    setDragging(true);
+    setDragX(0);
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragging || pointerIdRef.current !== e.pointerId) return;
+    const dx = e.clientX - startXRef.current;
+    const dy = e.clientY - startYRef.current;
+
+    // Decide the gesture axis once, so vertical page scroll is never hijacked.
+    if (axisRef.current === "none") {
+      if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+      axisRef.current = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+      if (axisRef.current === "x") {
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+      }
+    }
+
+    if (axisRef.current === "y") {
+      // Vertical — let the page scroll, cancel the drag.
+      endDrag();
+      return;
+    }
+
+    // Rubber-band at the ends so the edge feels bounded.
+    const atStart = current === 0 && dx > 0;
+    const atEnd = current === SLIDES.length - 1 && dx < 0;
+    setDragX(atStart || atEnd ? dx * EDGE_RESISTANCE : dx);
+  };
+
+  const endDrag = () => {
+    setDragging(false);
+    setDragX(0);
+    axisRef.current = "none";
+    pointerIdRef.current = null;
+  };
+
+  const onPointerUp = () => {
+    if (!dragging) return;
+    const dx = dragX;
+    const isSwipe = Math.abs(dx) > SWIPE_THRESHOLD;
+    if (isSwipe) {
+      if (dx < 0) next();
+      else prev();
+    }
+    endDrag();
+  };
 
   const toggleLike = () =>
     setLiked((prev) => prev.map((v, i) => (i === current ? !v : v)));
@@ -132,28 +188,47 @@ export default function VenueGallery() {
               </span>
             </div>
 
-            {/* ── Photo carousel — 3:4 ── */}
-            <div className="relative aspect-[3/4] w-full overflow-hidden bg-pine">
-              {SLIDES.map((slide, i) => (
-                <div
-                  key={slide.src}
-                  className={cn(
-                    "absolute inset-0 transition-opacity duration-200",
-                    i === current ? "opacity-100 z-10" : "opacity-0 z-0",
-                    transitioning && i === current ? "opacity-0" : "",
-                  )}
-                  aria-hidden={i !== current}
-                >
-                  <Image
-                    src={slide.src}
-                    alt={slide.alt}
-                    fill
-                    sizes="400px"
-                    className="object-cover"
-                    priority={i === 0}
-                  />
-                </div>
-              ))}
+            {/* ── Photo carousel — 3:4, slide + swipe ── */}
+            <div
+              className="relative aspect-[3/4] w-full touch-pan-y select-none overflow-hidden bg-pine"
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerCancel={endDrag}
+              onPointerLeave={() => {
+                if (dragging && pointerIdRef.current === null) endDrag();
+              }}
+              style={{ cursor: dragging ? "grabbing" : "grab" }}
+            >
+              <div
+                className="flex h-full w-full"
+                style={{
+                  transform: `translate3d(calc(${-current * 100}% + ${dragX}px), 0, 0)`,
+                  transition: dragging
+                    ? "none"
+                    : "transform 420ms cubic-bezier(0.22, 1, 0.36, 1)",
+                  willChange: "transform",
+                }}
+              >
+                {SLIDES.map((slide, i) => (
+                  <div
+                    key={slide.src}
+                    className="relative h-full w-full shrink-0 grow-0 basis-full"
+                    aria-hidden={i !== current}
+                    aria-roledescription="slide"
+                  >
+                    <Image
+                      src={slide.src}
+                      alt={slide.alt}
+                      fill
+                      sizes="400px"
+                      className="pointer-events-none object-cover"
+                      priority={i === 0}
+                      draggable={false}
+                    />
+                  </div>
+                ))}
+              </div>
 
               {/* Ghost nav arrows */}
               <button
