@@ -773,14 +773,27 @@ export default function Step1DateTime({
                                     aria-pressed={isSel}
                                     aria-label={`${formatSlotRange(iso)}${overnight ? ` (${slotDateShort(iso)} next day)` : ""} - ${rateLabel} - ${isSel ? "Selected" : "Available"}`}
                                     title={rateLabel}
-                                    className={cn(
-                                      "flex items-center justify-center mx-auto rounded-full border-2 size-8 transition-all",
-                                      isSel
-                                        ? "border-flame bg-flame text-white shadow-sm scale-110"
-                                        : "border-flame/40 bg-flame/5 hover:bg-flame/15 hover:border-flame/70",
-                                    )}
+                                    className="mx-auto flex flex-col items-center gap-0.5"
                                   >
-                                    {isSel && <Check className="size-3.5" strokeWidth={3} />}
+                                    <span
+                                      className={cn(
+                                        "flex items-center justify-center rounded-full border-2 size-8 transition-all",
+                                        isSel
+                                          ? "border-flame bg-flame text-white shadow-sm scale-110"
+                                          : "border-flame/40 bg-flame/5 hover:bg-flame/15 hover:border-flame/70",
+                                      )}
+                                    >
+                                      {isSel && <Check className="size-3.5" strokeWidth={3} />}
+                                    </span>
+                                    <span
+                                      className={cn(
+                                        "text-[9px] font-bold leading-none",
+                                        isSel ? "text-flame" : "text-warm-muted",
+                                      )}
+                                      aria-hidden
+                                    >
+                                      {configuredRate ? peso(configuredRate.amount) : "—"}
+                                    </span>
                                   </button>
                                 )}
                               </td>
