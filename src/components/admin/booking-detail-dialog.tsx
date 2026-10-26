@@ -30,12 +30,12 @@ function pesos(total: string): string {
 /** Copy for the approve/reject/refund/delete confirmation dialog. */
 const DECISION_COPY: Record<
   Exclude<BookingDecision, null>,
-  { title: string; description: (email: string) => string }
+  { title: string; description: (booking: BookingDetail | null) => string }
 > = {
   approve: {
     title: "Approve booking",
-    description: (email) =>
-      `This approves the booking and emails a confirmation to ${email}.`,
+    description: (booking) =>
+      `This approves the booking and emails a confirmation to ${booking?.email ?? "the customer"}.`,
   },
   reject: {
     title: "Reject booking",
@@ -43,14 +43,16 @@ const DECISION_COPY: Record<
       "This rejects the booking and emails the customer. A reason is required.",
   },
   refund: {
-    title: "Refund booking",
-    description: (email) =>
-      `This marks the booking as Refunded, releases its court slots, and emails ${email}. It will no longer count as revenue in Finance.`,
+    title: "Full refund",
+    description: (booking) =>
+      `This releases the court slots and emails ${booking?.email ?? "the customer"} that ${
+        booking ? pesos(booking.total) : "the amount"
+      } has been wired back to them. The refunded amount is removed from Finance and Revenue, so it no longer counts as income.`,
   },
   delete: {
     title: "Delete booking",
     description: () =>
-      "This permanently deletes the booking, its payment proof, and its email history. This cannot be undone.",
+      "This permanently deletes the booking and everything under it — court slots, rentals, payment proof, and email history. The slots become bookable again, and if the booking was approved its amount also disappears from Finance and Revenue. This cannot be undone.",
   },
 };
 
@@ -323,9 +325,7 @@ export function BookingDetailDialog({
             </DialogTitle>
             <DialogDescription>
               {decision
-                ? DECISION_COPY[decision].description(
-                    booking?.email ?? "the customer",
-                  )
+                ? DECISION_COPY[decision].description(booking)
                 : ""}
             </DialogDescription>
           </DialogHeader>
@@ -421,7 +421,7 @@ export function BookingDetailDialog({
                 </span>
               ) : decision === "refund" ? (
                 <span className="flex items-center gap-1.5">
-                  <RotateCcw className="size-3.5" /> Refund
+                  <RotateCcw className="size-3.5" /> Full refund
                 </span>
               ) : decision === "delete" ? (
                 <span className="flex items-center gap-1.5">

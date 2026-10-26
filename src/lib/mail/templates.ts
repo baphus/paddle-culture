@@ -1024,7 +1024,7 @@ export async function renderOutboxEmail(
       const textLines = [
         `Hi ${fullName},`,
         "",
-        "Your booking has been refunded and its slots have been released.",
+        "Your refund has been wired back to you, and the booking's slots have been released.",
         "",
         `Name:  ${fullName}`,
         `Email: ${email}`,
@@ -1043,7 +1043,7 @@ export async function renderOutboxEmail(
       const htmlBody = `
         ${greeting(fullName)}
         <div style="margin-bottom:20px;">${statusBadge("Refunded", BRAND.oat, BRAND.pine)}</div>
-        ${p("Your booking has been refunded and its slots have been released.")}
+        ${p("Your refund has been wired back to you, and the booking's slots have been released.")}
 
         ${sectionLabel("Customer")}
         ${customerBlock(fullName, email, phone)}
@@ -1072,7 +1072,7 @@ export async function renderOutboxEmail(
         subject: "CK Grounds — booking refunded",
         text: textLines.join("\n"),
         html: emailShell({
-          preheader: "Your booking has been refunded.",
+          preheader: "Your refund has been wired back to you.",
           body: htmlBody,
         }),
       };
