@@ -4,6 +4,7 @@ import {
   Info,
   KeyRound,
   Pencil,
+  RotateCcw,
   UserCheck,
   UserX,
   XCircle,
@@ -34,6 +35,11 @@ const BOOKING_STATUS_STYLES: Record<StatusKey, Style> = {
     icon: XCircle,
     className:
       "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/15 dark:text-rose-300",
+  },
+  Refunded: {
+    icon: RotateCcw,
+    className:
+      "border-zinc-200 bg-zinc-50 text-zinc-700 dark:border-zinc-500/30 dark:bg-zinc-500/15 dark:text-zinc-300",
   },
 };
 

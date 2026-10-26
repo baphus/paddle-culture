@@ -43,6 +43,7 @@ export interface TrackViewProps {
   phone: string;
   total: string;
   rejectReason?: string | null;
+  refundReason?: string | null;
   trackingCode: string;
   /** Manila selection date from `bookings.play_date`. Null only if the row
    *  predates the column; the invoice then falls back to the slot instants. */
@@ -61,6 +62,7 @@ export default function TrackView({
   phone,
   total,
   rejectReason,
+  refundReason,
   trackingCode,
   playDate,
   slots,
@@ -156,6 +158,11 @@ export default function TrackView({
                 <BadgeAlert className="size-4" />
                 <span>Booking Rejected</span>
               </span>
+            ) : status === "Refunded" ? (
+              <span className="inline-flex items-center gap-2 rounded-2xl border border-line-warm/60 bg-surface-dim/40 px-4 py-2 text-xs font-extrabold text-ink shadow-xs">
+                <RotateCcw className="size-4" />
+                <span>Booking Refunded</span>
+              </span>
             ) : (
               <span className="inline-flex items-center gap-2 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-extrabold text-amber-800 shadow-xs">
                 <Clock className="size-4 animate-spin text-amber-600" />
@@ -175,6 +182,19 @@ export default function TrackView({
                 for fast check-in on your game day.
               </span>
             </p>
+          ) : status === "Refunded" ? (
+            <div className="space-y-1">
+              <p className="font-bold">This booking has been refunded.</p>
+              <p className="font-normal text-ink">
+                Its court slots have been released. If you have questions about
+                the refund, please contact us.
+              </p>
+              {refundReason && (
+                <p className="font-normal text-ink">
+                  <strong>Note:</strong> {refundReason}
+                </p>
+              )}
+            </div>
           ) : status === "Rejected" ? (
             <div className="space-y-1 text-error">
               <p className="font-bold">This booking could not be approved.</p>
@@ -222,7 +242,9 @@ export default function TrackView({
         <p className="mb-6 text-center text-xs leading-relaxed text-warm-muted sm:text-sm">
           {status === "Approved"
             ? "Your booking is confirmed. Show this QR code at the CK Grounds front desk on your game day to check in."
-            : "Keep this QR code for your records. Check your booking status above; show the QR at the front desk after your reservation is approved."}
+            : status === "Refunded"
+              ? "This booking was refunded, so this QR pass is no longer valid for check-in."
+              : "Keep this QR code for your records. Check your booking status above; show the QR at the front desk after your reservation is approved."}
           {" "}If you cannot show the QR, staff can look up your booking with the tracking code.
         </p>
 

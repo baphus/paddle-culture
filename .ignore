@@ -1,0 +1,3 @@
+# allow deepwork progress files through ignore-aware tooling
+!.slim/deepwork/
+!.slim/deepwork/**

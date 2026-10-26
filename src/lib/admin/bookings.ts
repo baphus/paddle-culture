@@ -17,7 +17,7 @@ import type { TotalLine } from "@/lib/booking/pricing";
 // All Drizzle ORM imports replaced with @supabase/supabase-js HTTP client.
 
 export const BOOKINGS_PAGE_SIZE = 20;
-export const BOOKING_STATUSES = ["Pending", "Approved", "Rejected"] as const;
+export const BOOKING_STATUSES = ["Pending", "Approved", "Rejected", "Refunded"] as const;
 
 /** One booking_slots row joined with its court name (embedded `courts`). */
 type SlotJoinRow = {
@@ -66,6 +66,7 @@ export interface BookingDetail {
   total: string;
   status: string;
   rejectReason: string | null;
+  refundReason: string | null;
   createdAt: string;
   trackingToken: string;
   trackingCode: string;
@@ -100,14 +101,18 @@ function playDateOrNull(row: object): string | null {
 }
 
 /**
- * True when Postgres reports the `play_date` column is missing (migration
- * `drizzle/0004_play_date.sql` not applied yet). Any other error is a real one
- * and must still surface.
+ * True when Postgres reports one of the optional columns is missing
+ * (`play_date` from drizzle/0004_play_date.sql, `refund_reason` from
+ * supabase/refund.sql not applied yet). Any other error is a real one and must
+ * still surface.
  */
-function bookingsNeedsPlayDateFallback(error: { message?: string; code?: string }): boolean {
+function bookingsNeedsOptionalColumnsFallback(error: { message?: string; code?: string }): boolean {
   if (error.code === "42703") return true;
   const message = error.message ?? "";
-  return /play_date/i.test(message) && /does not exist|unknown column|no such column/i.test(message);
+  return (
+    /play_date|refund_reason/i.test(message) &&
+    /does not exist|unknown column|no such column/i.test(message)
+  );
 }
 
 /**
@@ -257,7 +262,7 @@ export async function listBookings(
   type PageRow = {
     id: string; tracking_token: string; tracking_code: string; status: string;
     full_name: string; email: string; phone: string; total: string;
-    reject_reason: string | null; created_at: string; play_date?: string | null; paid_cash?: boolean | null;
+    reject_reason: string | null; refund_reason?: string | null; created_at: string; play_date?: string | null; paid_cash?: boolean | null;
   };
   const pageSize = params.limit ?? BOOKINGS_PAGE_SIZE;
   const requestedPage = Math.max(1, params.page);
@@ -282,7 +287,7 @@ export async function listBookings(
     // The selects are split into two literal calls on purpose: a template-union
     // select in one expression makes TS explode the PostgREST builder's type.
     const base = withPlayDate
-      ? db.from("bookings").select(`play_date,paid_cash,${dataColumns}`)
+      ? db.from("bookings").select(`play_date,paid_cash,refund_reason,${dataColumns}`)
       : db.from("bookings").select(dataColumns);
     const ordered = base.order("created_at", { ascending: false });
     const { data, error } = await withFilters(ordered).range(...rangeFor(page));
@@ -310,7 +315,7 @@ export async function listBookings(
     try {
       return await readPage(page, true);
     } catch (error) {
-      if (!bookingsNeedsPlayDateFallback(error as { code?: string; message?: string })) throw error;
+      if (!bookingsNeedsOptionalColumnsFallback(error as { code?: string; message?: string })) throw error;
       return readPage(page, false);
     }
   }
@@ -368,6 +373,7 @@ export async function listBookings(
       total: b.total,
       status: b.status,
       rejectReason: b.reject_reason,
+      refundReason: b.refund_reason ?? null,
       createdAt: b.created_at,
       trackingToken: b.tracking_token,
       trackingCode: b.tracking_code,
@@ -549,19 +555,19 @@ export async function getBookingById(
   type DetailRow = {
     id: string; tracking_token: string; tracking_code: string; status: string;
     full_name: string; email: string; phone: string; total: string;
-    reject_reason: string | null; created_at: string; play_date?: string | null; paid_cash?: boolean | null;
+    reject_reason: string | null; refund_reason?: string | null; created_at: string; play_date?: string | null; paid_cash?: boolean | null;
   };
   type DetailResult = { data: DetailRow | null; error: { code?: string; message?: string } | null };
   async function readBooking(withPlayDate: boolean): Promise<DetailResult> {
     const query = withPlayDate
-      ? db.from("bookings").select(`play_date,paid_cash,${detailColumns}`)
+      ? db.from("bookings").select(`play_date,paid_cash,refund_reason,${detailColumns}`)
       : db.from("bookings").select(detailColumns);
     return (await query.eq("id", id).single()) as DetailResult;
   }
   let { data: booking, error: bookingError } = await readBooking(true);
   // Database without `bookings.play_date` (migration not applied): retry without
   // it rather than reporting the booking as missing. See playDateOrNull.
-  if (bookingError && bookingsNeedsPlayDateFallback(bookingError)) {
+  if (bookingError && bookingsNeedsOptionalColumnsFallback(bookingError)) {
     ({ data: booking, error: bookingError } = await readBooking(false));
   }
   if (bookingError || !booking) return null;
@@ -599,6 +605,7 @@ export async function getBookingById(
     total: b.total,
     status: b.status,
     rejectReason: b.reject_reason,
+    refundReason: b.refund_reason ?? null,
     createdAt: b.created_at,
     trackingToken: b.tracking_token,
     trackingCode: b.tracking_code,

@@ -50,7 +50,11 @@ export default async function TrackPage({
   async function readBooking(withPlayDate: boolean) {
     return db
       .from("bookings")
-      .select(withPlayDate ? `${trackColumns},play_date` : trackColumns)
+      .select(
+        withPlayDate
+          ? `${trackColumns},play_date,refund_reason`
+          : trackColumns,
+      )
       .eq("tracking_token", token)
       .single();
   }
@@ -62,6 +66,7 @@ export default async function TrackPage({
     phone: string;
     total: string;
     reject_reason: string | null;
+    refund_reason?: string | null;
     tracking_code: string;
     /** Manila selection date, written at creation by rpc_submit_booking. */
     play_date?: string | null;
@@ -139,6 +144,7 @@ export default async function TrackPage({
             phone={booking.phone}
             total={booking.total}
             rejectReason={booking.reject_reason}
+            refundReason={booking.refund_reason}
             trackingCode={booking.tracking_code}
             slots={serializedSlots}
             playDate={booking.play_date ?? null}

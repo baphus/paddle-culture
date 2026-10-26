@@ -16,6 +16,7 @@ import { VENUE_ADDRESS } from "../venue";
 
 export const OUTBOX_TEMPLATE_CUSTOMER_APPROVED = "booking_customer_approved";
 export const OUTBOX_TEMPLATE_CUSTOMER_REJECTED = "booking_customer_rejected";
+export const OUTBOX_TEMPLATE_CUSTOMER_REFUNDED = "booking_customer_refunded";
 
 /** Inline (Content-ID) attachment consumed by nodemailer. */
 export interface EmailAttachment {
@@ -1012,6 +1013,68 @@ export async function renderOutboxEmail(
         }),
         attachments:
           qrPngBuf && qrCid ? [qrAttachment(qrPngBuf, qrCid)] : undefined,
+      };
+    }
+
+    // -----------------------------------------------------------------------
+    case OUTBOX_TEMPLATE_CUSTOMER_REFUNDED: {
+      // Optional admin note; the email is sent even when no reason was recorded.
+      const reason = str(payload.refundReason);
+
+      const textLines = [
+        `Hi ${fullName},`,
+        "",
+        "Your booking has been refunded and its slots have been released.",
+        "",
+        `Name:  ${fullName}`,
+        `Email: ${email}`,
+        `Phone: ${phone}`,
+        "",
+        "BOOKING",
+        ...textSessions(sessions),
+        ...(total ? ["", `Amount: ${total}`] : []),
+        ...(reason ? ["", `Note: ${reason}`] : []),
+        "",
+        ...(url ? ["Booking reference:", url] : []),
+        "If you have questions about the refund, reply to this email.",
+        "— CK Grounds",
+      ];
+
+      const htmlBody = `
+        ${greeting(fullName)}
+        <div style="margin-bottom:20px;">${statusBadge("Refunded", BRAND.oat, BRAND.pine)}</div>
+        ${p("Your booking has been refunded and its slots have been released.")}
+
+        ${sectionLabel("Customer")}
+        ${customerBlock(fullName, email, phone)}
+
+        ${sectionLabel("Booking")}
+        ${sessionsBlock(sessions)}
+
+        ${
+          reason
+            ? `<div style="margin-bottom:24px;padding:14px 16px;background-color:${BRAND.oat};
+                    border-left:3px solid ${BRAND.pine};border-radius:0 6px 6px 0;">
+          <p style="margin:0 0 4px;font-size:11px;font-weight:600;letter-spacing:0.8px;
+                    text-transform:uppercase;color:${BRAND.pine};">Note</p>
+          <p style="margin:0;font-size:14px;color:${BRAND.ink};line-height:1.5;">
+            ${escapeHtml(reason)}
+          </p>
+        </div>`
+            : ""
+        }
+
+        ${url ? `${sectionLabel("Booking reference")}${ctaButton("View Booking", url)}` : ""}
+
+        ${p("If you have questions about the refund, reply to this email.")}`;
+
+      return {
+        subject: "CK Grounds — booking refunded",
+        text: textLines.join("\n"),
+        html: emailShell({
+          preheader: "Your booking has been refunded.",
+          body: htmlBody,
+        }),
       };
     }
 

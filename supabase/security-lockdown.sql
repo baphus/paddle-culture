@@ -99,6 +99,9 @@ REVOKE ALL ON FUNCTION rpc_apply_decision(uuid, text, text, text)               
 REVOKE ALL ON FUNCTION rpc_submit_booking(text, text, text, text, text, text, text, text[], jsonb, int, text, text, text, text, int, jsonb, text, jsonb, jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION rpc_delete_expired_proofs(timestamptz)                                           FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION rpc_admin_create_booking(text, text, text, text, text, text, text, jsonb, jsonb, int, text, text, text, text, int, boolean, jsonb, text, boolean) FROM PUBLIC, anon, authenticated;
+-- Added by supabase/refund.sql and supabase/booking-delete.sql.
+REVOKE ALL ON FUNCTION rpc_refund_booking(uuid, text, text)                                             FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION rpc_delete_booking(uuid, text)                                                    FROM PUBLIC, anon, authenticated;
 
 GRANT EXECUTE ON FUNCTION rpc_replace_court_hours(uuid, int[], time, time, numeric, text)                  TO service_role;
 GRANT EXECUTE ON FUNCTION rpc_add_court_hours(uuid, int[], time, time, numeric, boolean, text)             TO service_role;
@@ -108,6 +111,9 @@ GRANT EXECUTE ON FUNCTION rpc_apply_decision(uuid, text, text, text)            
 GRANT EXECUTE ON FUNCTION rpc_submit_booking(text, text, text, text, text, text, text, text[], jsonb, int, text, text, text, text, int, jsonb, text, jsonb, jsonb) TO service_role;
 GRANT EXECUTE ON FUNCTION rpc_delete_expired_proofs(timestamptz)                                           TO service_role;
 GRANT EXECUTE ON FUNCTION rpc_admin_create_booking(text, text, text, text, text, text, text, jsonb, jsonb, int, text, text, text, text, int, boolean, jsonb, text, boolean) TO service_role;
+-- Added by supabase/refund.sql and supabase/booking-delete.sql.
+GRANT EXECUTE ON FUNCTION rpc_refund_booking(uuid, text, text)                                             TO service_role;
+GRANT EXECUTE ON FUNCTION rpc_delete_booking(uuid, text)                                                    TO service_role;
 
 GRANT ALL ON ALL TABLES    IN SCHEMA public TO service_role;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;

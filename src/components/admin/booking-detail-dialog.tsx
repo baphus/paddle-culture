@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
-import { Check, Maximize2, X } from "lucide-react";
+import { Check, Maximize2, RotateCcw, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,7 +27,34 @@ function pesos(total: string): string {
   })}`;
 }
 
-export type BookingDecision = "approve" | "reject" | null;
+/** Copy for the approve/reject/refund/delete confirmation dialog. */
+const DECISION_COPY: Record<
+  Exclude<BookingDecision, null>,
+  { title: string; description: (email: string) => string }
+> = {
+  approve: {
+    title: "Approve booking",
+    description: (email) =>
+      `This approves the booking and emails a confirmation to ${email}.`,
+  },
+  reject: {
+    title: "Reject booking",
+    description: () =>
+      "This rejects the booking and emails the customer. A reason is required.",
+  },
+  refund: {
+    title: "Refund booking",
+    description: (email) =>
+      `This marks the booking as Refunded, releases its court slots, and emails ${email}. It will no longer count as revenue in Finance.`,
+  },
+  delete: {
+    title: "Delete booking",
+    description: () =>
+      "This permanently deletes the booking, its payment proof, and its email history. This cannot be undone.",
+  },
+};
+
+export type BookingDecision = "approve" | "reject" | "refund" | "delete" | null;
 
 /**
  * The admin booking view modal: customer facts, payment proof with an in-app
@@ -56,7 +83,7 @@ export function BookingDetailDialog({
   onDecided?: () => void;
 }) {
   const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
+  const [busy, setBusy] = useState<Exclude<BookingDecision, null> | null>(null);
   const [proofUrl, setProofUrl] = useState<string | null>(null);
   const [proofFailed, setProofFailed] = useState(false);
   const [proofExpanded, setProofExpanded] = useState(false);
@@ -64,6 +91,7 @@ export function BookingDetailDialog({
   const bookingId = booking?.id ?? null;
   const proofPath = booking?.proofPath ?? null;
   const pending = booking?.status === "Pending";
+  const approved = booking?.status === "Approved";
   const proofOpen = open || decision !== null;
 
   function closeDecision() {
@@ -105,7 +133,7 @@ export function BookingDetailDialog({
     if (!proofOpen) setProofExpanded(false);
   }, [proofOpen]);
 
-  async function decide(kind: "approve" | "reject") {
+  async function decide(kind: Exclude<BookingDecision, null>) {
     if (!booking) return;
     if (kind === "reject" && !reason.trim()) {
       toast.error("A rejection reason is required.");
@@ -116,11 +144,16 @@ export function BookingDetailDialog({
       const res = await fetch(`/api/admin/bookings/${booking.id}/${kind}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(kind === "reject" ? { reason: reason.trim() } : {}),
+        body: JSON.stringify(
+          kind === "reject" || kind === "refund"
+            ? { reason: reason.trim() || undefined }
+            : {},
+        ),
       });
       const data = (await res.json()) as {
         error?: { message?: string };
         deduped?: boolean;
+        deleted?: boolean;
         status?: string;
       };
       if (!res.ok) {
@@ -128,11 +161,17 @@ export function BookingDetailDialog({
         return;
       }
       toast.success(
-        data.deduped
-          ? `Already ${data.status ?? booking.status} — no duplicate email sent.`
-          : kind === "approve"
-            ? "Booking approved."
-            : "Booking rejected.",
+        kind === "delete"
+          ? data.deleted === false
+            ? "Booking was already deleted."
+            : "Booking deleted."
+          : data.deduped
+            ? `Already ${data.status ?? booking.status} — no duplicate email sent.`
+            : kind === "approve"
+              ? "Booking approved."
+              : kind === "refund"
+                ? "Booking refunded."
+                : "Booking rejected.",
       );
       closeDecision();
       onOpenChange(false);
@@ -213,25 +252,45 @@ export function BookingDetailDialog({
                   )}
                 </div>
 
-                {pending && (
-                  <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2">
+                  {pending && (
+                    <>
+                      <Button
+                        size="sm"
+                        disabled={busy !== null}
+                        onClick={() => onDecisionChange("approve")}
+                      >
+                        <Check className="size-3.5" /> Approve
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        disabled={busy !== null}
+                        onClick={() => onDecisionChange("reject")}
+                      >
+                        <X className="size-3.5" /> Reject
+                      </Button>
+                    </>
+                  )}
+                  {approved && (
                     <Button
+                      variant="outline"
                       size="sm"
                       disabled={busy !== null}
-                      onClick={() => onDecisionChange("approve")}
+                      onClick={() => onDecisionChange("refund")}
                     >
-                      <Check className="size-3.5" /> Approve
+                      <RotateCcw className="size-3.5" /> Refund
                     </Button>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      disabled={busy !== null}
-                      onClick={() => onDecisionChange("reject")}
-                    >
-                      <X className="size-3.5" /> Reject
-                    </Button>
-                  </div>
-                )}
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={busy !== null}
+                    onClick={() => onDecisionChange("delete")}
+                  >
+                    <Trash2 className="size-3.5" /> Delete
+                  </Button>
+                </div>
               </div>
 
 
@@ -260,12 +319,14 @@ export function BookingDetailDialog({
         >
           <DialogHeader className="gap-1 border-b px-5 py-4 pr-10">
             <DialogTitle>
-              {decision === "reject" ? "Reject booking" : "Approve booking"}
+              {decision ? DECISION_COPY[decision].title : "Approve booking"}
             </DialogTitle>
             <DialogDescription>
-              {decision === "reject"
-                ? "This rejects the booking and emails the customer. A reason is required."
-                : `This approves the booking and emails a confirmation to ${booking?.email ?? "the customer"}.`}
+              {decision
+                ? DECISION_COPY[decision].description(
+                    booking?.email ?? "the customer",
+                  )
+                : ""}
             </DialogDescription>
           </DialogHeader>
 
@@ -304,16 +365,23 @@ export function BookingDetailDialog({
               </div>
             )}
 
-            {decision === "reject" && booking && (
+            {(decision === "reject" || decision === "refund") && booking && (
               <div className="mt-4 space-y-1.5">
                 <Label htmlFor={`reason-${booking.id}`}>
-                  Rejection reason (required)
+                  {decision === "reject"
+                    ? "Rejection reason (required)"
+                    : "Refund note (optional)"}
                 </Label>
                 <Input
                   id={`reason-${booking.id}`}
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
-                  placeholder="Reason for rejection…"
+                  maxLength={500}
+                  placeholder={
+                    decision === "reject"
+                      ? "Reason for rejection…"
+                      : "Why this booking was refunded (optional)…"
+                  }
                 />
               </div>
             )}
@@ -328,18 +396,36 @@ export function BookingDetailDialog({
               Cancel
             </Button>
             <Button
-              variant={decision === "reject" ? "destructive" : "default"}
+              variant={
+                decision === "reject" || decision === "delete"
+                  ? "destructive"
+                  : "default"
+              }
               disabled={busy !== null}
               onClick={() => decision && decide(decision)}
             >
-              {busy !== null ? (
+              {decision === null ? null : busy !== null ? (
                 <span className="flex items-center gap-1.5">
                   <LoadingAnimation size="compact" label="Saving" />
-                  {decision === "reject" ? "Rejecting…" : "Approving…"}
+                  {decision === "reject"
+                    ? "Rejecting…"
+                    : decision === "refund"
+                      ? "Refunding…"
+                      : decision === "delete"
+                        ? "Deleting…"
+                        : "Approving…"}
                 </span>
               ) : decision === "reject" ? (
                 <span className="flex items-center gap-1.5">
                   <X className="size-3.5" /> Reject
+                </span>
+              ) : decision === "refund" ? (
+                <span className="flex items-center gap-1.5">
+                  <RotateCcw className="size-3.5" /> Refund
+                </span>
+              ) : decision === "delete" ? (
+                <span className="flex items-center gap-1.5">
+                  <Trash2 className="size-3.5" /> Delete
                 </span>
               ) : (
                 <span className="flex items-center gap-1.5">
@@ -391,6 +477,9 @@ function BookingSummary({ booking }: { booking: BookingDetail }) {
       <DetailRow label="Total" value={pesos(booking.total)} bold />
       {booking.rejectReason && (
         <DetailRow label="Reject reason" value={booking.rejectReason} />
+      )}
+      {booking.refundReason && (
+        <DetailRow label="Refund note" value={booking.refundReason} />
       )}
     </div>
   );

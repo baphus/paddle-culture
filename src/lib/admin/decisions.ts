@@ -37,14 +37,7 @@ export async function applyDecision(
   });
 
   if (error) {
-    // Translate Postgres exception messages back to LaneErrors
-    const msg = error.message ?? "";
-    if (msg.includes("NOT_FOUND")) throw new LaneError("NOT_FOUND", "Booking not found.", 404);
-    if (msg.includes("WRONG_STATUS")) {
-      const detail = msg.replace(/^WRONG_STATUS:\s*/, "");
-      throw new LaneError("WRONG_STATUS", detail, 409);
-    }
-    throw new LaneError("INTERNAL", "Decision failed.", 500);
+    throw translateDecisionError(error, "Decision failed.");
   }
 
   const result = data as {
@@ -60,6 +53,74 @@ export async function applyDecision(
     trackingToken: result.tracking_token,
     deduped: result.deduped,
   };
+}
+
+/** Map the RPCs' RAISE EXCEPTION prefixes back to LaneErrors. */
+function translateDecisionError(
+  error: { message?: string },
+  fallback: string,
+): LaneError {
+  const msg = error.message ?? "";
+  if (msg.includes("NOT_FOUND"))
+    return new LaneError("NOT_FOUND", "Booking not found.", 404);
+  if (msg.includes("WRONG_STATUS")) {
+    const detail = msg.replace(/^WRONG_STATUS:\s*/, "");
+    return new LaneError("WRONG_STATUS", detail, 409);
+  }
+  return new LaneError("INTERNAL", fallback, 500);
+}
+
+/**
+ * Refund an Approved booking: status -> Refunded, slots released, customer
+ * email queued, audit written (rpc_refund_booking). Idempotent.
+ */
+export async function refundBooking(
+  db: Db,
+  admin: AdminSession,
+  bookingId: string,
+  reason?: string,
+): Promise<DecisionResult> {
+  const { data, error } = await db.rpc("rpc_refund_booking", {
+    p_booking_id: bookingId,
+    p_actor_email: admin.email,
+    p_reason: reason || null,
+  });
+  if (error) throw translateDecisionError(error, "Refund failed.");
+
+  const result = data as {
+    id: string;
+    status: string;
+    tracking_token: string;
+    deduped: boolean;
+  };
+  return {
+    id: result.id,
+    status: result.status,
+    trackingToken: result.tracking_token,
+    deduped: result.deduped,
+  };
+}
+
+export interface DeleteBookingResult {
+  id: string;
+  /** false when the booking was already gone (re-delete). */
+  deleted: boolean;
+}
+
+/** Permanently delete a booking and its dependent rows (rpc_delete_booking). */
+export async function deleteBooking(
+  db: Db,
+  admin: AdminSession,
+  bookingId: string,
+): Promise<DeleteBookingResult> {
+  const { data, error } = await db.rpc("rpc_delete_booking", {
+    p_booking_id: bookingId,
+    p_actor_email: admin.email,
+  });
+  if (error) throw translateDecisionError(error, "Delete failed.");
+
+  const result = data as { id: string; deleted: boolean };
+  return { id: result.id, deleted: result.deleted };
 }
 
 export function getDbOrThrow(): Db {

@@ -59,6 +59,8 @@ function eventColors(status: string) {
       return { pill: "bg-amber-50 text-amber-800 border-amber-200", dot: "bg-amber-500" };
     case "Rejected":
       return { pill: "bg-rose-50 text-rose-800 border-rose-200", dot: "bg-rose-500" };
+    case "Refunded":
+      return { pill: "bg-zinc-50 text-zinc-700 border-zinc-200", dot: "bg-zinc-400" };
     default:
       return { pill: "bg-zinc-50 text-zinc-700 border-zinc-200", dot: "bg-zinc-400" };
   }
@@ -580,7 +582,7 @@ export default function CalendarView({
 
       {/* ── Legend ───────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-4 border-t border-border px-4 py-2.5">
-        {(["Approved", "Pending", "Rejected"] as const).map((s) => {
+        {(["Approved", "Pending", "Rejected", "Refunded"] as const).map((s) => {
           const c = eventColors(s);
           return (
             <span key={s} className="flex items-center gap-1.5 text-[11px] font-semibold text-foreground/70">

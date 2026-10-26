@@ -24,8 +24,9 @@ import {
  *   generated migration SQL (see drizzle/ migration file header).
  * - `defaultRandom()` emits `gen_random_uuid()` (pgcrypto — pre-enabled on
  *   Supabase; the migration preamble also runs CREATE EXTENSION IF NOT EXISTS).
- * - Booking lifecycle is Pending → Approved | Rejected ONLY. No Cancelled,
- *   no void, no ref_number (owner-frozen, ADR-02).
+ * - Booking lifecycle is Pending → Approved | Rejected, plus Approved →
+ *   Refunded (admin refund; see supabase/refund.sql). No Cancelled, no void,
+ *   no ref_number (owner-frozen, ADR-02).
  */
 
 // ---------------------------------------------------------------- courts ---
@@ -177,6 +178,11 @@ export const bookings = pgTable(
      */
     approvedAt: timestamp("approved_at", { withTimezone: true }),
     rejectReason: text("reject_reason"),
+    /**
+     * Optional admin note recorded by rpc_refund_booking. Applied by hand via
+     * supabase/refund.sql (a new column that RPC writes, per the repo rules).
+     */
+    refundReason: text("refund_reason"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -187,7 +193,7 @@ export const bookings = pgTable(
   (t) => [
     check(
       "bookings_status_check",
-      sql`${t.status} IN ('Pending', 'Approved', 'Rejected')`,
+      sql`${t.status} IN ('Pending', 'Approved', 'Rejected', 'Refunded')`,
     ),
   ],
 );

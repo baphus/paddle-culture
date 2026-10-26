@@ -10,6 +10,9 @@ tsconfig.tsbuildinfo
 .env
 .env*.local
 
+# deepwork session state (git-local)
+.slim/deepwork/
+
 # OS / editor
 .DS_Store
 Thumbs.db

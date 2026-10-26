@@ -17,9 +17,9 @@ const trackPage = readFileSync(join(root, "src/app/track/[token]/page.tsx"), "ut
 test("missing play_date is detected narrowly, not as a blanket catch-all", () => {
   // Must key off the Postgres undefined_column code and the column name, so a
   // genuinely broken query (bad join, RLS, network) still surfaces.
-  assert.match(admin, /function bookingsNeedsPlayDateFallback/);
+  assert.match(admin, /function bookingsNeedsOptionalColumnsFallback/);
   assert.match(admin, /error\.code === "42703"/);
-  assert.match(admin, /\/play_date\/i\.test\(message\)/);
+  assert.match(admin, /\/play_date\|refund_reason\/i\.test\(message\)/);
   assert.match(admin, /does not exist/);
 
   // Same narrow check in the tracking page.
@@ -30,7 +30,7 @@ test("missing play_date is detected narrowly, not as a blanket catch-all", () =>
 test("listBookings retries without play_date instead of throwing", () => {
   assert.match(admin, /async function readPage\(page: number, withPlayDate: boolean\)/);
   assert.match(admin, /async function readPageWithFallback/);
-  assert.match(admin, /if \(!bookingsNeedsPlayDateFallback\([\s\S]{0,120}?\)\) throw error;/);
+  assert.match(admin, /if \(!bookingsNeedsOptionalColumnsFallback\([\s\S]{0,120}?\)\) throw error;/);
   assert.match(admin, /return readPage\(page, false\);/);
 });
 
@@ -38,7 +38,7 @@ test("getBookingById retries without play_date instead of reporting 'not found'"
   assert.match(admin, /async function readBooking\(withPlayDate: boolean\)/);
   assert.match(
     admin,
-    /if \(bookingError && bookingsNeedsPlayDateFallback\(bookingError\)\) \{\s*\(\{ data: booking, error: bookingError \} = await readBooking\(false\)\);/,
+    /if \(bookingError && bookingsNeedsOptionalColumnsFallback\(bookingError\)\) \{\s*\(\{ data: booking, error: bookingError \} = await readBooking\(false\)\);/,
   );
 });
 
