@@ -10,7 +10,8 @@ import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { EXPENSE_CATEGORIES, type ExpenseInput } from "@/lib/admin/expenses";
-import { buildFinanceCsv, type FinanceExportBooking } from "@/lib/admin/finance-export";
+import writeXlsxFile from "write-excel-file/browser";
+import { buildFinanceSheet, type FinanceExportBooking } from "@/lib/admin/finance-export";
 
 export interface FinanceExpenseRow {
   id: string; title: string; category: string; amountCentavos: number; paidDate: string;
@@ -130,8 +131,9 @@ export function ExpenseActions({ expense, today }: { expense?: FinanceExpenseRow
 }
 
 export function FinanceExport({ bookings, expenses, period, generated, range }: { bookings: FinanceExportBooking[]; expenses: FinanceExpenseRow[]; period: string; generated: string; range: string }) {
-  function download() {
-    const blob = new Blob([buildFinanceCsv({ period, generated, bookings, expenses })], { type: "text/csv;charset=utf-8" }); const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `finance-${range}.csv`; anchor.click(); URL.revokeObjectURL(url);
+  async function download() {
+    const { rows, columns } = buildFinanceSheet({ period, generated, bookings, expenses });
+    await writeXlsxFile(rows, { sheet: "Finance", columns, stickyRowsCount: 3 }).toFile(`finance-${range}.xlsx`);
   }
-  return <Button variant="outline" onClick={download}><FileSpreadsheet aria-hidden="true" />Export to Sheets</Button>;
+  return <Button variant="outline" onClick={() => void download()}><FileSpreadsheet aria-hidden="true" />Export to Sheets</Button>;
 }

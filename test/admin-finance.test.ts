@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { aggregateFinanceRows, bucketFinanceDays, normalizeFinanceRange } from "../src/lib/admin/finance.ts";
-import { buildFinanceCsv } from "../src/lib/admin/finance-export.ts";
+import { buildFinanceSheet } from "../src/lib/admin/finance-export.ts";
 
 test("finance counts a booking on its approval date, not its future play date", () => {
   // Booked and paid/approved Oct 26 for a Nov 1 slot: cash-basis revenue
@@ -99,8 +99,8 @@ test("finance range normalization defaults, validates calendar dates, and orders
   assert.deepEqual(normalizeFinanceRange("2026-10-21", "2026-10-01", "2026-10-21"), { from: "2026-10-01", to: "2026-10-21" });
 });
 
-test("finance CSV reports the period, one row per booking, filtered expenses, and a matching summary", () => {
-  const csv = buildFinanceCsv({
+test("finance sheet reports the period, one row per booking, filtered expenses, and a matching summary", () => {
+  const { rows, columns } = buildFinanceSheet({
     period: "October 1, 2026 – October 21, 2026",
     generated: "October 21, 2026",
     bookings: [
@@ -109,13 +109,23 @@ test("finance CSV reports the period, one row per booking, filtered expenses, an
     ],
     expenses: [{ paidDate: "2026-10-21", title: 'Lights, "Court A"', category: "Utilities", amountCentavos: 1234 }],
   });
-  assert.ok(csv.startsWith('\uFEFFFinance Report\r\nReport period,"October 1, 2026 – October 21, 2026"'));
-  assert.match(csv, /No\.,Date Approved,Customer,Email,Court,Slots,Date of Booking,Court Amount \(PHP\),Rental Amount \(PHP\),Amount \(PHP\)/);
-  assert.match(csv, /1,"October 21, 2026",Ana Cruz,ana@example\.com,Court A,1:00PM–3:00PM,"November 1, 2026",40\.00,10\.00,50\.00/);
-  assert.match(csv, /2,"October 21, 2026",Ben Tan,ben@example\.com,Court B,2:00PM–3:00PM,"October 25, 2026",20\.00,0\.00,20\.00/);
-  assert.match(csv, /"Lights, ""Court A""",Utilities,2026-10-21,12\.34/);
-  assert.match(csv, /Booking Revenue \(PHP\),70\.00/);
-  assert.match(csv, /Bookings Count,2/);
-  assert.match(csv, /Expenses \(PHP\),12\.34/);
-  assert.match(csv, /Net Profit \(PHP\),57\.66/);
+  const text = (cell: unknown) => (cell && typeof cell === "object" && "value" in cell ? (cell as { value: unknown }).value : cell);
+  const row = (label: string) => rows.find((candidate) => text(candidate[0]) === label) ?? [];
+  assert.equal(text(rows[0]?.[0]), "Finance Report");
+  assert.deepEqual(row("Report period").map(text), ["Report period", "October 1, 2026 – October 21, 2026"]);
+  assert.deepEqual(row("Generated").map(text), ["Generated", "October 21, 2026"]);
+  const bookingRows = rows.filter((candidate) => typeof text(candidate[0]) === "number").map((candidate) => candidate.map(text));
+  assert.deepEqual(bookingRows, [
+    [1, "October 21, 2026", "Ana Cruz", "ana@example.com", "Court A", "1:00PM–3:00PM", "November 1, 2026", 40, 10, 50],
+    [2, "October 21, 2026", "Ben Tan", "ben@example.com", "Court B", "2:00PM–3:00PM", "October 25, 2026", 20, 0, 20],
+  ]);
+  assert.deepEqual(row("Lights, \"Court A\"").map(text), ["Lights, \"Court A\"", "Utilities", "2026-10-21", 12.34]);
+  assert.deepEqual(row("Bookings total").map(text), ["Bookings total", "", "", "", "", "", "", 60, 10, 70]);
+  assert.deepEqual(row("Expenses total").map(text), ["Expenses total", "", "", 12.34]);
+  assert.deepEqual(row("Booking Revenue (PHP)").map(text), ["Booking Revenue (PHP)", 70]);
+  assert.deepEqual(row("Bookings Count").map(text), ["Bookings Count", 2]);
+  assert.deepEqual(row("Expenses (PHP)").map(text), ["Expenses (PHP)", 12.34]);
+  assert.deepEqual(row("Net Profit (PHP)").map(text), ["Net Profit (PHP)", 57.66]);
+  assert.equal(columns.length, 10);
+  assert.ok(columns.every((column) => (column.width ?? 0) >= 16));
 });
