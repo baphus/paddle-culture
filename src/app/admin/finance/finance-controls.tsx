@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import Link from "next/link";
 import { SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { EXPENSE_CATEGORIES, type ExpenseInput } from "@/lib/admin/expenses";
@@ -83,7 +84,7 @@ function shiftDate(date: string, delta: number) {
 }
 
 export function ExpenseActions({ expense, today }: { expense?: FinanceExpenseRow; today: string }) {
-  const router = useRouter(); const [open, setOpen] = useState(false); const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
+  const router = useRouter(); const [open, setOpen] = useState(false); const [confirmOpen, setConfirmOpen] = useState(false); const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
   async function save(formData: FormData) {
     setBusy(true); setError("");
     const amount = Number(formData.get("amount"));
@@ -98,13 +99,21 @@ export function ExpenseActions({ expense, today }: { expense?: FinanceExpenseRow
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Expense could not be saved."); } finally { setBusy(false); }
   }
   async function remove() {
-    if (!expense || !window.confirm(`Permanently delete “${expense.title}”?`)) return;
+    if (!expense) return;
+    setConfirmOpen(false);
     setBusy(true); setError("");
     try { const response = await fetch(`/api/admin/expenses/${expense.id}`, { method: "DELETE" }); const result = await response.json(); if (!response.ok) throw new Error(result.error?.message ?? "Expense could not be deleted."); toast.success("Expense deleted."); router.refresh(); }
     catch (cause) { toast.error(cause instanceof Error ? cause.message : "Expense could not be deleted."); } finally { setBusy(false); }
   }
   return <>
-    {expense ? <div className="flex gap-2"><Button size="sm" variant="outline" disabled={busy} onClick={() => setOpen(true)}>Edit</Button><Button size="sm" variant="destructive" disabled={busy} onClick={remove}>Delete</Button></div> : <Button onClick={() => setOpen(true)}>Add expense</Button>}
+    {expense ? <div className="flex gap-2"><Button size="sm" variant="outline" disabled={busy} onClick={() => setOpen(true)}>Edit</Button><Button size="sm" variant="destructive" disabled={busy} onClick={() => setConfirmOpen(true)}>Delete</Button></div> : <Button onClick={() => setOpen(true)}>Add expense</Button>}
+    <ConfirmDialog
+      open={confirmOpen}
+      onOpenChange={setConfirmOpen}
+      title="Delete expense?"
+      description={expense ? `Permanently delete “${expense.title}”? This cannot be undone.` : ""}
+      onConfirm={() => void remove()}
+    />
     {open && <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) setOpen(false); }}><form action={save} className="max-h-[90vh] w-full max-w-lg space-y-3 overflow-y-auto rounded-xl border bg-background p-5 shadow-xl" role="dialog" aria-modal="true" aria-labelledby="expense-dialog-title">
       <h2 id="expense-dialog-title" className="text-lg font-semibold">{expense ? "Edit expense" : "Add expense"}</h2>
       <label className="grid gap-1 text-sm">Title<Input name="title" required maxLength={160} defaultValue={expense?.title} /></label>

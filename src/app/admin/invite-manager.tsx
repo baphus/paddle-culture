@@ -6,6 +6,7 @@ import { Copy, Link as LinkIcon, Trash2, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -75,6 +76,7 @@ export default function InviteManager() {
   const [link, setLink] = useState<string | null>(null);
   const [linkCache, setLinkCache] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const [revokeTarget, setRevokeTarget] = useState<string | null>(null);
 
   async function refresh() {
     const res = await fetch("/api/auth/invites");
@@ -136,6 +138,7 @@ export default function InviteManager() {
   }
 
   async function revoke(tokenHash: string) {
+    setRevokeTarget(null);
     try {
       const res = await fetch(
         `/api/auth/invites/revoke?tokenHash=${encodeURIComponent(tokenHash)}`,
@@ -258,7 +261,7 @@ export default function InviteManager() {
                           type="button"
                           variant="ghost"
                           size="icon-sm"
-                          onClick={() => revoke(i.tokenHash)}
+                          onClick={() => setRevokeTarget(i.tokenHash)}
                           className="text-muted-foreground hover:text-destructive"
                           title="Revoke invite"
                         >
@@ -272,6 +275,18 @@ export default function InviteManager() {
             </div>
           )}
         </div>
+        <ConfirmDialog
+          open={revokeTarget !== null}
+          onOpenChange={(open) => {
+            if (!open) setRevokeTarget(null);
+          }}
+          title="Revoke invite?"
+          description="The invite link will stop working immediately and cannot be restored."
+          confirmLabel="Revoke"
+          onConfirm={() => {
+            if (revokeTarget) void revoke(revokeTarget);
+          }}
+        />
       </DialogContent>
     </Dialog>
   );

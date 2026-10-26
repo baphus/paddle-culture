@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import { UserStatusBadge } from "@/components/admin/status-badge";
 import { DataTable } from "@/components/ui/data-table";
 import type { AdminUserRecord } from "@/lib/admin/users";
@@ -20,15 +21,10 @@ export default function UsersTable({
   actions?: React.ReactNode;
 }) {
   const router = useRouter();
+  const [pendingDelete, setPendingDelete] = useState<AdminUserRecord | null>(null);
 
   async function deleteUser(user: AdminUserRecord) {
-    if (
-      !window.confirm(
-        `Delete ${user.name || user.email}? This permanently removes the admin account.`,
-      )
-    ) {
-      return;
-    }
+    setPendingDelete(null);
 
     try {
       const response = await fetch(`/api/admin/users/${user.id}`, {
@@ -107,7 +103,7 @@ export default function UsersTable({
               size="icon-sm"
               title={`Delete ${row.original.email}`}
               aria-label={`Delete ${row.original.email}`}
-              onClick={() => void deleteUser(row.original)}
+              onClick={() => setPendingDelete(row.original)}
             >
               <Trash2 />
             </Button>
@@ -126,12 +122,29 @@ export default function UsersTable({
   }
 
   return (
-    <DataTable
-      columns={columns}
-      data={users}
-      searchKey="email"
-      placeholder="Filter users…"
-      actions={actions}
-    />
+    <>
+      <DataTable
+        columns={columns}
+        data={users}
+        searchKey="email"
+        placeholder="Filter users…"
+        actions={actions}
+      />
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
+        title="Delete admin user?"
+        description={
+          pendingDelete
+            ? `Delete ${pendingDelete.name || pendingDelete.email}? This permanently removes the admin account.`
+            : ""
+        }
+        onConfirm={() => {
+          if (pendingDelete) void deleteUser(pendingDelete);
+        }}
+      />
+    </>
   );
 }

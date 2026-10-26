@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import LandingImage from "@/components/landing/landing-image";
 import { CourtStatusBadge } from "@/components/admin/status-badge";
+import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -834,6 +835,7 @@ function EditCourtModal({
   const { busy, addRow, updateRow, deleteRow } = useHoursActions();
   const [addDay, setAddDay] = useState<number | null>(null);
   const [editingHour, setEditingHour] = useState<HourRow | null>(null);
+  const [pendingDeleteHour, setPendingDeleteHour] = useState<string | null>(null);
 
   return (
     <div
@@ -842,7 +844,7 @@ function EditCourtModal({
       aria-labelledby="edit-court-modal-title"
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       onKeyDown={(e) => {
-        if (e.key === "Escape") onClose();
+        if (e.key === "Escape" && !pendingDeleteHour) onClose();
       }}
     >
       <div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden />
@@ -905,7 +907,7 @@ function EditCourtModal({
                         key={row.id}
                         row={row}
                         busy={busy}
-                        onDelete={deleteRow}
+                        onDelete={setPendingDeleteHour}
                         onEdit={setEditingHour}
                       />
                     ))
@@ -960,6 +962,21 @@ function EditCourtModal({
           onClose={() => setEditingHour(null)}
         />
       ) : null}
+      <ConfirmDialog
+        open={pendingDeleteHour !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDeleteHour(null);
+        }}
+        title="Remove hours and rate?"
+        description="This removes the hours row and its rate for that day. Bookings stop being offered for that time range."
+        confirmLabel="Remove"
+        onConfirm={() => {
+          if (!pendingDeleteHour) return;
+          const id = pendingDeleteHour;
+          setPendingDeleteHour(null);
+          void deleteRow(id);
+        }}
+      />
     </div>
   );
 }
@@ -1042,6 +1059,7 @@ function ClosuresSection({
   const [busy, setBusy] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [showPast, setShowPast] = useState(false);
+  const [pendingDeleteClosure, setPendingDeleteClosure] = useState<string | null>(null);
 
   // Closure form state
   const [cMode, setCMode] = useState<"days" | "hours">("days");
@@ -1338,7 +1356,7 @@ function ClosuresSection({
                     closure={c}
                     busy={busy}
                     grouped
-                    onDelete={deleteClosure}
+                    onDelete={setPendingDeleteClosure}
                   />
                 ))}
               </div>
@@ -1362,7 +1380,7 @@ function ClosuresSection({
               {showPast && (
                 <div className="mt-2 space-y-2">
                   {past.map((c) => (
-                    <ClosureCard key={c.id} closure={c} busy={busy} onDelete={deleteClosure} />
+                    <ClosureCard key={c.id} closure={c} busy={busy} onDelete={setPendingDeleteClosure} />
                   ))}
                 </div>
               )}
@@ -1370,6 +1388,21 @@ function ClosuresSection({
           )}
         </div>
       )}
+      <ConfirmDialog
+        open={pendingDeleteClosure !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDeleteClosure(null);
+        }}
+        title="Lift this closure?"
+        description="The court reopens for that period and customers can book those slots again."
+        confirmLabel="Lift closure"
+        onConfirm={() => {
+          if (!pendingDeleteClosure) return;
+          const id = pendingDeleteClosure;
+          setPendingDeleteClosure(null);
+          void deleteClosure(id);
+        }}
+      />
     </section>
   );
 }
@@ -1456,6 +1489,7 @@ function CardsView({
   const [busy, setBusy] = useState<string | null>(null);
   const [editing, setEditing] = useState<CourtRow | null>(null);
   const [quickSetupCourt, setQuickSetupCourt] = useState<CourtRow | null>(null);
+  const [pendingDeactivate, setPendingDeactivate] = useState<CourtRow | null>(null);
   const {
     busy: hoursBusy,
     addRow: addHoursRow,
@@ -1600,7 +1634,11 @@ function CardsView({
                         variant={court.status === "active" ? "destructive" : "outline"}
                         size="sm"
                         disabled={busy !== null}
-                        onClick={() => flip(court)}
+                        onClick={() =>
+                          court.status === "active"
+                            ? setPendingDeactivate(court)
+                            : void flip(court)
+                        }
                       >
                         {busy === court.id
                           ? "Saving…"
@@ -1732,6 +1770,25 @@ function CardsView({
           onClose={() => setQuickSetupCourt(null)}
         />
       ) : null}
+      <ConfirmDialog
+        open={pendingDeactivate !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDeactivate(null);
+        }}
+        title="Deactivate this court?"
+        description={
+          pendingDeactivate
+            ? `${pendingDeactivate.name} will be hidden from the public booking page and its existing bookings stay as they are.`
+            : ""
+        }
+        confirmLabel="Deactivate"
+        onConfirm={() => {
+          if (!pendingDeactivate) return;
+          const court = pendingDeactivate;
+          setPendingDeactivate(null);
+          void flip(court);
+        }}
+      />
     </div>
   );
 }

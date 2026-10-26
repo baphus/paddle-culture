@@ -168,8 +168,14 @@ export default function AdminManualPage() {
               book, the days and hours each court is open, and the prices.
             </p>
             <ul className="list-disc space-y-2 pl-5">
-              <li>Choose Activate or Deactivate to make a court available or unavailable for new bookings.</li>
-              <li>Choose Edit to add, change, or remove the court&apos;s hours and prices for each day.</li>
+              <li>
+                Choose Activate or Deactivate to make a court available or unavailable for new bookings. Deactivating
+                asks you to confirm first.
+              </li>
+              <li>
+                Choose Edit to add, change, or remove the court&apos;s hours and prices for each day. Removing a row of
+                hours asks you to confirm first.
+              </li>
               <li>
                 Quick Setup adds one time range and price to selected days, keeping existing non-overlapping hours. If
                 the range overlaps existing hours, confirm the listed replacements before saving.
@@ -188,7 +194,7 @@ export default function AdminManualPage() {
             </p>
             <p>
               Upcoming closures appear in a list. You can also show past closures. Use the remove button to lift a
-              closure. Check whether it applies to one court or all courts first.
+              closure, then confirm. Check whether it applies to one court or all courts first.
             </p>
           </Chapter>
 
