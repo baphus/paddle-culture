@@ -172,6 +172,52 @@ function buildMonthGrid(year: number, month: number): Array<{ date: string; inMo
   return cells;
 }
 
+/** Every Manila day a closure touches. endAt is exclusive, so a closure
+ *  ending at 00:00 covers up to the previous day. */
+function closureDates(c: ClosureRow): string[] {
+  const start = new Date(c.startAt);
+  const end = new Date(c.endAt);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return [];
+  const first = manilaDateStr(start);
+  const last = manilaDateStr(new Date(end.getTime() - 1));
+  const out: string[] = [];
+  for (let d = first; d <= last && out.length < 400; d = addDays(d, 1)) out.push(d);
+  return out;
+}
+
+function closureTitle(cl: ClosureRow): string {
+  return cl.scope === "global" ? "Court Closure" : `Closure · ${cl.courtName}`;
+}
+
+/** Closure rendered as a calendar event. */
+function ClosureCard({ cl, dense = false }: { cl: ClosureRow; dense?: boolean }) {
+  return (
+    <div
+      className={cn(
+        "w-full rounded-xl border border-amber-200 bg-amber-50/50 text-left",
+        dense ? "px-2.5 py-2" : "p-3",
+      )}
+    >
+      <div className={cn("flex items-start", dense ? "gap-2" : "gap-3")}>
+        <span className="mt-0.5 size-2.5 shrink-0 rounded-full bg-amber-500" aria-hidden />
+        <div className="min-w-0 flex-1">
+          <p className={cn("truncate font-bold text-foreground", dense ? "text-[11px] leading-tight" : "text-sm")}>
+            {closureTitle(cl)}
+          </p>
+          {cl.reason && (
+            <p className={cn("mt-0.5 text-muted-foreground", dense ? "truncate text-[10px] leading-tight" : "text-xs")}>
+              {cl.reason}
+            </p>
+          )}
+          <p className={cn("mt-0.5 font-medium text-foreground/70", dense ? "text-[10px] leading-tight" : "text-xs")}>
+            {formatClosureDateRange(cl.startAt, cl.endAt)}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── main component ───────────────────────────────────────────────────────────
 
 interface MonthData {
@@ -348,6 +394,19 @@ export default function CalendarView({
     }
     return map;
   }, [events]);
+
+  // Index closures by Manila date (a closure spans every day it covers).
+  const closuresByDate = useMemo(() => {
+    const map = new Map<string, ClosureRow[]>();
+    for (const c of closures) {
+      for (const date of closureDates(c)) {
+        const list = map.get(date) ?? [];
+        list.push(c);
+        map.set(date, list);
+      }
+    }
+    return map;
+  }, [closures]);
 
   // After a decision, drop the current month from cache and refetch it.
   const refetchCurrentMonth = useCallback(async () => {
@@ -548,6 +607,7 @@ export default function CalendarView({
           month={month}
           today={today}
           byDate={byDate}
+          closuresByDate={closuresByDate}
           onDayClick={(date) => setDayPanelDate(date)}
         />
       )}
@@ -556,6 +616,7 @@ export default function CalendarView({
           weekStart={weekStart}
           today={today}
           byDate={byDate}
+          closuresByDate={closuresByDate}
           onDayClick={(date) => setDayPanelDate(date)}
           onNavDay={goToDay}
         />
@@ -565,6 +626,7 @@ export default function CalendarView({
           date={anchor}
           today={today}
           byDate={byDate}
+          closuresByDate={closuresByDate}
           onOpenBooking={openBookingDetail}
           detailLoading={detailLoading}
         />
@@ -572,7 +634,7 @@ export default function CalendarView({
       {viewMode === "schedule" && (
         <ScheduleView
           events={events}
-          closures={closures ?? []}
+          closuresByDate={closuresByDate}
           weekStart={weekStart}
           today={today}
           onOpenBooking={openBookingDetail}
@@ -603,6 +665,7 @@ export default function CalendarView({
             <DayPanel
               date={dayPanelDate}
               events={byDate.get(dayPanelDate) ?? []}
+              closures={closuresByDate.get(dayPanelDate) ?? []}
               onOpenBooking={(id) => {
                 openBookingDetail(id);
               }}
@@ -631,12 +694,14 @@ function MonthlyView({
   month,
   today,
   byDate,
+  closuresByDate,
   onDayClick,
 }: {
   year: number;
   month: number;
   today: string;
   byDate: Map<string, CalendarEvent[]>;
+  closuresByDate: Map<string, ClosureRow[]>;
   onDayClick: (date: string) => void;
 }) {
   const grid = buildMonthGrid(year, month);
@@ -659,6 +724,7 @@ function MonthlyView({
       <div className="grid grid-cols-7">
         {grid.map((cell, idx) => {
           const dayEvents = byDate.get(cell.date) ?? [];
+          const dayClosures = closuresByDate.get(cell.date) ?? [];
           const isToday = cell.date === today;
           const isLastRow = idx >= 35;
           const hasPending = dayEvents.some((e) => e.status === "Pending");
@@ -674,7 +740,9 @@ function MonthlyView({
                 isLastRow && "border-b-0",
                 (idx + 1) % 7 === 0 && "border-r-0",
                 !cell.inMonth && "bg-muted/30",
-                dayEvents.length > 0 ? "cursor-pointer hover:bg-muted/50" : "cursor-default",
+                dayEvents.length > 0 || dayClosures.length > 0
+                  ? "cursor-pointer hover:bg-muted/50"
+                  : "cursor-default",
               )}
             >
               {/* Date number */}
@@ -699,6 +767,18 @@ function MonthlyView({
                   </span>
                 </div>
               )}
+
+              {/* Closures */}
+              {dayClosures.length > 0 && (
+                <div className="flex min-w-0 items-center gap-1 px-0.5">
+                  <span className="size-1.5 shrink-0 rounded-full bg-amber-500" />
+                  <span className="min-w-0 truncate text-[11px] font-semibold text-amber-700 leading-tight">
+                    {dayClosures.length === 1
+                      ? closureTitle(dayClosures[0]!)
+                      : `${dayClosures.length} closures`}
+                  </span>
+                </div>
+              )}
             </button>
           );
         })}
@@ -713,12 +793,14 @@ function WeeklyView({
   weekStart,
   today,
   byDate,
+  closuresByDate,
   onDayClick,
   onNavDay,
 }: {
   weekStart: string;
   today: string;
   byDate: Map<string, CalendarEvent[]>;
+  closuresByDate: Map<string, ClosureRow[]>;
   onDayClick: (date: string) => void;
   onNavDay: (date: string) => void;
 }) {
@@ -730,6 +812,7 @@ function WeeklyView({
       <div className="hidden sm:grid grid-cols-7 divide-x divide-border">
         {days.map((date, col) => {
           const dayEvents = byDate.get(date) ?? [];
+          const dayClosures = closuresByDate.get(date) ?? [];
           const isToday = date === today;
           const [, , dd] = date.split("-").map(Number);
           const dowLabel = DAY_NAMES_SHORT[new Date(date + "T12:00:00Z").getUTCDay()]!;
@@ -762,9 +845,12 @@ function WeeklyView({
 
               {/* Events */}
               <div className="flex flex-1 flex-col gap-1.5 p-2">
-                {dayEvents.length === 0 && (
+                {dayEvents.length === 0 && dayClosures.length === 0 && (
                   <p className="mt-4 text-center text-[11px] text-foreground/25">—</p>
                 )}
+                {dayClosures.map((cl) => (
+                  <ClosureCard key={cl.id} cl={cl} dense />
+                ))}
                 {dayEvents.map((ev) => {
                   const c = eventColors(ev.status);
                   return (
@@ -809,6 +895,7 @@ function WeeklyView({
         <div className="flex gap-2.5 overflow-x-auto px-4 py-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {days.map((date) => {
             const dayEvents = byDate.get(date) ?? [];
+            const dayClosures = closuresByDate.get(date) ?? [];
             const isToday = date === today;
             const [, , dd] = date.split("-").map(Number);
             const dowLabel = DAY_NAMES_SHORT[new Date(date + "T12:00:00Z").getUTCDay()]!;
@@ -834,13 +921,16 @@ function WeeklyView({
                   {dd}
                 </span>
                 <span className="flex h-2 items-center gap-1">
-                  {dayEvents.slice(0, 3).map((ev) => (
+                  {dayEvents.slice(0, 2).map((ev) => (
                     <span
                       key={ev.id}
                       className={cn("size-1.5 rounded-full", eventColors(ev.status).dot)}
                       aria-hidden
                     />
                   ))}
+                  {dayClosures.length > 0 && (
+                    <span className="size-1.5 rounded-full bg-amber-500" aria-hidden />
+                  )}
                 </span>
               </button>
             );
@@ -851,7 +941,8 @@ function WeeklyView({
         <div className="space-y-5 border-t border-border px-4 pb-6 pt-5">
           {days.map((date) => {
             const dayEvents = byDate.get(date) ?? [];
-            if (dayEvents.length === 0) return null;
+            const dayClosures = closuresByDate.get(date) ?? [];
+            if (dayEvents.length === 0 && dayClosures.length === 0) return null;
             const isToday = date === today;
             const [, , dd] = date.split("-").map(Number);
             const dowLabel = DAY_NAMES_SHORT[new Date(date + "T12:00:00Z").getUTCDay()]!;
@@ -867,9 +958,14 @@ function WeeklyView({
                   <span className="text-sm font-extrabold text-foreground">{dd}</span>
                   <span className="text-[11px] font-medium text-muted-foreground">
                     {dayEvents.length} booking{dayEvents.length !== 1 ? "s" : ""}
+                    {dayClosures.length > 0 &&
+                      ` · ${dayClosures.length} closure${dayClosures.length !== 1 ? "s" : ""}`}
                   </span>
                 </div>
                 <div className="space-y-2.5">
+                  {dayClosures.map((cl) => (
+                    <ClosureCard key={cl.id} cl={cl} />
+                  ))}
                   {dayEvents.map((ev) => {
                     const c = eventColors(ev.status);
                     return (
@@ -901,7 +997,10 @@ function WeeklyView({
               </div>
             );
           })}
-          {days.every((date) => (byDate.get(date) ?? []).length === 0) && (
+          {days.every(
+            (date) =>
+              (byDate.get(date) ?? []).length === 0 && (closuresByDate.get(date) ?? []).length === 0,
+          ) && (
             <p className="py-14 text-center text-sm text-muted-foreground">
               No bookings this week.
             </p>
@@ -918,25 +1017,31 @@ function DailyView({
   date,
   today,
   byDate,
+  closuresByDate,
   onOpenBooking,
   detailLoading,
 }: {
   date: string;
   today: string;
   byDate: Map<string, CalendarEvent[]>;
+  closuresByDate: Map<string, ClosureRow[]>;
   onOpenBooking: (id: string) => void;
   detailLoading: boolean;
 }) {
   const dayEvents = byDate.get(date) ?? [];
+  const dayClosures = closuresByDate.get(date) ?? [];
 
   return (
     <div className="px-4 py-4">
-      {dayEvents.length === 0 ? (
+      {dayEvents.length === 0 && dayClosures.length === 0 ? (
         <p className="py-12 text-center text-sm text-muted-foreground">
-          No bookings on this day.
+          No bookings or closures on this day.
         </p>
       ) : (
         <div className="space-y-2">
+          {dayClosures.map((cl) => (
+            <ClosureCard key={cl.id} cl={cl} />
+          ))}
           {dayEvents.map((ev) => {
             const c = eventColors(ev.status);
             return (
@@ -1004,14 +1109,14 @@ function formatClosureDateRange(startAt: string, endAt: string): string {
 
 function ScheduleView({
   events,
-  closures,
+  closuresByDate,
   weekStart,
   today,
   onOpenBooking,
   detailLoading,
 }: {
   events: CalendarEvent[];
-  closures: ClosureRow[];
+  closuresByDate: Map<string, ClosureRow[]>;
   weekStart: string;
   today: string;
   onOpenBooking: (id: string) => void;
@@ -1023,15 +1128,7 @@ function ScheduleView({
   const groups: DayGroup[] = days.map((date) => ({
     date,
     bookings: events.filter((e) => e.date === date),
-    closures: closures.filter((c) => {
-      // Manila day, not the UTC day: a closure starting 00:00 Manila is
-      // ...T16:00:00Z on the *previous* UTC date, so slicing the ISO string
-      // filed it under the wrong column — the same defect as the Play Date
-      // report. manilaDateStr() is the canonical helper (client-safe).
-      const start = new Date(c.startAt);
-      if (Number.isNaN(start.getTime())) return false;
-      return manilaDateStr(start) === date;
-    }),
+    closures: closuresByDate.get(date) ?? [],
   })).filter((g) => g.bookings.length > 0 || g.closures.length > 0);
 
   if (groups.length === 0) {
@@ -1094,30 +1191,9 @@ function ScheduleView({
                   </button>
                 );
               })}
-              {group.closures.map((cl) => {
-                const isGlobal = cl.scope === "global";
-                return (
-                  <div
-                    key={cl.id}
-                    className="w-full rounded-xl border border-amber-200 bg-amber-50/50 p-3 text-left"
-                  >
-                    <div className="flex items-start gap-3">
-                      <span className="mt-0.5 size-2.5 shrink-0 rounded-full bg-amber-500" aria-hidden />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-bold text-foreground">
-                          {isGlobal ? "Court Closure" : `Closure · ${cl.courtName}`}
-                        </p>
-                        {cl.reason && (
-                          <p className="mt-0.5 text-xs text-muted-foreground">{cl.reason}</p>
-                        )}
-                        <p className="mt-0.5 text-xs font-medium text-foreground/70">
-                          {formatClosureDateRange(cl.startAt, cl.endAt)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+              {group.closures.map((cl) => (
+                <ClosureCard key={cl.id} cl={cl} />
+              ))}
             </div>
           </div>
         );
@@ -1131,10 +1207,12 @@ function ScheduleView({
 function DayPanel({
   date,
   events,
+  closures,
   onOpenBooking,
 }: {
   date: string;
   events: CalendarEvent[];
+  closures: ClosureRow[];
   onOpenBooking: (id: string) => void;
 }) {
   const [loadingId, setLoadingId] = useState<string | null>(null);
@@ -1161,13 +1239,18 @@ function DayPanel({
         <SheetTitle>{label}</SheetTitle>
         <SheetDescription>
           {events.length} booking{events.length !== 1 ? "s" : ""} on this day
+          {closures.length > 0 &&
+            ` · ${closures.length} closure${closures.length !== 1 ? "s" : ""}`}
         </SheetDescription>
       </SheetHeader>
 
       <div className="flex-1 space-y-2 px-4 py-4">
-        {events.length === 0 && (
+        {events.length === 0 && closures.length === 0 && (
           <p className="py-12 text-center text-sm text-muted-foreground">No bookings on this day.</p>
         )}
+        {closures.map((cl) => (
+          <ClosureCard key={cl.id} cl={cl} />
+        ))}
         {events.map((ev) => {
           const c = eventColors(ev.status);
           const isLoading = loadingId === ev.id;
