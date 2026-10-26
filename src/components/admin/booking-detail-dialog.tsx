@@ -281,11 +281,11 @@ export function BookingDetailDialog({
                       disabled={busy !== null}
                       onClick={() => onDecisionChange("refund")}
                     >
-                      <RotateCcw className="size-3.5" /> Refund
+                      <RotateCcw className="size-3.5" /> Full refund
                     </Button>
                   )}
                   <Button
-                    variant="outline"
+                    variant="destructive"
                     size="sm"
                     disabled={busy !== null}
                     onClick={() => onDecisionChange("delete")}
