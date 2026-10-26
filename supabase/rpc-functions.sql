@@ -381,6 +381,7 @@ BEGIN
 
   UPDATE bookings
   SET    status        = p_decision,
+         approved_at   = CASE WHEN p_decision = 'Approved' THEN v_now END,
          reject_reason = CASE WHEN p_decision = 'Rejected' THEN p_reason ELSE NULL END,
          updated_at    = v_now
   WHERE  id = p_booking_id;
@@ -1001,11 +1002,12 @@ BEGIN
   -- earliest requested slot (07:00 anchor, so overnight slots stay on the
   -- selected day), computed in SQL so it can never disagree with the
   -- rows written to booking_slots just below.
-  INSERT INTO bookings (tracking_token, tracking_code, status, full_name, email, phone, total, play_date, paid_cash)
+  INSERT INTO bookings (tracking_token, tracking_code, status, full_name, email, phone, total, play_date, paid_cash, approved_at)
   SELECT p_tracking_token, p_tracking_code, 'Approved', p_full_name, p_email, p_phone, p_total::numeric,
          ((min((s->>'slot_start')::timestamptz) AT TIME ZONE 'Asia/Manila')::date
           - CASE WHEN (min((s->>'slot_start')::timestamptz) AT TIME ZONE 'Asia/Manila')::time < time '07:00' THEN 1 ELSE 0 END),
-         p_paid_cash
+         p_paid_cash,
+         now()
   FROM   jsonb_array_elements(p_slots) AS s
   RETURNING id INTO v_booking_id;
 

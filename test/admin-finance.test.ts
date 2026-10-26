@@ -3,33 +3,35 @@ import assert from "node:assert/strict";
 import { aggregateFinanceRows, bucketFinanceDays, normalizeFinanceRange } from "../src/lib/admin/finance.ts";
 import { buildFinanceCsv } from "../src/lib/admin/finance-export.ts";
 
-test("finance allocates a multi-date booking exactly across its slot dates", () => {
+test("finance counts a booking on its approval date, not its future play date", () => {
+  // Booked and paid/approved Oct 26 for a Nov 1 slot: cash-basis revenue
+  // belongs to October, not November.
   const booking = {
-    id: "booking-1",
     total: "10.01",
-    booking_slots: [
-      { slot_start: "2026-10-20T22:00:00.000Z" }, // Oct 21, 06:00 Manila
-      { slot_start: "2026-10-20T23:00:00.000Z" }, // Oct 21, 07:00 Manila
-      { slot_start: "2026-10-21T22:00:00.000Z" }, // Oct 22, 06:00 Manila
-    ],
+    approved_at: "2026-10-26T02:00:00.000Z", // Oct 26, 10:00 Manila
   };
-  const report = aggregateFinanceRows("2026-10-21", "2026-10-22", [booking], []);
+  const report = aggregateFinanceRows("2026-10-26", "2026-10-26", [booking], []);
   assert.equal(report.revenueCents, 1001);
   assert.equal(report.bookings, 1);
   assert.deepEqual(report.days.map(({ date, revenueCents, bookings }) => ({ date, revenueCents, bookings })), [
-    { date: "2026-10-21", revenueCents: 668, bookings: 1 },
-    { date: "2026-10-22", revenueCents: 333, bookings: 1 },
+    { date: "2026-10-26", revenueCents: 1001, bookings: 1 },
+  ]);
+});
+
+test("finance counts a multi-slot booking once, in full, on the approval date", () => {
+  const booking = { total: "10.01", approved_at: "2026-10-20T22:00:00.000Z" }; // Oct 21, 06:00 Manila
+  const report = aggregateFinanceRows("2026-10-21", "2026-10-21", [booking], []);
+  assert.equal(report.revenueCents, 1001);
+  assert.equal(report.bookings, 1);
+  assert.deepEqual(report.days.map(({ date, revenueCents, bookings }) => ({ date, revenueCents, bookings })), [
+    { date: "2026-10-21", revenueCents: 1001, bookings: 1 },
   ]);
 });
 
 test("admin cash booking with no payment proof still counts in finance and charts", () => {
-  // Admin walk-ins are born Approved and have no payment_proofs row. Revenue
-  // keys on status + slot date only, so the cash booking must be included.
-  const cashBooking = {
-    id: "cash-1",
-    total: "500.00",
-    booking_slots: [{ slot_start: "2026-10-21T02:00:00.000Z" }], // Oct 21, 10:00 Manila
-  };
+  // Admin walk-ins are born Approved (rpc_admin_create_booking stamps
+  // approved_at = now()) and have no payment_proofs row.
+  const cashBooking = { total: "500.00", approved_at: "2026-10-21T02:00:00.000Z" };
   const report = aggregateFinanceRows("2026-10-21", "2026-10-21", [cashBooking], []);
   assert.equal(report.revenueCents, 50000);
   assert.equal(report.bookings, 1);
@@ -40,24 +42,24 @@ test("admin cash booking with no payment proof still counts in finance and chart
   assert.equal(chart.buckets.reduce((sum, bucket) => sum + bucket.revenueCents, 0), 50000);
 });
 
-test("finance applies the range to slot dates and paid dates", () => {
+test("finance applies the range to approval dates and paid dates", () => {
   const report = aggregateFinanceRows(
     "2026-10-21",
     "2026-10-21",
-    [{ total: "20.00", booking_slots: [
-      { slot_start: "2026-10-20T22:00:00.000Z" },
-      { slot_start: "2026-10-21T22:00:00.000Z" },
-    ] }],
+    [
+      { total: "20.00", approved_at: "2026-10-20T23:00:00.000Z" }, // Oct 21, 07:00 Manila — in
+      { total: "99.00", approved_at: "2026-10-22T02:00:00.000Z" }, // Oct 22 Manila — out
+    ],
     [
       { paid_date: "2026-10-21", amount_centavos: 1250 },
       { paid_date: "2026-10-22", amount_centavos: 999 },
     ],
   );
-  assert.equal(report.revenueCents, 1000);
+  assert.equal(report.revenueCents, 2000);
   assert.equal(report.expenseCents, 1250);
-  assert.equal(report.profitCents, -250);
-  assert.equal(report.profitMargin, -25);
-  assert.equal(report.averageRevenueCents, 1000);
+  assert.equal(report.profitCents, 750);
+  assert.equal(report.profitMargin, 37.5);
+  assert.equal(report.averageRevenueCents, 2000);
 });
 
 test("finance fills empty dates and marks zero-denominator ratios unavailable", () => {

@@ -53,33 +53,30 @@ function pesosToCents(amount: string): number {
   return result;
 }
 
+/**
+ * Cash-basis revenue: each Approved booking's full total lands on the Manila
+ * date it was approved (payment verified), never on its play dates. Expenses
+ * land on their paid_date, so same-day profit is meaningful.
+ */
 export function aggregateFinanceRows(
   from: string, to: string,
-  bookings: Array<{ id?: string; total: string; booking_slots: Array<{ slot_start: string }> }>,
+  bookings: Array<{ total: string; approved_at: string }>,
   expenses: Array<{ paid_date: string; amount_centavos: number }>,
 ): FinanceReport {
   const days = new Map<string, Omit<FinanceDay, "date">>();
-  const bookingDates = new Set<string>();
   let matchingBookingCount = 0;
   const ensure = (date: string) => days.get(date) ?? (days.set(date, { revenueCents: 0, expenseCents: 0, profitCents: 0, bookings: 0 }), days.get(date)!);
   for (const booking of bookings) {
-    const allSlots = [...(booking.booking_slots ?? [])].sort((a, b) => a.slot_start.localeCompare(b.slot_start));
-    const slots = allSlots.filter((slot) => { const date = manilaDateStr(new Date(slot.slot_start)); return date >= from && date <= to; });
-    if (!slots.length) continue;
+    if (!booking.approved_at) continue;
+    const date = manilaDateStr(new Date(booking.approved_at));
+    if (date < from || date > to) continue;
     matchingBookingCount += 1;
-    const total = pesosToCents(booking.total);
-    const each = Math.floor(total / allSlots.length); let remainder = total - each * allSlots.length;
-    const allocated = allSlots.map(() => each + (remainder-- > 0 ? 1 : 0));
-    for (const [index, slot] of allSlots.entries()) {
-      const date = manilaDateStr(new Date(slot.slot_start));
-      if (date < from || date > to) continue;
-      const day = ensure(date); day.revenueCents += allocated[index]!;
-    }
-    for (const date of new Set(slots.map((slot) => manilaDateStr(new Date(slot.slot_start))))) bookingDates.add(`${booking.id ?? matchingBookingCount}:${date}`);
+    const day = ensure(date);
+    day.revenueCents += pesosToCents(booking.total);
+    day.bookings += 1;
   }
   for (const expense of expenses) if (expense.paid_date >= from && expense.paid_date <= to) ensure(expense.paid_date).expenseCents += expense.amount_centavos;
   for (let date = from; date <= to; date = addDaysString(date)) ensure(date);
-  for (const key of bookingDates) { const date = key.slice(key.lastIndexOf(":") + 1); ensure(date).bookings += 1; }
   const result = [...days.entries()].map(([date, day]) => ({ date, ...day, profitCents: day.revenueCents - day.expenseCents })).sort((a, b) => a.date.localeCompare(b.date));
   const revenueCents = result.reduce((sum, row) => sum + row.revenueCents, 0);
   const expenseCents = result.reduce((sum, row) => sum + row.expenseCents, 0);
@@ -89,30 +86,25 @@ export function aggregateFinanceRows(
 export async function getFinanceReport(db: Db, from: string, to: string): Promise<FinanceReport> {
   const lo = new Date(`${from}T00:00:00+08:00`).toISOString();
   const hi = new Date(`${addDaysString(to)}T00:00:00+08:00`).toISOString();
-  const [ids, expenseResult] = await Promise.all([
-    fetchBookingIds(db, lo, hi),
+  const [bookings, expenseResult] = await Promise.all([
+    fetchApprovedBookings(db, lo, hi),
     db.from("expenses").select("paid_date,amount_centavos").gte("paid_date", from).lte("paid_date", to),
   ]);
   if (expenseResult.error) throw new Error(expenseResult.error.message);
-  const bookings: Array<{ id: string; total: string; booking_slots: Array<{ slot_start: string }> }> = [];
-  for (let offset = 0; offset < ids.length; offset += 100) {
-    const { data, error } = await db.from("bookings").select("id,total,booking_slots(slot_start)").eq("status", "Approved").in("id", ids.slice(offset, offset + 100));
-    if (error) throw new Error(error.message);
-    bookings.push(...((data ?? []) as typeof bookings));
-  }
   return aggregateFinanceRows(from, to, bookings, expenseResult.data ?? []);
 }
 
-async function fetchBookingIds(db: Db, fromIso: string, toIso: string): Promise<string[]> {
-  const ids: string[] = [];
+/** Approved bookings whose approval instant falls in [fromIso, toIso). */
+async function fetchApprovedBookings(db: Db, fromIso: string, toIso: string): Promise<Array<{ total: string; approved_at: string }>> {
+  const rows: Array<{ total: string; approved_at: string }> = [];
   for (let offset = 0; ; offset += 500) {
-    const { data, error } = await db.from("bookings").select("id,booking_slots!inner(slot_start)").eq("status", "Approved")
-      .gte("booking_slots.slot_start", fromIso).lt("booking_slots.slot_start", toIso)
-      .range(offset, offset + 499);
+    const { data, error } = await db.from("bookings").select("total,approved_at").eq("status", "Approved")
+      .gte("approved_at", fromIso).lt("approved_at", toIso)
+      .order("id", { ascending: true }).range(offset, offset + 499);
     if (error) throw new Error(error.message);
-    const page = data ?? [];
-    ids.push(...page.map((row) => row.id));
-    if (page.length < 500) return [...new Set(ids)];
+    const page = (data ?? []) as Array<{ total: string; approved_at: string | null }>;
+    rows.push(...page.map((row) => ({ total: row.total, approved_at: row.approved_at ?? "" })));
+    if (page.length < 500) return rows;
   }
 }
 

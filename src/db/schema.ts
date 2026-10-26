@@ -170,6 +170,12 @@ export const bookings = pgTable(
     playDate: date("play_date").notNull(),
     /** Admin-created booking collected in cash at the desk (no proof). */
     paidCash: boolean("paid_cash").notNull().default(false),
+    /**
+     * When an admin approved the booking — the payment-verification moment.
+     * Revenue is cash-basis and keys on this, not the slot dates. NULL until
+     * decided (and stays NULL for rejects).
+     */
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
     rejectReason: text("reject_reason"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

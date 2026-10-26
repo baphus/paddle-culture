@@ -414,29 +414,25 @@ export function formatPesosFromCents(cents: number): string {
 }
 
 /**
- * Revenue from Approved bookings only.
- *
- * The date filter runs in Postgres (booking_slots!inner join) and the page
- * walk (fetchPaged) keeps the row count off the URL, so a busy month costs a
- * couple of requests instead of one oversized `.in(id, …)`.
+ * Cash-basis revenue from Approved bookings only: each booking counts in full
+ * on the Manila date it was approved (bookings.approved_at), not on its play
+ * dates. The date filter runs in Postgres; the page walk (fetchPaged) keeps
+ * the row count off the URL.
  */
 export async function revenueByDay(
   db: Db,
   args: { from: Date; to: Date },
 ): Promise<RevenueResult> {
-  const rows = await fetchPaged<{
-    id: string;
-    total: string;
-    booking_slots: Array<{ slot_start: string }>;
-  }>((from, to) =>
-    db
-      .from("bookings")
-      .select("id,total,booking_slots!inner(slot_start)")
-      .eq("status", "Approved")
-      .gte("booking_slots.slot_start", args.from.toISOString())
-      .lt("booking_slots.slot_start", args.to.toISOString())
-      .order("id", { ascending: true })
-      .range(from, to),
+  const rows = await fetchPaged<{ total: string; approved_at: string | null }>(
+    (from, to) =>
+      db
+        .from("bookings")
+        .select("total,approved_at")
+        .eq("status", "Approved")
+        .gte("approved_at", args.from.toISOString())
+        .lt("approved_at", args.to.toISOString())
+        .order("id", { ascending: true })
+        .range(from, to),
   );
 
   const days = new Map<string, { bookings: number; revenueCents: number }>();
@@ -444,12 +440,8 @@ export async function revenueByDay(
   let totalCents = 0;
 
   for (const b of rows) {
-    // Earliest slot = the day the booking starts. The embedded join comes back
-    // unordered, so [0] was whichever slot the planner happened to return
-    // first: a 22:00-02:00 booking landed on the next day about half the time.
-    const min = earliestSlotMs(b.booking_slots ?? []);
-    if (!Number.isFinite(min)) continue;
-    const day = manilaDateStr(new Date(min));
+    if (!b.approved_at) continue;
+    const day = manilaDateStr(new Date(b.approved_at));
     const dayStart = manilaDayStart(day).getTime();
     if (dayStart < args.from.getTime() || dayStart >= args.to.getTime()) continue;
     const cents = pesosToCents(b.total);
