@@ -82,10 +82,10 @@ export function addDaysManilaStr(dateStr: string, days: number): string {
  * Earliest online-bookable *date*: today in Asia/Manila.
  *
  * Same-day booking is allowed (ADR-03) — the only thing that shuts hours out is
- * being in the past, which `isFutureSlot` / the availability payload filter at
+ * having ended, which `isBookableSlot` / the availability payload filter at
  * slot granularity. So the calendar's floor is today, not tomorrow: a customer
- * at 2 PM can still book 6 PM tonight. The day itself is never disabled; its
- * spent hours simply render as unavailable.
+ * at 2 PM can still book the 2 PM hour or 6 PM tonight. The day itself is never
+ * disabled; its spent hours simply render as unavailable.
  */
 export function manilaEarliestBookableStr(now: Date = new Date()): string {
   return manilaDayFmt.format(now);

@@ -5,7 +5,7 @@ import {
   manilaEarliestBookableStr,
   manilaTodayStr,
 } from "../src/lib/courts.ts";
-import { isFutureSlot, maxBookableDateStr, slotsForDate } from "../src/lib/booking/slots.ts";
+import { isBookableSlot, maxBookableDateStr, slotsForDate } from "../src/lib/booking/slots.ts";
 
 // Regression: same-day booking. The calendar's floor used to be *tomorrow*
 // (today was walk-in only), which disabled the whole current day even though
@@ -27,15 +27,25 @@ test("earliest bookable date follows the Manila day across the UTC boundary", ()
   assert.equal(manilaEarliestBookableStr(new Date("2026-03-10T16:30:00Z")), "2026-03-11");
 });
 
-test("today's grid still offers later hours for same-day booking", () => {
+test("today's grid offers the current hour and later hours", () => {
   const now = new Date("2026-03-10T09:00:00Z"); // 5 PM Manila
-  const future = slotsForDate("2026-03-10").filter((s) => isFutureSlot(s.start, now));
-  assert.ok(future.length > 0, "expected bookable slots later today");
-  // Every surviving slot is in the future; nothing past leaks through.
-  for (const s of future) assert.ok(s.start.getTime() > now.getTime());
-  // And the spent hours of today are excluded.
-  const past = slotsForDate("2026-03-10").filter((s) => !isFutureSlot(s.start, now));
-  assert.ok(past.length > 0, "expected some of today's hours to have passed");
+  const bookable = slotsForDate("2026-03-10").filter((s) => isBookableSlot(s.start, now));
+  assert.ok(bookable.length > 0, "expected bookable slots later today");
+  // The 5 PM hour itself is bookable even though it has just begun.
+  assert.ok(bookable.some((s) => s.start.getTime() === now.getTime()));
+  // A slot survives while its hour is running; nothing fully elapsed leaks through.
+  for (const s of bookable) assert.ok(s.start.getTime() + 3_600_000 > now.getTime());
+  // And the hours that already ended are excluded.
+  const ended = slotsForDate("2026-03-10").filter((s) => !isBookableSlot(s.start, now));
+  assert.ok(ended.length > 0, "expected some of today's hours to have ended");
+  for (const s of ended) assert.ok(s.start.getTime() + 3_600_000 <= now.getTime());
+});
+
+test("the current hour stays bookable mid-hour, then closes when it ends", () => {
+  const start = new Date("2026-03-10T06:00:00Z"); // 2 PM Manila
+  assert.equal(isBookableSlot(start, new Date("2026-03-10T06:30:00Z")), true); // 2:30 PM
+  assert.equal(isBookableSlot(start, new Date("2026-03-10T06:59:59Z")), true); // 2:59:59 PM
+  assert.equal(isBookableSlot(start, new Date("2026-03-10T07:00:00Z")), false); // 3 PM
 });
 
 test("same-day stays inside the 12-month horizon", () => {

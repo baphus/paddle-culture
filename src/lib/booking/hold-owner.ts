@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { Db } from "@/db/client";
 import { getAvailability } from "./availability";
 import { HOLD_GRACE_MINUTES, HOLD_TTL_MINUTES, LIVE_SLOT_STATES, MAX_SLOTS_PER_BOOKING } from "./constants";
-import { isFutureSlot, isOnSlotGrid, selectionDateStr } from "./slots";
+import { isBookableSlot, isOnSlotGrid, selectionDateStr } from "./slots";
 
 /**
  * Hold ownership (ADR-03 amendment).
@@ -171,11 +171,11 @@ export async function reclaimHolds(
     if (!isOnSlotGrid(start)) {
       return { ok: false, code: "OFF_GRID", message: "A held slot is off the grid.", status: 400 };
     }
-    if (!isFutureSlot(start)) {
+    if (!isBookableSlot(start)) {
       return {
         ok: false,
         code: "SLOT_INVALID",
-        message: "A slot you held has already started.",
+        message: "A slot you held has already ended.",
         status: 422,
       };
     }

@@ -7,7 +7,7 @@ import { assertSlotsOpen } from "@/lib/booking/hours";
 import { recalculateTotal } from "@/lib/booking/pricing";
 import { discardProofObject, verifyProofFile } from "@/lib/booking/proof";
 import { reclaimHolds } from "@/lib/booking/hold-owner";
-import { isFutureSlot, isOnSlotGrid } from "@/lib/booking/slots";
+import { isBookableSlot, isOnSlotGrid } from "@/lib/booking/slots";
 import {
   generateTrackingCode,
   generateTrackingToken,
@@ -103,7 +103,7 @@ export async function POST(request: Request) {
     }));
 
     for (const p of slotPairs) {
-      if (!isOnSlotGrid(p.start) || !isFutureSlot(p.start)) {
+      if (!isOnSlotGrid(p.start) || !isBookableSlot(p.start)) {
         void discardProofObject(proof.path);
         return err("SLOT_INVALID", "A held slot is no longer bookable.", 422);
       }

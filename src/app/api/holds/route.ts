@@ -5,7 +5,7 @@ import { getDb } from "@/db/client";
 import { getAvailability } from "@/lib/booking/availability";
 import { HOLD_TTL_MINUTES, MAX_SLOTS_PER_BOOKING } from "@/lib/booking/constants";
 import { LaneError, err } from "@/lib/booking/errors";
-import { isFutureSlot, isOnSlotGrid, selectionDateStr } from "@/lib/booking/slots";
+import { isBookableSlot, isOnSlotGrid, selectionDateStr } from "@/lib/booking/slots";
 import { holdsBodySchema, releaseHoldsBodySchema } from "@/lib/booking/validation";
 
 export const runtime = "nodejs";
@@ -50,8 +50,8 @@ export async function POST(request: Request) {
       if (!isOnSlotGrid(start)) {
         return err("OFF_GRID", `Slot ${start.toISOString()} is not on the hourly grid.`, 400);
       }
-      if (!isFutureSlot(start)) {
-        return err("SLOT_PAST", `Slot ${start.toISOString()} is not in the future.`, 422);
+      if (!isBookableSlot(start)) {
+        return err("SLOT_PAST", `Slot ${start.toISOString()} has already ended.`, 422);
       }
     }
     const seen = new Set(starts.map((s) => s.getTime()));

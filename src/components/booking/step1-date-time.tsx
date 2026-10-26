@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 import { LoadingAnimation } from "@/components/ui/loading-animation";
 import { MAX_SLOTS_PER_BOOKING } from "@/lib/booking/constants";
 import { clearDraft } from "@/lib/booking/draft";
-import { slotsForDate, isOvernightSlot } from "@/lib/booking/slots";
+import { slotsForDate, isBookableSlot, isOvernightSlot } from "@/lib/booking/slots";
 import {
   daysInManilaMonth,
   firstWeekdayManila,
@@ -421,8 +421,8 @@ export default function Step1DateTime({
   // Slot state for a given court+slot combination
   function slotStateForCourt(iso: string, courtId: string): CellState {
     if (!avail) {
-      // While loading: past slots grey out, future ones show as open
-      return new Date(iso).getTime() <= Date.now() ? "past" : "open";
+      // While loading: ended slots grey out, the current hour still shows open
+      return isBookableSlot(new Date(iso)) ? "open" : "past";
     }
     return cellStates.get(`${courtId}|${iso}`) ?? "closed";
   }

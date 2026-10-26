@@ -34,7 +34,7 @@ Derived, not stored: revenue rollups, booking QR (encodes tracking URL), website
 - Submit is **one serializable transaction**: delete expired holds → `SELECT … FOR UPDATE` → re-validate availability → server-side total recalc → insert booking + slots → delete hold → insert 2 outbox rows (customer submission + owner alert; approve/reject decision email enqueued at decision time per ADR-05). Idempotency key on submit kills duplicate POSTs.
 - All times `timestamptz`, app TZ fixed to `Asia/Manila` (CONFIRMED by owner 2026-10-03).
 - Midnight-crossing hours are handled as datetime ranges; selection date is the Manila calendar date of the slot start. Equal opening and closing times represent a full 24-hour opening period.
-- Same-day bookings ALLOWED per owner 2026-10-03 (PRD §9 forbade them; acceptance gate #2 inverted). Only future slots bookable: `slot_start > now()` enforced in UI and server-side.
+- Same-day bookings ALLOWED per owner 2026-10-03 (PRD §9 forbade them; acceptance gate #2 inverted). A slot stays bookable through its hour — `slot_start + 1h > now()` enforced in UI and server-side (amended 2026-10-26 per owner: at 14:30 the 14:00 slot must still be bookable; a fully elapsed hour is closed).
 
 ## ADR-04 — Auth (admin-only, customers unauthenticated)
 

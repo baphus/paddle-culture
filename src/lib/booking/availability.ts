@@ -1,7 +1,7 @@
 import type { Db } from "@/db/client";
 import { LIVE_SLOT_STATES } from "./constants";
 import { isSlotOpen, loadOpenRules } from "./hours";
-import { isFutureSlot, slotsForDate, type SlotInstant } from "./slots";
+import { isBookableSlot, slotsForDate, type SlotInstant } from "./slots";
 
 // All Drizzle ORM imports replaced with @supabase/supabase-js HTTP client.
 
@@ -124,7 +124,7 @@ export async function getAvailabilityForInstants(
         state,
         bookable:
           state === "free" &&
-          isFutureSlot(start, now) &&
+          isBookableSlot(start, now) &&
           isSlotOpen(rules, courtId, start),
       };
     }),

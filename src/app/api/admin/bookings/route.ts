@@ -5,7 +5,7 @@ import { LaneError, err } from "@/lib/booking/errors";
 import { assertSlotsOpen } from "@/lib/booking/hours";
 import { recalculateTotal } from "@/lib/booking/pricing";
 import { verifyProofFile } from "@/lib/booking/proof";
-import { isFutureSlot, isOnSlotGrid } from "@/lib/booking/slots";
+import { isBookableSlot, isOnSlotGrid } from "@/lib/booking/slots";
 import { adminCreateBookingBodySchema } from "@/lib/booking/validation";
 import { createBookingAdmin } from "@/lib/admin/bookings";
 import { getDbOrThrow } from "@/lib/admin/decisions";
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
 
     // Future-only, and on the hourly Manila calendar-day grid.
     for (const p of slotPairs) {
-      if (!isOnSlotGrid(p.start) || !isFutureSlot(p.start)) {
+      if (!isOnSlotGrid(p.start) || !isBookableSlot(p.start)) {
         return err("SLOT_INVALID", "That slot is no longer bookable.", 422);
       }
     }

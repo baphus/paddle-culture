@@ -125,9 +125,12 @@ export function isOnSlotGrid(instant: Date): boolean {
   return true;
 }
 
-/** Only future slots are bookable (ADR-03; same-day allowed if in future). */
-export function isFutureSlot(start: Date, now: Date = new Date()): boolean {
-  return start.getTime() > now.getTime();
+/**
+ * A slot is bookable until its hour ends (ADR-03, amended 2026-10-26):
+ * at 14:30 the 14:00 slot is still bookable, at 15:01 it is not.
+ */
+export function isBookableSlot(start: Date, now: Date = new Date()): boolean {
+  return start.getTime() + HOUR_MS > now.getTime();
 }
 
 // 12-month rolling booking window (ADR-03). The client calendar enforces the
