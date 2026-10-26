@@ -99,13 +99,23 @@ test("finance range normalization defaults, validates calendar dates, and orders
   assert.deepEqual(normalizeFinanceRange("2026-10-21", "2026-10-01", "2026-10-21"), { from: "2026-10-01", to: "2026-10-21" });
 });
 
-test("finance CSV includes revenue, filtered expenses, daily profit, and safely quoted titles", () => {
-  const csv = buildFinanceCsv(
-    [{ date: "2026-10-21", revenueCents: 5000, expenseCents: 1234, profitCents: 3766, bookings: 2 }],
-    [{ paidDate: "2026-10-21", title: 'Lights, "Court A"', category: "Utilities", amountCentavos: 1234 }],
-  );
-  assert.ok(csv.startsWith("\uFEFFRecord type,Date,Title,Category,Bookings,Revenue (PHP),Expense (PHP),Profit (PHP)"));
-  assert.match(csv, /Booking revenue,2026-10-21,,,2,50\.00,,/);
-  assert.match(csv, /Expense,2026-10-21,"Lights, ""Court A""",Utilities,,,12\.34,/);
-  assert.match(csv, /Daily profit summary,2026-10-21,,,,,,37\.66/);
+test("finance CSV reports the period, one row per booking, filtered expenses, and a matching summary", () => {
+  const csv = buildFinanceCsv({
+    period: "October 1, 2026 – October 21, 2026",
+    generated: "October 21, 2026",
+    bookings: [
+      { approved: "October 21, 2026", customer: "Ana Cruz", email: "ana@example.com", courts: "Court A", slots: "1:00PM–3:00PM", playDate: "November 1, 2026", courtCents: 4000, rentalCents: 1000, totalCents: 5000 },
+      { approved: "October 21, 2026", customer: "Ben Tan", email: "ben@example.com", courts: "Court B", slots: "2:00PM–3:00PM", playDate: "October 25, 2026", courtCents: 2000, rentalCents: 0, totalCents: 2000 },
+    ],
+    expenses: [{ paidDate: "2026-10-21", title: 'Lights, "Court A"', category: "Utilities", amountCentavos: 1234 }],
+  });
+  assert.ok(csv.startsWith('\uFEFFFinance Report\r\nReport period,"October 1, 2026 – October 21, 2026"'));
+  assert.match(csv, /No\.,Date Approved,Customer,Email,Court,Slots,Date of Booking,Court Amount \(PHP\),Rental Amount \(PHP\),Amount \(PHP\)/);
+  assert.match(csv, /1,"October 21, 2026",Ana Cruz,ana@example\.com,Court A,1:00PM–3:00PM,"November 1, 2026",40\.00,10\.00,50\.00/);
+  assert.match(csv, /2,"October 21, 2026",Ben Tan,ben@example\.com,Court B,2:00PM–3:00PM,"October 25, 2026",20\.00,0\.00,20\.00/);
+  assert.match(csv, /"Lights, ""Court A""",Utilities,2026-10-21,12\.34/);
+  assert.match(csv, /Booking Revenue \(PHP\),70\.00/);
+  assert.match(csv, /Bookings Count,2/);
+  assert.match(csv, /Expenses \(PHP\),12\.34/);
+  assert.match(csv, /Net Profit \(PHP\),57\.66/);
 });

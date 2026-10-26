@@ -13,6 +13,8 @@ import type { AdminCreateBookingBody } from "@/lib/booking/validation";
 import { normalizePhone } from "@/lib/booking/phone";
 import type { AdminSession } from "./session";
 import type { TotalLine } from "@/lib/booking/pricing";
+import { getDisplayRates } from "@/lib/pricing-display";
+import type { FinanceExportBooking } from "./finance-export";
 
 // All Drizzle ORM imports replaced with @supabase/supabase-js HTTP client.
 
@@ -794,3 +796,101 @@ export async function createBookingAdmin(
     evictedHolds: rpcResult.evicted_holds ?? 0,
   };
 }
+
+type ExportBookingRow = {
+  full_name: string;
+  email: string;
+  total: string;
+  approved_at: string | null;
+  play_date?: string | null;
+  booking_slots?: Array<{ slot_start: string; courts?: unknown }> | null;
+  booking_rentals?:
+    | { paddle_qty: number; paddle_hours: string | null; ball_fee: string | null }
+    | Array<{ paddle_qty: number; paddle_hours: string | null; ball_fee: string | null }>
+    | null;
+};
+
+/**
+ * Approved bookings in the finance window, shaped for the CSV export.
+ * Same approval-instant window as getFinanceReport, so the sheet's Amount
+ * column always adds up to the page's Booking Revenue.
+ */
+export async function getFinanceExportBookings(
+  db: Db,
+  from: string,
+  to: string,
+): Promise<FinanceExportBooking[]> {
+  const lo = new Date(`${from}T00:00:00+08:00`).toISOString();
+  const hi = new Date(new Date(`${to}T00:00:00+08:00`).getTime() + 86_400_000).toISOString();
+  const paddleCents = Math.round((await getDisplayRates(db)).paddle * 100);
+  const columns =
+    "full_name,email,total,approved_at,booking_slots(slot_start,courts(name)),booking_rentals(paddle_qty,paddle_hours,ball_fee)";
+
+  // Literal selects on purpose: a template-union select explodes the builder's TS type.
+  const readPage = async (offset: number, withPlayDate: boolean) => {
+    const base = withPlayDate
+      ? db.from("bookings").select(`play_date,${columns}`)
+      : db.from("bookings").select(columns);
+    return base
+      .eq("status", "Approved")
+      .gte("approved_at", lo)
+      .lt("approved_at", hi)
+      .order("id", { ascending: true })
+      .range(offset, offset + 499);
+  };
+
+  const rows: ExportBookingRow[] = [];
+  let withPlayDate = true;
+  for (let offset = 0; ; offset += 500) {
+    let result = await readPage(offset, withPlayDate);
+    if (result.error && bookingsNeedsOptionalColumnsFallback(result.error)) {
+      withPlayDate = false;
+      result = await readPage(offset, false);
+    }
+    if (result.error) throw new Error(result.error.message);
+    const page = (result.data ?? []) as unknown as ExportBookingRow[];
+    rows.push(...page);
+    if (page.length < 500) break;
+  }
+
+  const bookings: FinanceExportBooking[] = [];
+  for (const row of rows) {
+    const totalCents = Math.round(Number(row.total) * 100);
+    if (!Number.isFinite(totalCents) || totalCents <= 0) continue;
+    const slots = row.booking_slots ?? [];
+    const slotStarts = slots.map((slot) => slot.slot_start);
+    const courts = [...new Set(slots.map((slot) => exportCourtName(slot.courts)))].filter(Boolean).join(", ");
+    const rental = Array.isArray(row.booking_rentals) ? row.booking_rentals[0] : row.booking_rentals;
+    const paddleHours = rental && rental.paddle_qty > 0 ? Number(rental.paddle_hours ?? slotStarts.length) : 0;
+    // shortcut: the paddle rate charged at submit is not stored, so this uses the
+    // current rate — a later rate change shifts the court/rental split, never the
+    // stored total. Persist the rate on booking_rentals if that matters.
+    const rentalCents =
+      (rental?.paddle_qty ?? 0) * paddleHours * paddleCents + Math.round(Number(rental?.ball_fee ?? 0) * 100);
+    const approvedAt = row.approved_at;
+    if (!approvedAt) continue;
+    bookings.push({
+      approved: formatBookingDate(manilaDateStr(new Date(approvedAt))),
+      customer: row.full_name,
+      email: row.email,
+      courts,
+      slots: formatSlotRanges(slotStarts).join(", "),
+      playDate: formatBookingDate(playDateOrNull(row) ?? earliestManilaDate(slotStarts)),
+      courtCents: Math.max(0, totalCents - rentalCents),
+      rentalCents,
+      totalCents,
+    });
+  }
+  return bookings;
+}
+
+function exportCourtName(join: unknown): string {
+  const court = (Array.isArray(join) ? join[0] : join) as { name?: string } | null | undefined;
+  return court?.name ?? "";
+}
+
+function earliestManilaDate(slotStarts: string[]): string {
+  const times = slotStarts.map((iso) => new Date(iso).getTime()).filter(Number.isFinite);
+  return times.length ? manilaDateStr(new Date(Math.min(...times))) : "";
+}
+

@@ -4,13 +4,13 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import Link from "next/link";
-import { SlidersHorizontal } from "lucide-react";
+import { FileSpreadsheet, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { EXPENSE_CATEGORIES, type ExpenseInput } from "@/lib/admin/expenses";
-import { buildFinanceCsv } from "@/lib/admin/finance-export";
+import { buildFinanceCsv, type FinanceExportBooking } from "@/lib/admin/finance-export";
 
 export interface FinanceExpenseRow {
   id: string; title: string; category: string; amountCentavos: number; paidDate: string;
@@ -129,9 +129,9 @@ export function ExpenseActions({ expense, today }: { expense?: FinanceExpenseRow
   </>;
 }
 
-export function FinanceExport({ days, expenses, range }: { days: Array<{ date: string; revenueCents: number; expenseCents: number; profitCents: number; bookings: number }>; expenses: FinanceExpenseRow[]; range: string }) {
+export function FinanceExport({ bookings, expenses, period, generated, range }: { bookings: FinanceExportBooking[]; expenses: FinanceExpenseRow[]; period: string; generated: string; range: string }) {
   function download() {
-    const blob = new Blob([buildFinanceCsv(days, expenses)], { type: "text/csv;charset=utf-8" }); const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `finance-${range}.csv`; anchor.click(); URL.revokeObjectURL(url);
+    const blob = new Blob([buildFinanceCsv({ period, generated, bookings, expenses })], { type: "text/csv;charset=utf-8" }); const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `finance-${range}.csv`; anchor.click(); URL.revokeObjectURL(url);
   }
-  return <Button variant="outline" onClick={download}>Export CSV</Button>;
+  return <Button variant="outline" onClick={download}><FileSpreadsheet aria-hidden="true" />Export to Sheets</Button>;
 }
