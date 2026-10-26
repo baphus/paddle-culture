@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   date,
   index,
@@ -167,6 +168,8 @@ export const bookings = pgTable(
      * and showed customers the wrong Play Date). Read it, don't recompute it.
      */
     playDate: date("play_date").notNull(),
+    /** Admin-created booking collected in cash at the desk (no proof). */
+    paidCash: boolean("paid_cash").notNull().default(false),
     rejectReason: text("reject_reason"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

@@ -98,7 +98,7 @@ REVOKE ALL ON FUNCTION rpc_reclaim_holds(text, jsonb, timestamptz, text[])      
 REVOKE ALL ON FUNCTION rpc_apply_decision(uuid, text, text, text)                                       FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION rpc_submit_booking(text, text, text, text, text, text, text, text[], jsonb, int, text, text, text, text, int, jsonb, text, jsonb, jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION rpc_delete_expired_proofs(timestamptz)                                           FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION rpc_admin_create_booking(text, text, text, text, text, text, text, jsonb, jsonb, int, text, text, text, text, int, boolean, jsonb, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION rpc_admin_create_booking(text, text, text, text, text, text, text, jsonb, jsonb, int, text, text, text, text, int, boolean, jsonb, text, boolean) FROM PUBLIC, anon, authenticated;
 
 GRANT EXECUTE ON FUNCTION rpc_replace_court_hours(uuid, int[], time, time, numeric, text)                  TO service_role;
 GRANT EXECUTE ON FUNCTION rpc_add_court_hours(uuid, int[], time, time, numeric, boolean, text)             TO service_role;
@@ -107,7 +107,7 @@ GRANT EXECUTE ON FUNCTION rpc_reclaim_holds(text, jsonb, timestamptz, text[])   
 GRANT EXECUTE ON FUNCTION rpc_apply_decision(uuid, text, text, text)                                       TO service_role;
 GRANT EXECUTE ON FUNCTION rpc_submit_booking(text, text, text, text, text, text, text, text[], jsonb, int, text, text, text, text, int, jsonb, text, jsonb, jsonb) TO service_role;
 GRANT EXECUTE ON FUNCTION rpc_delete_expired_proofs(timestamptz)                                           TO service_role;
-GRANT EXECUTE ON FUNCTION rpc_admin_create_booking(text, text, text, text, text, text, text, jsonb, jsonb, int, text, text, text, text, int, boolean, jsonb, text) TO service_role;
+GRANT EXECUTE ON FUNCTION rpc_admin_create_booking(text, text, text, text, text, text, text, jsonb, jsonb, int, text, text, text, text, int, boolean, jsonb, text, boolean) TO service_role;
 
 GRANT ALL ON ALL TABLES    IN SCHEMA public TO service_role;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;

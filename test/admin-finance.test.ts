@@ -22,6 +22,24 @@ test("finance allocates a multi-date booking exactly across its slot dates", () 
   ]);
 });
 
+test("admin cash booking with no payment proof still counts in finance and charts", () => {
+  // Admin walk-ins are born Approved and have no payment_proofs row. Revenue
+  // keys on status + slot date only, so the cash booking must be included.
+  const cashBooking = {
+    id: "cash-1",
+    total: "500.00",
+    booking_slots: [{ slot_start: "2026-10-21T02:00:00.000Z" }], // Oct 21, 10:00 Manila
+  };
+  const report = aggregateFinanceRows("2026-10-21", "2026-10-21", [cashBooking], []);
+  assert.equal(report.revenueCents, 50000);
+  assert.equal(report.bookings, 1);
+  assert.deepEqual(report.days.map(({ date, revenueCents, bookings }) => ({ date, revenueCents, bookings })), [
+    { date: "2026-10-21", revenueCents: 50000, bookings: 1 },
+  ]);
+  const chart = bucketFinanceDays(report.days);
+  assert.equal(chart.buckets.reduce((sum, bucket) => sum + bucket.revenueCents, 0), 50000);
+});
+
 test("finance applies the range to slot dates and paid dates", () => {
   const report = aggregateFinanceRows(
     "2026-10-21",

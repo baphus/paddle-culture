@@ -77,6 +77,7 @@ export interface BookingDetail {
   paddleHours: string | null;
   hasBall: boolean;
   proofPath: string | null;
+  paidCash: boolean;
 }
 
 function manilaDayStart(dateStr: string): Date {
@@ -256,7 +257,7 @@ export async function listBookings(
   type PageRow = {
     id: string; tracking_token: string; tracking_code: string; status: string;
     full_name: string; email: string; phone: string; total: string;
-    reject_reason: string | null; created_at: string; play_date?: string | null;
+    reject_reason: string | null; created_at: string; play_date?: string | null; paid_cash?: boolean | null;
   };
   const pageSize = params.limit ?? BOOKINGS_PAGE_SIZE;
   const requestedPage = Math.max(1, params.page);
@@ -281,7 +282,7 @@ export async function listBookings(
     // The selects are split into two literal calls on purpose: a template-union
     // select in one expression makes TS explode the PostgREST builder's type.
     const base = withPlayDate
-      ? db.from("bookings").select(`play_date,${dataColumns}`)
+      ? db.from("bookings").select(`play_date,paid_cash,${dataColumns}`)
       : db.from("bookings").select(dataColumns);
     const ordered = base.order("created_at", { ascending: false });
     const { data, error } = await withFilters(ordered).range(...rangeFor(page));
@@ -385,6 +386,7 @@ export async function listBookings(
       paddleHours: rental?.paddle_hours ?? null,
       hasBall: rental?.ball_fee != null,
       proofPath: proofByBooking.get(b.id) ?? null,
+      paidCash: b.paid_cash === true,
     };
   });
 
@@ -555,12 +557,12 @@ export async function getBookingById(
   type DetailRow = {
     id: string; tracking_token: string; tracking_code: string; status: string;
     full_name: string; email: string; phone: string; total: string;
-    reject_reason: string | null; created_at: string; play_date?: string | null;
+    reject_reason: string | null; created_at: string; play_date?: string | null; paid_cash?: boolean | null;
   };
   type DetailResult = { data: DetailRow | null; error: { code?: string; message?: string } | null };
   async function readBooking(withPlayDate: boolean): Promise<DetailResult> {
     const query = withPlayDate
-      ? db.from("bookings").select(`play_date,${detailColumns}`)
+      ? db.from("bookings").select(`play_date,paid_cash,${detailColumns}`)
       : db.from("bookings").select(detailColumns);
     return (await query.eq("id", id).single()) as DetailResult;
   }
@@ -623,6 +625,7 @@ export async function getBookingById(
     paddleHours: rental?.paddle_hours ?? null,
     hasBall: rental?.ball_fee != null,
     proofPath: ((proofsResult.data ?? []) as { path: string }[])[0]?.path ?? null,
+    paidCash: b.paid_cash === true,
   };
 }
 
@@ -740,6 +743,7 @@ export async function createBookingAdmin(
       p_proof_mime: input.proof?.mime ?? null,
       p_proof_bytes: input.proof?.bytes ?? null,
       p_notify: notify,
+      p_paid_cash: body.paidCash,
       p_lines: input.lines,
       p_actor_email: admin.email,
     });

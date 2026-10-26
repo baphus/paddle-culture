@@ -156,6 +156,7 @@ export const adminCreateBookingBodySchema = z
   .object({
     idempotencyKey: z.string().min(8).max(128),
     notify: z.boolean().default(true),
+    paidCash: z.boolean().default(false),
     slots: z
       .array(
         z.object({

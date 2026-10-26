@@ -191,6 +191,7 @@ export default function BookingCreateForm({
 
   const [picked, setPicked] = useState<PickedSlot[]>([]);
   const [notify, setNotify] = useState(true);
+  const [paidCash, setPaidCash] = useState(false);
   const [description, setDescription] = useState("");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -449,6 +450,7 @@ export default function BookingCreateForm({
       const body = {
         idempotencyKey,
         notify,
+        paidCash,
         slots: picked.map((p) => ({ courtId: p.courtId, slotStart: p.slotStart })),
         description: description.trim() || fullName.trim(),
         customer: {
@@ -732,8 +734,29 @@ export default function BookingCreateForm({
               </div>
 
               <div className="space-y-1.5 border-t border-border/70 pt-4">
-                <Label>Payment proof (optional)</Label>
-                {proof ? (
+                <div className="flex items-start justify-between gap-4 rounded-lg border border-border/70 bg-muted/30 px-3 py-2.5">
+                  <div>
+                    <Label htmlFor="paid-cash" className="text-sm font-medium">
+                      Paid in cash
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      {paidCash
+                        ? "Cash collected at the desk — no payment proof needed."
+                        : "Leave off if the customer paid online or by transfer."}
+                    </p>
+                  </div>
+                  <Switch
+                    id="paid-cash"
+                    checked={paidCash}
+                    onCheckedChange={(v) => setPaidCash(v === true)}
+                    disabled={busy}
+                  />
+                </div>
+
+                {!paidCash && (
+                  <>
+                    <Label>Payment proof (optional)</Label>
+                    {proof ? (
                   <div className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-sm">
                     <span className="truncate font-mono text-xs">{proof.path}</span>
                     <Button
@@ -775,6 +798,8 @@ export default function BookingCreateForm({
                       }}
                     />
                   </label>
+                    )}
+                  </>
                 )}
               </div>
             </CardContent>

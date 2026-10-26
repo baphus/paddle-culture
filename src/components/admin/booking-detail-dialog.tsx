@@ -159,6 +159,11 @@ export function BookingDetailDialog({
                     status={booking.status}
                     className="shrink-0"
                   />
+                  {booking.paidCash && (
+                    <span className="shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium">
+                      Paid in cash
+                    </span>
+                  )}
                 </div>
                 <DialogDescription className="mt-0.5 text-xs">
                   {booking.email} · {booking.phone}
@@ -170,7 +175,7 @@ export function BookingDetailDialog({
 
                 <div>
                   <p className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    Payment proof
+                    {booking.paidCash ? "Paid in cash" : "Payment proof"}
                     <span className="inline-flex items-center gap-1 font-normal normal-case text-muted-foreground/80 sm:hidden">
                       <Maximize2 className="size-3" />
                       Tap to view fullscreen
@@ -193,6 +198,10 @@ export function BookingDetailDialog({
                         Click to view fullscreen
                       </span>
                     </button>
+                  ) : booking.paidCash ? (
+                    <div className="flex aspect-[3/4] w-full max-w-xs items-center justify-center rounded-lg border bg-muted/30 text-center text-xs text-muted-foreground">
+                      Cash collected at the desk — no proof attached.
+                    </div>
                   ) : proofFailed || !booking.proofPath ? (
                     <div className="flex aspect-[3/4] w-full max-w-xs items-center justify-center rounded-lg border bg-muted/30 text-center text-xs text-muted-foreground">
                       Proof unavailable.

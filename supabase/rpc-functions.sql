@@ -881,9 +881,14 @@ $$;
 --    p_slots:         [{ court_id, slot_start }]
 --    p_slot_summary:  [{ courtId, courtName, slotStart }]  (outbox payload)
 --    p_proof:         { path, mime, bytes } | null
+--    p_paid_cash:     true when the front desk collected cash (no proof needed)
 --    Returns { booking_id, tracking_token, tracking_code, total, status,
 --              notify, deduped, evicted_holds }
 -- ===========================================================================
+-- The signature changed when paid_cash was added; drop the old overload so
+-- PostgREST can never resolve a 18-arg call to a stale definition.
+DROP FUNCTION IF EXISTS rpc_admin_create_booking(text, text, text, text, text, text, text, jsonb, jsonb, int, text, text, text, text, int, boolean, jsonb, text);
+
 CREATE OR REPLACE FUNCTION rpc_admin_create_booking(
   p_idempotency_key  text,
   p_tracking_token   text,
@@ -902,7 +907,8 @@ CREATE OR REPLACE FUNCTION rpc_admin_create_booking(
   p_proof_bytes      int,     -- nullable
   p_notify           boolean, -- false -> audit only, no email
   p_lines            jsonb,
-  p_actor_email      text
+  p_actor_email      text,
+  p_paid_cash        boolean  -- cash collected at the desk
 )
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER
@@ -995,10 +1001,11 @@ BEGIN
   -- earliest requested slot (07:00 anchor, so overnight slots stay on the
   -- selected day), computed in SQL so it can never disagree with the
   -- rows written to booking_slots just below.
-  INSERT INTO bookings (tracking_token, tracking_code, status, full_name, email, phone, total, play_date)
+  INSERT INTO bookings (tracking_token, tracking_code, status, full_name, email, phone, total, play_date, paid_cash)
   SELECT p_tracking_token, p_tracking_code, 'Approved', p_full_name, p_email, p_phone, p_total::numeric,
          ((min((s->>'slot_start')::timestamptz) AT TIME ZONE 'Asia/Manila')::date
-          - CASE WHEN (min((s->>'slot_start')::timestamptz) AT TIME ZONE 'Asia/Manila')::time < time '07:00' THEN 1 ELSE 0 END)
+          - CASE WHEN (min((s->>'slot_start')::timestamptz) AT TIME ZONE 'Asia/Manila')::time < time '07:00' THEN 1 ELSE 0 END),
+         p_paid_cash
   FROM   jsonb_array_elements(p_slots) AS s
   RETURNING id INTO v_booking_id;
 
@@ -1058,6 +1065,7 @@ BEGIN
       'total',         p_total,
       'status',        'Approved',
       'notify',        p_notify,
+      'paidCash',      p_paid_cash,
       'evictedHolds',  v_evicted,
       'slots',         p_slot_summary
     )
