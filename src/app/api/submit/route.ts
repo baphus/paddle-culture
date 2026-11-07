@@ -11,6 +11,7 @@ import { isBookableSlot, isOnSlotGrid } from "@/lib/booking/slots";
 import {
   generateTrackingCode,
   generateTrackingToken,
+  isBookingSlotOverlapViolation,
   isProofPathViolation,
   isTrackingCodeViolation,
 } from "@/lib/booking/tracking";
@@ -244,7 +245,7 @@ export async function POST(request: Request) {
       if (isProofPathViolation(rpcError)) {
         return err("PROOF_ALREADY_USED", "This payment proof was already used for another booking.", 409);
       }
-      if (msg.includes("SLOT_TAKEN") || (rpcError.code === "23505" && !isTrackingCodeViolation(rpcError))) {
+      if (msg.includes("SLOT_TAKEN") || isBookingSlotOverlapViolation(rpcError)) {
         void discardProofObject(proof.path);
         return err("SLOT_TAKEN", "A selected slot was just taken. Please pick another time.", 409);
       }

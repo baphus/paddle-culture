@@ -33,6 +33,24 @@ export function isTrackingCodeViolation(e: unknown): boolean {
   return false;
 }
 
+/** True when the error is a 23505 unique violation on booking_slots_no_overlap_idx. */
+export function isBookingSlotOverlapViolation(e: unknown): boolean {
+  if (
+    typeof e !== "object" ||
+    e === null ||
+    !("code" in e) ||
+    (e as { code?: unknown }).code !== "23505"
+  )
+    return false;
+  const detail = (e as { detail?: unknown }).detail;
+  const constraint = (e as { constraint?: unknown }).constraint;
+  const message = (e as { message?: unknown }).message;
+  if (typeof constraint === "string" && constraint.includes("booking_slots_no_overlap_idx")) return true;
+  if (typeof detail === "string" && detail.includes("booking_slots_no_overlap_idx")) return true;
+  if (typeof message === "string" && message.includes("booking_slots_no_overlap_idx")) return true;
+  return false;
+}
+
 /** True when the error is a 23505 unique violation on payment_proofs.path. */
 export function isProofPathViolation(e: unknown): boolean {
   if (
