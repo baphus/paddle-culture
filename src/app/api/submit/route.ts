@@ -4,6 +4,7 @@ import { getDb } from "@/db/client";
 import { LIVE_SLOT_STATES, OWNER_ALERT_EMAIL } from "@/lib/booking/constants";
 import { LaneError, err } from "@/lib/booking/errors";
 import { assertSlotsOpen } from "@/lib/booking/hours";
+import { matchingSlotRows } from "@/lib/booking/availability";
 import { recalculateTotal } from "@/lib/booking/pricing";
 import { discardProofObject, verifyProofFile } from "@/lib/booking/proof";
 import { reclaimHolds } from "@/lib/booking/hold-owner";
@@ -119,12 +120,20 @@ export async function POST(request: Request) {
 
     const { data: clashRows } = await db
       .from("booking_slots")
-      .select("court_id")
+      .select("court_id,slot_start,state")
       .in("court_id", courtIds)
       .in("slot_start", startIsos)
       .in("state", [...LIVE_SLOT_STATES]);
 
-    if ((clashRows ?? []).length > 0) {
+    const matchingClashRows = matchingSlotRows(slotPairs.map((p) => ({
+      courtId: p.courtId,
+      start: p.start.toISOString(),
+    })), (clashRows ?? []) as { court_id: string; slot_start: string; state: string }[]);
+    if (matchingClashRows.length > 0) {
+      console.warn("SLOT_TAKEN", {
+        source: "submit_preflight",
+        matches: matchingClashRows,
+      });
       void discardProofObject(proof.path);
       return err(
         "SLOT_TAKEN",
@@ -246,6 +255,13 @@ export async function POST(request: Request) {
         return err("PROOF_ALREADY_USED", "This payment proof was already used for another booking.", 409);
       }
       if (msg.includes("SLOT_TAKEN") || isBookingSlotOverlapViolation(rpcError)) {
+        console.warn("SLOT_TAKEN", {
+          source: "submit_rpc",
+          code: rpcError.code ?? null,
+          constraint: isBookingSlotOverlapViolation(rpcError) ? "booking_slots_no_overlap_idx" : null,
+          explicit: msg.includes("SLOT_TAKEN"),
+          slots: slotPairs.map((p) => ({ courtId: p.courtId, slotStart: p.start.toISOString() })),
+        });
         void discardProofObject(proof.path);
         return err("SLOT_TAKEN", "A selected slot was just taken. Please pick another time.", 409);
       }

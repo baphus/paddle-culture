@@ -3,6 +3,7 @@ import { NextResponse, after } from "next/server";
 import { LIVE_SLOT_STATES } from "@/lib/booking/constants";
 import { LaneError, err } from "@/lib/booking/errors";
 import { assertSlotsOpen } from "@/lib/booking/hours";
+import { matchingSlotRows } from "@/lib/booking/availability";
 import { recalculateTotal } from "@/lib/booking/pricing";
 import { verifyProofFile } from "@/lib/booking/proof";
 import { isBookableSlot, isOnSlotGrid } from "@/lib/booking/slots";
@@ -57,13 +58,17 @@ export async function POST(request: Request) {
     // says the admin overrides them and the RPC evicts the rows.
     const { data: clashRows, error: clashError } = await db
       .from("booking_slots")
-      .select("court_id")
+      .select("court_id,slot_start")
       .in("court_id", courtIds)
       .in("slot_start", startIsos)
       .in("state", [...LIVE_SLOT_STATES]);
 
     if (clashError) return err("INTERNAL", "Could not check availability.", 500);
-    if ((clashRows ?? []).length > 0) {
+    const matchingClashRows = matchingSlotRows(slotPairs.map((p) => ({
+      courtId: p.courtId,
+      start: p.start.toISOString(),
+    })), (clashRows ?? []) as { court_id: string; slot_start: string }[]);
+    if (matchingClashRows.length > 0) {
       return err(
         "SLOT_TAKEN",
         "A selected slot is already booked. Pick another time.",

@@ -19,6 +19,14 @@ export interface CourtAvailability {
   slots: SlotAvailability[];
 }
 
+export function matchingSlotRows<T extends { court_id: string; slot_start: string }>(
+  selected: Array<{ courtId: string; start: string }>,
+  rows: T[],
+): T[] {
+  const keys = new Set(selected.map((p) => `${p.courtId}|${new Date(p.start).getTime()}`));
+  return rows.filter((r) => keys.has(`${r.court_id}|${new Date(r.slot_start).getTime()}`));
+}
+
 const STATE_PRECEDENCE: Record<SlotState, number> = {
   free: 0,
   held: 1,

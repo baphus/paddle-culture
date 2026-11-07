@@ -211,6 +211,10 @@ export async function reclaimHolds(
     ),
   );
   if (named.some((r) => blocked.has(key(r.court_id, r.slot_start)))) {
+    const blockedPairs = named
+      .filter((r) => blocked.has(key(r.court_id, r.slot_start)))
+      .map((r) => ({ courtId: r.court_id, slotStart: r.slot_start }));
+    console.warn("SLOT_TAKEN", { source: "reclaim_precheck", matches: blockedPairs });
     return {
       ok: false,
       code: "SLOT_TAKEN",
@@ -263,6 +267,11 @@ export async function reclaimHolds(
   });
   if (swapError) {
     if (isUniqueViolation(swapError)) {
+      console.warn("SLOT_TAKEN", {
+        source: "reclaim_rpc",
+        code: "23505",
+        slots: named.map((r) => ({ courtId: r.court_id, slotStart: r.slot_start })),
+      });
       return {
         ok: false,
         code: "SLOT_TAKEN",
