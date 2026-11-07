@@ -12,10 +12,9 @@ import type { HoldState } from "@/components/booking/step1-date-time";
  * and coming back to a reload — reset the customer to step 1 with nothing
  * saved, while their money was already on its way and their slots sat held.
  *
- * We persist to sessionStorage, not localStorage: the draft is per-tab and
- * dies with it, which is the right lifetime for "this booking attempt". The
- * one value that must outlive a reload is the hold owner token, and that is
- * carried inside the hold itself.
+ * Session storage keeps reload recovery; a short-lived local copy also
+ * survives tab closure. Both carry the hold owner token. Expiry is checked
+ * on read; it never extends the server's hold or reclaim deadline.
  *
  * Nothing here is trusted: the server re-validates the hold, the slots and the
  * prices on every read and write. This is purely so the customer does not have
@@ -23,6 +22,8 @@ import type { HoldState } from "@/components/booking/step1-date-time";
  */
 
 const DRAFT_KEY = "pc.booking.draft.v1";
+const RECOVERY_KEY = `${DRAFT_KEY}.recovery`;
+const DRAFT_TTL_MS = 40 * 60 * 1000;
 
 export type DraftStep = "select" | "details" | "review" | "payment";
 
@@ -56,48 +57,59 @@ export function newOwnerToken(): string {
   return crypto.randomUUID();
 }
 
-function storage(): Storage | null {
+function storage(kind: "sessionStorage" | "localStorage"): Storage | null {
   try {
-    // Safari private mode and some embedded webviews throw on access.
-    return window.sessionStorage;
+    return window[kind];
   } catch {
     return null;
   }
 }
 
-/** Read the draft, dropping anything unreadable or from an older shape. */
-export function loadDraft(): BookingDraft | null {
-  const store = storage();
-  if (!store) return null;
+function read(store: Storage, key: string): BookingDraft | null {
   try {
-    const raw = store.getItem(DRAFT_KEY);
+    const raw = store.getItem(key);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<BookingDraft>;
-    if (parsed.v !== 1) return null;
-    if (typeof parsed.ownerToken !== "string" || parsed.ownerToken.length < 16) return null;
+    const parsed = JSON.parse(raw) as Partial<BookingDraft> & { savedAt?: number };
+    if (parsed.v !== 1 || typeof parsed.ownerToken !== "string" || parsed.ownerToken.length < 16) return null;
+    if (parsed.savedAt !== undefined) {
+      if (typeof parsed.savedAt !== "number" || Date.now() - parsed.savedAt > DRAFT_TTL_MS || parsed.savedAt > Date.now()) return null;
+      delete parsed.savedAt;
+    }
     return parsed as BookingDraft;
   } catch {
     return null;
   }
 }
 
-export function saveDraft(draft: BookingDraft): void {
-  const store = storage();
-  if (!store) return;
-  try {
-    store.setItem(DRAFT_KEY, JSON.stringify(draft));
-  } catch {
-    // Quota / disabled storage: the wizard still works, it just stops
-    // surviving a reload. Never block a booking over this.
+/** Read recoverable draft first; session-only v1 drafts remain compatible. */
+export function loadDraft(): BookingDraft | null {
+  const session = storage("sessionStorage");
+  const recovery = storage("localStorage");
+  let recoveryRaw: string | null = null;
+  try { recoveryRaw = recovery?.getItem(RECOVERY_KEY) ?? null; } catch { /* storage is optional */ }
+  const restored = recovery && read(recovery, RECOVERY_KEY);
+  if (restored) return restored;
+  if (recoveryRaw !== null && recovery) {
+    try { recovery.removeItem(RECOVERY_KEY); } catch { /* ignore */ }
+    try { session?.removeItem(DRAFT_KEY); } catch { /* ignore */ }
+    return null;
   }
+  const legacy = session && read(session, DRAFT_KEY);
+  if (legacy) return legacy;
+  if (session) { try { session.removeItem(DRAFT_KEY); } catch { /* ignore */ } }
+  return null;
+}
+
+export function saveDraft(draft: BookingDraft): void {
+  const session = storage("sessionStorage");
+  const recovery = storage("localStorage");
+  const value = JSON.stringify({ ...draft, savedAt: Date.now() });
+  try { session?.setItem(DRAFT_KEY, value); } catch { /* storage is optional */ }
+  try { recovery?.setItem(RECOVERY_KEY, value); } catch { /* storage is optional */ }
 }
 
 export function clearDraft(): void {
-  const store = storage();
-  if (!store) return;
-  try {
-    store.removeItem(DRAFT_KEY);
-  } catch {
-    // ignore
+  for (const [store, key] of [[storage("sessionStorage"), DRAFT_KEY], [storage("localStorage"), RECOVERY_KEY]] as const) {
+    try { store?.removeItem(key); } catch { /* ignore */ }
   }
 }
