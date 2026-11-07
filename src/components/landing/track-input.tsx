@@ -70,7 +70,7 @@ export default function TrackInput() {
           spellCheck={false}
           inputMode="text"
           maxLength={5}
-          className="h-12 flex-1 rounded-xl border border-line bg-oat/60 px-4 text-sm font-medium tracking-widest text-ink placeholder:text-warm-muted/60 placeholder:tracking-normal focus:border-flame focus:outline-none"
+          className="h-12 min-w-0 flex-1 rounded-xl border border-line bg-oat/60 px-4 text-sm font-medium tracking-widest text-ink placeholder:text-warm-muted/60 placeholder:tracking-normal focus:border-flame focus:outline-none"
         />
         <button
           type="submit"
